@@ -4,1284 +4,336 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>iTow Impound Manager</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* Cleaner, more elegant UI */
         body {
-            font-family: 'Inter', 'Segoe UI', 'Roboto', sans-serif;
-            background-color: #1a1a2e;
-            color: #e6e6e6;
-            line-height: 1.6;
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            color: #333;
+            padding: 20px;
         }
-        
-        /* Background grid - more subtle */
-        body::before {
-            content: '';
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-image: 
-                linear-gradient(to right, rgba(99, 99, 149, 0.05) 1px, transparent 1px),
-                linear-gradient(to bottom, rgba(99, 99, 149, 0.05) 1px, transparent 1px);
-            background-size: 20px 20px;
-            z-index: -1;
+        .container {
+            max-width: 1200px;
         }
-        
-        .app-header {
-            background-color: #16213e;
-            padding: 1.5rem 0;
-            margin-bottom: 2.5rem;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+        .card {
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
-        
-        .app-title {
-            font-weight: 800;
-            font-size: 2rem;
-            color: #e6e6e6;
-            letter-spacing: 0.5px;
-        }
-        
-        .header-content {
-            position: relative;
-            z-index: 2;
-        }
-        
-        .header-stats {
-            font-size: 0.9rem;
-            color: #a6a6c8;
-        }
-        
-        .stat-item {
-            display: flex;
-            align-items: center;
-            margin-right: 1.5rem;
-        }
-        
-        .stat-icon {
-            color: #e94560;
-            margin-right: 0.5rem;
-        }
-        
-        .stat-value {
-            color: #e6e6e6;
-            font-weight: 600;
-        }
-        
-        /* Card styles */
-        .neo-card {
-            background-color: #16213e;
-            border-radius: 12px;
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
-            margin-bottom: 2rem;
-            border: 1px solid rgba(99, 99, 149, 0.2);
-            overflow: hidden;
-        }
-        
         .card-header {
-            background: #0f3460;
-            border-bottom: 1px solid rgba(99, 99, 149, 0.2);
-            padding: 1.25rem 1.5rem;
-            font-weight: 600;
-            color: #e6e6e6;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
+            background-color: #e0e0e0;
+            padding: 10px 15px;
+            border-bottom: 1px solid #ddd;
+            font-weight: bold;
         }
-        
-        .card-header-icon {
-            color: #e94560;
-            margin-right: 0.75rem;
-        }
-        
         .card-body {
-            padding: 1.5rem;
+            padding: 15px;
         }
-        
-        /* Form elements */
-        .form-label {
-            color: #a6a6c8;
-            font-size: 0.85rem;
-            margin-bottom: 0.5rem;
-            font-weight: 500;
-        }
-        
-        .form-control, .form-select {
-            background-color: #0f3460;
-            border: 1px solid rgba(99, 99, 149, 0.2);
-            border-radius: 10px;
-            color: #e6e6e6;
-            padding: 0.6rem 1rem;
-            transition: border-color 0.2s, box-shadow 0.2s;
-        }
-        
-        .form-control:focus, .form-select:focus {
-            background-color: #0f3460;
-            border-color: #e94560;
-            box-shadow: 0 0 0 3px rgba(233, 69, 96, 0.15);
-            color: #e6e6e6;
-        }
-        
-        .form-control::placeholder {
-            color: #a6a6c8;
-            opacity: 0.6;
-        }
-        
-        /* Button styles */
         .btn {
-            border-radius: 10px;
-            padding: 0.6rem 1.2rem;
-            font-weight: 500;
-            transition: transform 0.2s, box-shadow 0.2s;
-            position: relative;
+            border-radius: 5px;
+            padding: 8px 15px;
+            margin: 5px;
+        }
+        .btn-primary {
+            background-color: #007bff;
+            border-color: #007bff;
+        }
+        .btn-secondary {
+            background-color: #6c757d;
+            border-color: #6c757d;
+        }
+        .btn-success {
+            background-color: #28a745;
+            border-color: #28a745;
+        }
+        .btn-danger {
+            background-color: #dc3545;
+            border-color: #dc3545;
+        }
+        .tabs {
+            display: flex;
+            background-color: #e0e0e0;
+            border-radius: 8px 8px 0 0;
             overflow: hidden;
         }
-        
-        .btn:hover {
-            transform: translateY(-2px);
+        .tab {
+            flex: 1;
+            padding: 15px;
+            text-align: center;
+            text-decoration: none;
+            color: #333;
+            transition: background-color 0.3s;
         }
-        
-        .btn-neo-primary {
-            background-color: #e94560;
-            border: none;
-            color: white !important;
-            box-shadow: 0 4px 10px rgba(233, 69, 96, 0.3);
+        .tab:hover, .tab.active {
+            background-color: #007bff;
+            color: #fff;
         }
-        
-        .btn-neo-primary:hover {
-            box-shadow: 0 6px 14px rgba(233, 69, 96, 0.4);
+        .table {
+            width: 100%;
+            background-color: #fff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
         }
-        
-        .btn-neo-secondary {
-            background-color: #0f3460;
-            border: 1px solid rgba(99, 99, 149, 0.3);
-            color: #e6e6e6 !important;
+        .table th, .table td {
+            padding: 12px;
+            border-bottom: 1px solid #ddd;
+            text-align: left;
         }
-        
-        .btn-neo-secondary:hover {
-            background-color: rgba(99, 99, 149, 0.1);
+        .table th {
+            background-color: #e0e0e0;
+            cursor: pointer;
         }
-        
-        .btn-neo-accent {
-            background-color: #3a86ff;
-            border: none;
-            color: white !important;
-            box-shadow: 0 4px 10px rgba(58, 134, 255, 0.3);
+        .table tr:hover {
+            background-color: #f9f9f9;
         }
-        
-        .btn-neo-accent:hover {
-            box-shadow: 0 6px 14px rgba(58, 134, 255, 0.4);
-        }
-        
-        .btn-neo-warning {
-            background-color: #ffbe0b;
-            border: none;
-            color: #16213e !important;
-            box-shadow: 0 4px 10px rgba(255, 190, 11, 0.3);
-        }
-        
-        .btn-neo-warning:hover {
-            box-shadow: 0 6px 14px rgba(255, 190, 11, 0.4);
-        }
-        
-        .btn-neo-danger {
-            background-color: #fb5607;
-            border: none;
-            color: white !important;
-            box-shadow: 0 4px 10px rgba(251, 86, 7, 0.3);
-        }
-        
-        .btn-neo-danger:hover {
-            box-shadow: 0 6px 14px rgba(251, 86, 7, 0.4);
-        }
-        
-        .btn-sm {
-            padding: 0.4rem 0.8rem;
-            font-size: 0.85rem;
-        }
-        
-        .btn-icon {
-            margin-right: 0.4rem;
-        }
-        
-        /* Status indicator */
         .status-bar {
             display: none;
-            background-color: #16213e;
-            border-radius: 12px;
-            padding: 1rem;
-            margin-bottom: 1.5rem;
-            border: 1px solid rgba(99, 99, 149, 0.2);
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .progress {
-            height: 10px;
-            background-color: rgba(99, 99, 149, 0.1);
-            border-radius: 5px;
-            overflow: hidden;
-        }
-        
-        .progress-bar {
-            background: linear-gradient(90deg, #e94560, #3a86ff);
-            box-shadow: 0 0 8px rgba(233, 69, 96, 0.5);
-        }
-        
-        .status-text {
-            margin-top: 0.5rem;
-            color: #a6a6c8;
-        }
-        
-        /* Status-Based Tabs */
-        .neo-tabs {
-            display: flex;
-            flex-wrap: wrap;
-            margin-bottom: 2rem;
-            background-color: #16213e;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
-        }
-        
-        .neo-tab {
-            padding: 1.25rem 1rem;
-            text-align: center;
-            flex: 1;
-            min-width: 150px;
-            background-color: #16213e;
-            color: #a6a6c8;
-            text-decoration: none;
-            font-weight: 500;
-            border-bottom: 3px solid transparent;
-            position: relative;
-            transition: all 0.3s;
-        }
-        
-        .neo-tab:hover {
-            background-color: #1f2b49;
-            color: #e6e6e6;
-            text-decoration: none;
-        }
-        
-        .neo-tab.active {
-            background-color: #0f3460;
-            color: #e94560;
-            border-bottom: 3px solid #e94560;
-            text-decoration: none;
-        }
-        
-        .status-badge {
-            position: absolute;
-            top: 8px;
-            right: 8px;
-            background-color: #e94560;
-            color: white;
-            font-size: 0.75rem;
-            font-weight: bold;
-            width: 20px;
-            height: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 50%;
-        }
-        
-        /* Data table */
-        .table-responsive {
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
-            margin-bottom: 2rem;
-            overflow-x: auto;
-        }
-        
-        .neo-table {
-            margin-bottom: 0;
-            color: #e6e6e6;
-            width: 100%;
-            border-collapse: separate;
-            border-spacing: 0;
-        }
-        
-        .neo-table thead th {
-            background-color: #0f3460;
-            color: #a6a6c8;
-            font-weight: 600;
-            text-transform: uppercase;
-            font-size: 0.8rem;
-            padding: 1.25rem 1rem;
-            border-bottom: 1px solid rgba(99, 99, 149, 0.1);
-            white-space: nowrap;
-        }
-        
-        .neo-table tbody td {
-            background-color: #16213e;
-            padding: 1.25rem 1rem;
-            font-size: 0.95rem;
-            vertical-align: middle;
-            border-bottom: 1px solid rgba(99, 99, 149, 0.1);
-        }
-        
-        .neo-table tr:last-child td {
-            border-bottom: none;
-        }
-        
-        .neo-table tr:hover td {
-            background-color: rgba(99, 99, 149, 0.05);
-        }
-        
-        /* Adjust column widths */
-        .neo-table th:nth-child(1), .neo-table td:nth-child(1) { width: 5%; }  /* Call # */
-        .neo-table th:nth-child(2), .neo-table td:nth-child(2) { width: 6%; }  /* Complaint # */
-        .neo-table th:nth-child(3), .neo-table td:nth-child(3) { width: 7%; }  /* Jurisdiction */
-        .neo-table th:nth-child(4), .neo-table td:nth-child(4) { width: 6%; }  /* Tow Date */
-        .neo-table th:nth-child(5), .neo-table td:nth-child(5) { width: 10%; } /* VIN */
-        .neo-table th:nth-child(6), .neo-table td:nth-child(6) { width: 9%; }  /* Make/Model */
-        .neo-table th:nth-child(7), .neo-table td:nth-child(7) { width: 5%; }  /* Plate */
-        .neo-table th:nth-child(8), .neo-table td:nth-child(8) { width: 8%; min-width: 160px; }  /* Status */
-        .neo-table th:nth-child(9), .neo-table td:nth-child(9) { width: 7%; }  /* Last Changed */
-        .neo-table th:nth-child(10), .neo-table td:nth-child(10) { width: 7%; }  /* Release Type */
-        .neo-table th:nth-child(11), .neo-table td:nth-child(11) { width: 7%; } /* Release Date */
-        .neo-table th:nth-child(12), .neo-table td:nth-child(12) { width: 20%; min-width: 230px; } /* Actions */
-        
-        .sortable {
-            cursor: pointer;
-            position: relative;
-            user-select: none;
-        }
-        
-        .sortable:hover {
-            color: #e94560;
-        }
-        
-        .sort-icon:after {
-            content: "↕";
-            opacity: 0.3;
-            margin-left: 5px;
-            transition: opacity 0.2s;
-        }
-        
-        .sortable:hover .sort-icon:after {
-            opacity: 0.8;
-        }
-        
-        .sort-asc .sort-icon:after {
-            content: "↓";
-            opacity: 1;
-            color: #e94560;
-        }
-        
-        .sort-desc .sort-icon:after {
-            content: "↑";
-            opacity: 1;
-            color: #e94560;
-        }
-        
-        .editable {
-            position: relative;
-            cursor: text;
-        }
-        
-        .editable:hover::after {
-            content: '';
-            position: absolute;
-            bottom: -2px;
-            left: 0;
-            width: 100%;
-            height: 1px;
-            background-color: #e94560;
-        }
-        
-        /* Status dropdown in table */
-        .status-dropdown {
-            background-color: #0f3460;
-            border: 1px solid rgba(99, 99, 149, 0.2);
+            background-color: #fff;
+            padding: 15px;
+            border: 1px solid #ddd;
             border-radius: 8px;
-            color: #e6e6e6;
-            font-size: 0.9rem;
-            padding: 0.5rem 0.75rem;
-            width: 100%;
+            margin-bottom: 20px;
         }
-        
-        .status-dropdown:focus {
-            border-color: #e94560;
-            box-shadow: 0 0 0 2px rgba(233, 69, 96, 0.2);
-        }
-        
-        /* Status timestamp */
-        .status-timestamp {
-            display: block;
-            font-size: 0.7rem;
-            color: #a6a6c8;
-            margin-top: 0.3rem;
-        }
-        
-        /* Visual process indicator */
-        .process-indicator {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 0.5rem;
-            position: relative;
-        }
-        
-        .process-indicator::before {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 0;
-            width: 100%;
-            height: 2px;
-            background-color: #0f3460;
-            z-index: 1;
-        }
-        
-        .process-step {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background-color: #0f3460;
-            border: 2px solid #16213e;
-            position: relative;
-            z-index: 2;
-        }
-        
-        .process-step.active {
-            background-color: #e94560;
-            border-color: #e94560;
-        }
-        
-        .process-step.completed {
-            background-color: #38b000;
-            border-color: #38b000;
-        }
-        
-        /* Status colors */
-        .status-new { color: #a6a6c8; }
-        .status-top-sent { color: #ffbe0b; }
-        .status-ready { color: #3a86ff; }
-        .status-pending { color: #8338ec; }
-        .status-auction { color: #ff006e; }
-        .status-scrap { color: #ff006e; }
-        .status-released { color: #38b000; }
-        .status-scrapped { color: #38b000; }
-        .status-auctioned { color: #38b000; }
-        .status-archived { color: #a6a6c8; opacity: 0.7; }
-        
-        /* Action buttons */
-        .action-cell {
-            white-space: nowrap;
-            min-width: 230px;
-            padding-right: 10px !important;
-            text-align: center;
-        }
-        
-        .action-btn {
-            width: 40px;
-            height: 40px;
-            padding: 0;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 0.3rem;
-            border-radius: 10px;
-            transition: all 0.2s;
-            position: relative;
-        }
-        
-        .action-btn:last-child {
-            margin-right: 0;
-        }
-        
-        .action-btn:hover {
-            transform: translateY(-2px);
-        }
-        
-        /* Improved tooltips */
-        .action-tooltip {
-            position: relative;
-        }
-        
-        /* Fullscreen hover explanation */
-        .hover-explanation {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.8);
-            z-index: 9999;
-            justify-content: center;
-            align-items: center;
-            pointer-events: none;
-        }
-        
-        .hover-explanation-content {
-            background-color: #16213e;
-            padding: 2rem;
-            border-radius: 12px;
-            max-width: 500px;
-            border: 2px solid #e94560;
-            text-align: center;
-        }
-        
-        .hover-explanation-title {
-            font-size: 1.5rem;
-            font-weight: bold;
-            margin-bottom: 1rem;
-            color: #e94560;
-        }
-        
-        .hover-explanation-text {
-            font-size: 1.2rem;
-            line-height: 1.6;
-        }
-        
-        .action-btn:hover + .hover-explanation {
-            display: flex;
-        }
-        
-        /* Animation for success */
-        @keyframes success-pulse {
-            0% { background-color: rgba(56, 176, 0, 0); }
-            50% { background-color: rgba(56, 176, 0, 0.2); }
-            100% { background-color: rgba(56, 176, 0, 0); }
-        }
-        
-        .success-pulse {
-            animation: success-pulse 1.5s;
-        }
-        
-        /* Modal styles */
         .modal-content {
-            background-color: #16213e;
-            border: 1px solid rgba(99, 99, 149, 0.2);
-            border-radius: 16px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
         }
-        
-        .modal-header {
-            border-bottom: 1px solid rgba(99, 99, 149, 0.2);
-            padding: 1.25rem 1.5rem;
-            background-color: #0f3460;
+        .modal-dialog {
+            max-width: 600px;
         }
-        
-        .modal-title {
-            color: #e6e6e6;
-            font-weight: 600;
+        .form-control, .form-select {
+            border-radius: 5px;
+            padding: 8px;
+            border: 1px solid #ccc;
         }
-        
-        .modal-body {
-            padding: 1.5rem;
-        }
-        
-        .modal-footer {
-            border-top: 1px solid rgba(99, 99, 149, 0.2);
-            padding: 1.25rem 1.5rem;
-        }
-        
-        .btn-close {
-            color: #a6a6c8;
-            background-color: transparent;
-            opacity: 0.8;
-        }
-        
-        .btn-close:hover {
-            opacity: 1;
-            color: #e6e6e6;
-        }
-        
-        /* Highlight release fields */
-        .release-highlight {
-            color: #e94560;
-            font-weight: 500;
-        }
-        
-        /* Required field */
-        .required::after {
-            content: ' *';
-            color: #e94560;
-        }
-        
-        /* Header actions area */
-        .header-actions {
+        .action-group {
             display: flex;
-            gap: 10px;
-            margin-top: 10px;
+            gap: 5px;
+            flex-wrap: wrap;
         }
-        
-        /* Countdown badges */
-        .countdown-badge {
-            display: inline-block;
-            padding: 0.25rem 0.5rem;
-            border-radius: 0.25rem;
-            font-weight: bold;
+        .countdown {
+            font-size: 0.9em;
+            color: #666;
         }
-        .countdown-badge.success {
-            background-color: rgba(56, 176, 0, 0.2);
-            color: #38b000;
+        .tooltip-inner {
+            max-width: 200px;
         }
-        .countdown-badge.warning {
-            background-color: rgba(255, 190, 11, 0.2);
-            color: #ffbe0b;
-        }
-        .countdown-badge.danger {
-            background-color: rgba(251, 86, 7, 0.2);
-            color: #fb5607;
-        }
-        
-        /* Vehicle info styling */
-        .vehicle-info {
-            line-height: 1.4;
-        }
-        
-        /* Responsive adjustments */
-        @media (max-width: 768px) {
-            .app-header {
-                padding: 0.8rem 0;
-                margin-bottom: 1.5rem;
-            }
-            
-            .app-title {
-                font-size: 1.5rem;
-            }
-            
-            .card-body {
-                padding: 1rem;
-            }
-            
-            .neo-table thead th,
-            .neo-table tbody td {
-                padding: 0.8rem;
-            }
-            
-            .stat-item {
-                margin-right: 1rem;
-            }
-            
-            .action-btn {
-                width: 36px;
-                height: 36px;
-            }
-            
-            .neo-tabs {
-                flex-direction: column;
-            }
-        }
-        
-        @media (max-width: 576px) {
-            .header-stats {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-            
-            .stat-item {
-                margin-bottom: 0.5rem;
-            }
-            
-            .action-btn {
-                width: 34px;
-                height: 34px;
-                font-size: 0.8rem;
-            }
-        }
-
-        /* New styles for enhanced functionality */
-        .dropdown-menu {
-            background-color: #1a1a2e;
-            border: 1px solid rgba(99, 99, 149, 0.2);
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-            border-radius: 10px;
-            padding: 0.5rem 0;
-        }
-
-        .dropdown-item {
-            color: #e6e6e6;
-            padding: 0.5rem 1rem;
-            font-size: 0.9rem;
-        }
-
-        .dropdown-item:hover {
-            background-color: #0f3460;
-            color: #e94560;
-        }
-
-        .dropdown-divider {
-            border-top: 1px solid rgba(99, 99, 149, 0.2);
-            margin: 0.5rem 0;
-        }
-
-        .dropdown-header {
-            color: #a6a6c8;
-            font-size: 0.75rem;
-            font-weight: 600;
-            padding: 0.5rem 1rem;
-            text-transform: uppercase;
-        }
-
-        /* Form validation styles */
-        .was-validated .form-control:invalid,
-        .form-control.is-invalid {
-            border-color: #fb5607;
-            background-image: none;
-        }
-
-        .was-validated .form-control:valid,
-        .form-control.is-valid {
-            border-color: #38b000;
-            background-image: none;
-        }
-
-        .invalid-feedback {
-            color: #fb5607;
-            font-size: 0.8rem;
-            margin-top: 0.25rem;
+        .action-group button {
+            margin-right: 5px;
         }
     </style>
 </head>
 <body>
-    <!-- App header -->
-    <header class="app-header">
-        <div class="container">
-            <div class="header-content">
-                <div class="row align-items-center">
-                    <div class="col-md-6">
-                        <h1 class="app-title">iTow Impound Manager</h1>
-                        <div class="header-actions">
-                            <button id="addVehicleBtn" class="btn btn-neo-primary btn-sm">
-                                <i class="fas fa-plus btn-icon"></i>Add Vehicle
-                            </button>
-                            <button id="batchEditBtn" class="btn btn-neo-secondary btn-sm ms-2">
-                                <i class="fas fa-edit btn-icon"></i>Batch Edit Status
-                            </button>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="d-flex justify-content-md-end mt-3 mt-md-0 header-stats">
-                            <div class="stat-item">
-                                <i class="fas fa-car stat-icon"></i>
-                                <span>Active:</span>
-                                <span class="stat-value ms-1" id="activeCount">0</span>
-                            </div>
-                            <div class="stat-item">
-                                <i class="fas fa-check-circle stat-icon"></i>
-                                <span>Completed:</span>
-                                <span class="stat-value ms-1" id="completedCount">0</span>
-                            </div>
-                            <div class="stat-item">
-                                <i class="fas fa-calendar-alt stat-icon"></i>
-                                <span class="stat-value ms-1" id="currentDate"></span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </header>
-    
     <div class="container">
-        <!-- Data import card -->
-        <div class="neo-card">
-            <div class="card-header">
-                <div>
-                    <i class="fas fa-database card-header-icon"></i>
-                    Data Import
-                </div>
-                <div>
-                    <button class="btn btn-sm btn-neo-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#dataImportCollapse" aria-expanded="true">
-                        <i class="fas fa-chevron-up"></i>
-                    </button>
-                </div>
-            </div>
-            <div class="collapse show" id="dataImportCollapse">
-                <div class="card-body">
-                    <form>
-                        <div class="row">
-                            <div class="col-md-3 mb-3">
-                                <label class="form-label">Import Type</label>
-                                <div class="form-control-plaintext">Scrape TowBook</div>
-                                <input type="hidden" id="importType" value="scrape">
-                            </div>
-                            <div class="col-md-3 mb-3" id="dateRangeGroup">
-                                <label for="dateRange" class="form-label">Date Range</label>
-                                <select id="dateRange" class="form-select">
-                                    <option value="today">Today Only</option>
-                                    <option value="custom">Custom Range</option>
-                                    <option value="all">All Available</option>
-                                </select>
-                            </div>
-                            <div class="col-md-3 mb-3" id="startDateGroup" style="display:none;">
-                                <label for="startDate" class="form-label">Start Date</label>
-                                <input type="date" id="startDate" class="form-control">
-                            </div>
-                            <div class="col-md-3 mb-3" id="endDateGroup" style="display:none;">
-                                <label for="endDate" class="form-label">End Date</label>
-                                <input type="date" id="endDate" class="form-control">
-                            </div>
-                            <div class="col-md-12">
-                                <button id="importDataBtn" type="button" class="btn btn-neo-primary">
-                                    <i class="fas fa-sync-alt btn-icon"></i>Start Scraping
-                                </button>
-                            </div>
+        <h1>iTow Impound Manager</h1>
+        <div class="card">
+            <div class="card-header">Data Import</div>
+            <div class="card-body">
+                <form>
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label>Date Range</label>
+                            <select id="dateRange" class="form-select">
+                                <option value="today">Today</option>
+                                <option value="custom">Custom</option>
+                                <option value="all">All</option>
+                            </select>
                         </div>
-                    </form>
-                </div>
+                        <div class="col-md-3 mb-3" id="startDateGroup" style="display:none;">
+                            <label>Start Date</label>
+                            <input type="date" id="startDate" class="form-control">
+                        </div>
+                        <div class="col-md-3 mb-3" id="endDateGroup" style="display:none;">
+                            <label>End Date</label>
+                            <input type="date" id="endDate" class="form-control">
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <button id="importDataBtn" type="button" class="btn btn-primary">Start Scraping</button>
+                            <button id="addVehicleBtn" type="button" class="btn btn-success">Add Vehicle</button>
+                        </div>
+                    </div>
+                </form>
             </div>
         </div>
-        
-        <!-- Status bar -->
+
         <div id="statusBar" class="status-bar">
             <div class="progress">
-                <div id="progressBar" class="progress-bar" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                <div id="progressBar" class="progress-bar" style="width: 0%"></div>
             </div>
-            <div id="statusText" class="status-text mt-2">Starting...</div>
+            <div id="statusText" class="mt-2"></div>
         </div>
-        
-        <!-- Status-Based Tabs -->
-        <div class="neo-tabs">
-            <a href="?status=New" class="neo-tab" id="newTab">
-                <i class="fas fa-car-side me-2"></i>New Arrivals
-            </a>
-            <a href="?status=TOP_Sent" class="neo-tab" id="topSentTab">
-                <i class="fas fa-file-pdf me-2"></i>TOP Generated
-            </a>
-            <a href="?status=Ready" class="neo-tab" id="readyTab">
-                <i class="fas fa-clipboard-check me-2"></i>Ready for Disposition
-            </a>
-            <a href="?status=Paperwork" class="neo-tab" id="paperworkTab">
-                <i class="fas fa-file-contract me-2"></i>Paperwork Received
-            </a>
-            <a href="?status=Action" class="neo-tab" id="actionTab">
-                <i class="fas fa-hammer me-2"></i>Ready for Action
-            </a>
-            <a href="?status=InAuction" class="neo-tab" id="inAuctionTab">
-                <i class="fas fa-gavel me-2"></i>In Auction
-            </a>
-            <a href="?status=Completed" class="neo-tab" id="completedTab">
-                <i class="fas fa-check-circle me-2"></i>Completed
-            </a>
+
+        <div class="tabs">
+            <a href="?status=New" class="tab" id="newTab">New</a>
+            <a href="?status=TOP_Sent" class="tab" id="topSentTab">TOP Sent</a>
+            <a href="?status=Ready" class="tab" id="readyTab">Ready</a>
+            <a href="?status=Scheduled" class="tab" id="scheduledTab">Scheduled</a>
+            <a href="?status=Auction" class="tab" id="auctionTab">Auction</a>
+            <a href="?status=Completed" class="tab" id="completedTab">Completed</a>
         </div>
-        
-        <!-- Vehicles Table -->
+
         <div class="table-responsive">
-            <table class="neo-table" id="vehicleTable">
-                <thead>
-                    <tr>
-                        <!-- Table headers will be dynamically generated based on status -->
-                    </tr>
-                </thead>
+            <table class="table" id="vehicleTable">
+                <thead id="vehicleTableHead"></thead>
                 <tbody id="vehicleTableBody">
-                    <tr>
-                        <td colspan="12" class="text-center">
-                            <i class="fas fa-spinner fa-spin me-2"></i>Loading vehicles...
-                        </td>
-                    </tr>
+                    <tr><td colspan="10">Loading...</td></tr>
                 </tbody>
             </table>
         </div>
     </div>
-    
-    <!-- Edit Modal -->
-    <div class="modal fade" id="editModal" tabindex="-1" role="dialog">
-        <div class="modal-dialog modal-lg" role="document">
+
+    <div class="modal fade" id="editModal" tabindex="-1">
+        <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Edit Vehicle</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" id="editModalBody"></div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-neo-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="button" class="btn btn-neo-primary" id="saveChangesBtn">Save Changes</button>
-                    <button type="button" class="btn btn-neo-accent" id="generateTopBtn">Generate TOP</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" id="saveChangesBtn">Save</button>
                 </div>
             </div>
         </div>
     </div>
-    
-    <!-- Add Vehicle Modal -->
-    <div class="modal fade" id="addVehicleModal" tabindex="-1" role="dialog">
-        <div class="modal-dialog modal-lg" role="document">
+
+    <div class="modal fade" id="addVehicleModal" tabindex="-1">
+        <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Add New Vehicle</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <h5 class="modal-title">Add Vehicle</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="addVehicleForm" novalidate>
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label required">Call # (required)</label>
-                                    <input type="text" class="form-control" id="newCallNumber" required>
-                                    <div class="invalid-feedback">Call number is required</div>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label">Complaint #</label>
-                                    <input type="text" class="form-control" id="newComplaintNumber">
-                                </div>
-                            </div>
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label">Jurisdiction</label>
-                                    <input type="text" class="form-control" id="newJurisdiction">
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label required">Tow Date (required)</label>
-                                    <input type="date" class="form-control" id="newTowDate" required>
-                                    <div class="invalid-feedback">Tow date is required</div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label">Tow Time</label>
-                                    <input type="time" class="form-control" id="newTowTime">
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label">Location</label>
-                                    <input type="text" class="form-control" id="newLocation">
-                                </div>
-                            </div>
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label">VIN</label>
-                                    <input type="text" class="form-control" id="newVin">
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label">Year</label>
-                                    <input type="text" class="form-control" id="newYear">
-                                </div>
-                            </div>
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label">Make</label>
-                                    <input type="text" class="form-control" id="newMake">
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label">Model</label>
-                                    <input type="text" class="form-control" id="newModel">
-                                </div>
-                            </div>
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label">Color</label>
-                                    <input type="text" class="form-control" id="newColor">
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label">Plate</label>
-                                    <input type="text" class="form-control" id="newPlate">
-                                </div>
-                            </div>
-                        </div>
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label">Status</label>
-                                    <select class="form-select" id="newStatus">
-                                        <option value="New">New</option>
-                                        <option value="TOP_Sent">TOP Generated</option>
-                                        <option value="Ready">Ready for Disposition</option>
-                                        <option value="Paperwork">Paperwork Received</option>
-                                        <option value="Action">Ready for Action</option>
-                                        <option value="InAuction">In Auction</option>
-                                        <option value="Completed">Completed</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label">Owner Known</label>
-                                    <select class="form-select" id="newOwnerKnown">
-                                        <option value="Yes">Yes</option>
-                                        <option value="No">No</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
+                    <form id="addVehicleForm">
+                        <div class="mb-3"><input type="text" class="form-control" id="newCallNumber" placeholder="Call #"></div>
+                        <div class="mb-3"><input type="text" class="form-control" id="newComplaintNumber" placeholder="Complaint #"></div>
+                        <div class="mb-3"><input type="text" class="form-control" id="newJurisdiction" placeholder="Jurisdiction"></div>
+                        <div class="mb-3"><input type="date" class="form-control" id="newTowDate" placeholder="Tow Date"></div>
+                        <div class="mb-3"><input type="time" class="form-control" id="newTowTime" placeholder="Tow Time"></div>
+                        <div class="mb-3"><input type="text" class="form-control" id="newLocation" placeholder="Location"></div>
+                        <div class="mb-3"><input type="text" class="form-control" id="newVin" placeholder="VIN"></div>
+                        <div class="mb-3"><input type="text" class="form-control" id="newYear" placeholder="Year"></div>
+                        <div class="mb-3"><input type="text" class="form-control" id="newMake" placeholder="Make"></div>
+                        <div class="mb-3"><input type="text" class="form-control" id="newModel" placeholder="Model"></div>
+                        <div class="mb-3"><input type="text" class="form-control" id="newColor" placeholder="Color"></div>
+                        <div class="mb-3"><input type="text" class="form-control" id="newPlate" placeholder="Plate"></div>
                     </form>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-neo-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-neo-primary" id="saveNewVehicleBtn">Save Vehicle</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="saveNewVehicleBtn">Save</button>
                 </div>
             </div>
         </div>
     </div>
-    
-    <!-- Status Editor Modal -->
-    <div class="modal fade" id="statusEditorModal" tabindex="-1" role="dialog">
-        <div class="modal-dialog modal-lg" role="document">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Batch Edit Vehicle Status</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="selectAllVehicles">
-                            <label class="form-check-label" for="selectAllVehicles">
-                                Select All Vehicles
-                            </label>
-                        </div>
-                        <div class="vehicle-list mt-3" style="max-height: 300px; overflow-y: auto;">
-                            <!-- Vehicles will be listed here -->
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <label for="newStatusSelect" class="form-label">New Status</label>
-                        <select class="form-select" id="newStatusSelect">
-                            <option value="New">New</option>
-                            <option value="TOP Generated">TOP Generated</option>
-                            <option value="Ready for Disposition">Ready for Disposition</option>
-                            <option value="Paperwork Received">Paperwork Received</option>
-                            <option value="Ready for Auction">Ready for Auction</option>
-                            <option value="Ready for Scrap">Ready for Scrap</option>
-                            <option value="In Auction">In Auction</option>
-                            <option value="Released">Released</option>
-                            <option value="Auctioned">Auctioned</option>
-                            <option value="Scrapped">Scrapped</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-neo-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-neo-primary" id="updateStatusesBtn">Update Statuses</button>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Release Modal -->
-    <div class="modal fade" id="releaseModal" tabindex="-1" role="dialog">
-        <div class="modal-dialog" role="document">
+
+    <div class="modal fade" id="releaseModal" tabindex="-1">
+        <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Release Vehicle</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="releaseForm" novalidate>
+                    <form id="releaseForm">
                         <div class="mb-3">
-                            <label for="releaseReason" class="form-label required">Release Reason</label>
-                            <select class="form-select" id="releaseReason" required>
-                                <option value="">Select a reason</option>
+                            <label>Release Reason</label>
+                            <select class="form-select" id="releaseReason">
+                                <option value="">Select...</option>
                                 <option value="Released to Owner">Released to Owner</option>
                                 <option value="Scrapped">Scrapped</option>
                                 <option value="Auctioned">Auctioned</option>
-                                <option value="Police Release">Police Release</option>
-                                <option value="Insurance Company">Insurance Company</option>
                                 <option value="Other">Other</option>
                             </select>
-                            <div class="invalid-feedback">Please select a release reason</div>
                         </div>
                         <div class="mb-3" id="otherReasonGroup" style="display:none;">
-                            <label for="otherReason" class="form-label required">Specify Other Reason</label>
-                            <input type="text" class="form-control" id="otherReason">
-                            <div class="invalid-feedback">Please specify the other reason</div>
+                            <input type="text" class="form-control" id="otherReason" placeholder="Specify Reason">
                         </div>
-                        <div class="mb-3">
-                            <label for="recipient" class="form-label">Released To</label>
-                            <input type="text" class="form-control" id="recipient" placeholder="Name of person or entity">
-                        </div>
-                        <div class="mb-3">
-                            <label for="releaseDate" class="form-label">Release Date</label>
-                            <input type="date" class="form-control" id="releaseDate">
-                        </div>
-                        <div class="mb-3">
-                            <label for="releaseTime" class="form-label">Release Time</label>
-                            <input type="time" class="form-control" id="releaseTime">
-                        </div>
+                        <div class="mb-3"><input type="text" class="form-control" id="recipient" placeholder="Released To"></div>
+                        <div class="mb-3"><input type="date" class="form-control" id="releaseDate"></div>
+                        <div class="mb-3"><input type="time" class="form-control" id="releaseTime"></div>
                     </form>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-neo-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-neo-primary" id="markReleasedBtn">Mark as Released</button>
-                    <button type="button" class="btn btn-neo-accent" id="generateReleaseBtn">Generate Release Notice</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="markReleasedBtn">Mark Released</button>
+                    <button type="button" class="btn btn-success" id="generateReleaseBtn">Generate Release</button>
                 </div>
             </div>
         </div>
     </div>
-    
-    <!-- Vehicle Logs Modal -->
-    <div class="modal fade" id="logsModal" tabindex="-1" role="dialog">
-        <div class="modal-dialog modal-lg" role="document">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Vehicle Activity Log</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="table-responsive">
-                        <table class="neo-table" id="logsTable">
-                            <thead>
-                                <tr>
-                                    <th>Date/Time</th>
-                                    <th>Action</th>
-                                    <th>Details</th>
-                                </tr>
-                            </thead>
-                            <tbody id="logsTableBody"></tbody>
-                        </table>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-neo-secondary" data-bs-dismiss="modal">Close</button>
-                </div>
-            </div>
-        </div>
-    </div>
-    
+
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let currentCallNumber = null;
-        let scrapingInterval = null;
-        let currentSortColumn = null;
-        let currentSortDirection = 'asc';
-        
+
         $(document).ready(function() {
-            // Set current date
-            const today = new Date();
-            const options = { year: 'numeric', month: 'short', day: 'numeric' };
-            $('#currentDate').text(today.toLocaleDateString('en-US', options));
-            
-            // Initialize date inputs with today's date
-            const todayIso = today.toISOString().split('T')[0];
-            $('#startDate').val(todayIso);
-            $('#endDate').val(todayIso);
-            $('#releaseDate').val(todayIso);
-            $('#newTowDate').val(todayIso);
-            
-            // Initialize time with current time
-            const currentTime = new Date().toTimeString().slice(0, 5);
-            $('#releaseTime').val(currentTime);
-            $('#newTowTime').val(currentTime);
-            
-            // Toggle date inputs based on date range selection
+            const today = new Date().toISOString().split('T')[0];
+            $('#startDate, #endDate, #releaseDate, #newTowDate').val(today);
+            $('#releaseTime, #newTowTime').val(new Date().toTimeString().slice(0, 5));
+
             $('#dateRange').change(function() {
-                const selectedOption = $(this).val();
-                if (selectedOption === 'custom') {
-                    $('#startDateGroup, #endDateGroup').show();
-                } else {
-                    $('#startDateGroup, #endDateGroup').hide();
-                }
-            });
-            
-            // Always show date range options for scraping
-            $('#dateRangeGroup').show();
-            
-            // Set active tab based on URL
-            setActiveTabByStatus();
-            
-            // Load sort settings from localStorage if available
-            loadSortSettings();
-            
-            // Initialize table sorting
-            initTableSorting();
-            
-            // Load vehicles data
-            loadVehicles();
-            
-            // Start Scraping Button
-            $('#importDataBtn').click(function() {
-                // Handle TowBook scraping
-                const dateRange = $('#dateRange').val();
-                
-                if (dateRange === 'custom') {
-                    const startDate = $('#startDate').val();
-                    const endDate = $('#endDate').val();
-                    
-                    if (!startDate || !endDate) {
-                        showNotification('Please select both start and end dates', 'warning');
-                        return;
-                    }
-                    
-                    // Validate date range
-                    if (new Date(startDate) > new Date(endDate)) {
-                        showNotification('Start date cannot be after end date', 'warning');
-                        return;
-                    }
-                } else {
-                    // For non-custom date ranges, set the date fields
-                    if (dateRange === 'today') {
-                        const today = new Date().toISOString().split('T')[0];
-                        $('#startDate').val(today);
-                        $('#endDate').val(today);
-                    } else if (dateRange === 'all') {
-                        // Set a reasonable default range (last 30 days)
-                        const today = new Date();
-                        const thirtyDaysAgo = new Date();
-                        thirtyDaysAgo.setDate(today.getDate() - 30);
-                        
-                        $('#startDate').val(thirtyDaysAgo.toISOString().split('T')[0]);
-                        $('#endDate').val(today.toISOString().split('T')[0]);
-                    }
-                }
-                
-                // Call the scraping function
-                startScraping();
+                $('#startDateGroup, #endDateGroup').toggle($(this).val() === 'custom');
             });
 
-            // Add Vehicle button click handler
+            setActiveTab();
+            loadVehicles();
+
+            $('[data-bs-toggle="tooltip"]').tooltip();
+
+            $('#importDataBtn').click(function() {
+                const dateRange = $('#dateRange').val();
+                let startDate = $('#startDate').val();
+                let endDate = $('#endDate').val();
+                if (dateRange === 'today') {
+                    startDate = endDate = today;
+                } else if (dateRange === 'all') {
+                    startDate = '2023-01-01';
+                    endDate = today;
+                }
+                $.ajax({
+                    url: '/api/start-scraping',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ start_date: startDate, end_date: endDate }),
+                    success: function() {
+                        $('#statusBar').show();
+                        const interval = setInterval(() => {
+                            $.get('/scraping-progress', function(data) {
+                                $('#progressBar').css('width', data.progress.percentage + '%').text(data.progress.percentage + '%');
+                                $('#statusText').text(data.progress.processed + ' / ' + data.progress.total);
+                                if (!data.progress.is_running) {
+                                    clearInterval(interval);
+                                    $('#statusBar').hide();
+                                    loadVehicles();
+                                }
+                            });
+                        }, 1000);
+                    }
+                });
+            });
+
             $('#addVehicleBtn').click(function() {
                 $('#addVehicleForm')[0].reset();
-                
-                // Set today's date and current time
-                $('#newTowDate').val(todayIso);
-                $('#newTowTime').val(currentTime);
-                
-                // Show the modal
-                var addVehicleModal = new bootstrap.Modal(document.getElementById('addVehicleModal'));
-                addVehicleModal.show();
+                $('#newTowDate').val(today);
+                $('#newTowTime').val(new Date().toTimeString().slice(0, 5));
+                new bootstrap.Modal(document.getElementById('addVehicleModal')).show();
             });
-            
-            // Save New Vehicle
+
             $('#saveNewVehicleBtn').click(function() {
-                // Validate required fields
-                const callNumber = $('#newCallNumber').val();
-                const towDate = $('#newTowDate').val();
-                
-                if (!callNumber || !towDate) {
-                    showNotification('Call # and Tow Date are required fields', 'warning');
-                    return;
-                }
-                
-                // Show loading state
-                $(this).html('<i class="fas fa-spinner fa-spin"></i> Saving...');
-                const saveBtn = $(this);
-                
-                // Collect data from form
-                const vehicleData = {
-                    towbook_call_number: callNumber,
+                const data = {
+                    towbook_call_number: $('#newCallNumber').val(),
                     complaint_number: $('#newComplaintNumber').val(),
                     jurisdiction: $('#newJurisdiction').val(),
-                    tow_date: towDate,
+                    tow_date: $('#newTowDate').val(),
                     tow_time: $('#newTowTime').val(),
                     location: $('#newLocation').val(),
                     vin: $('#newVin').val(),
@@ -1289,1426 +341,270 @@
                     make: $('#newMake').val(),
                     model: $('#newModel').val(),
                     color: $('#newColor').val(),
-                    plate: $('#newPlate').val(),
-                    status: $('#newStatus').val(),
-                    owner_known: $('#newOwnerKnown').val()
+                    plate: $('#newPlate').val()
                 };
-                
-                // Submit data to API
                 $.ajax({
                     url: '/api/vehicles/add',
                     type: 'POST',
                     contentType: 'application/json',
-                    data: JSON.stringify(vehicleData),
-                    success: function(response) {
-                        // Reset button text
-                        saveBtn.html('Save Vehicle');
-                        
-                        // Close modal and show notification
-                        var addVehicleModal = bootstrap.Modal.getInstance(document.getElementById('addVehicleModal'));
-                        addVehicleModal.hide();
-                        
-                        showNotification('Vehicle added successfully', 'success');
-                        loadVehicles(); // Reload table
+                    data: JSON.stringify(data),
+                    success: function() {
+                        bootstrap.Modal.getInstance(document.getElementById('addVehicleModal')).hide();
+                        alert('Vehicle added');
+                        loadVehicles();
                     },
                     error: function(xhr) {
-                        // Reset button text
-                        saveBtn.html('Save Vehicle');
-                        
-                        showNotification('Error adding vehicle: ' + (xhr.responseJSON?.message || 'Unknown error'), 'error');
+                        alert('Error: ' + (xhr.responseJSON?.message || 'Unknown error'));
                     }
                 });
             });
 
-            // Save Changes in Edit Modal
             $('#saveChangesBtn').click(function() {
                 const updatedData = {};
                 $('#editModalBody input, #editModalBody select').each(function() {
-                    const field = $(this).data('field');
-                    if (field) {
-                        updatedData[field] = $(this).val();
-                    }
+                    updatedData[$(this).attr('data-field')] = $(this).val();
                 });
-
-                // Show loading indicator
-                $(this).html('<i class="fas fa-spinner fa-spin"></i> Saving...');
-                const saveBtn = $(this);
-
                 $.ajax({
                     url: `/api/vehicles/${currentCallNumber}`,
                     type: 'PUT',
                     contentType: 'application/json',
                     data: JSON.stringify(updatedData),
-                    success: function(response) {
-                        // Reset button text
-                        saveBtn.html('Save Changes');
-                        
-                        if (response.status === 'success') {
-                            // Close modal
-                            var editModal = bootstrap.Modal.getInstance(document.getElementById('editModal'));
-                            editModal.hide();
-                            
-                            showNotification('Vehicle updated successfully', 'success');
-                            loadVehicles(); // Reload to ensure proper display of all changes
-                        } else {
-                            showNotification(response.message || 'Unknown error', 'warning');
-                        }
+                    success: function() {
+                        bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+                        alert('Vehicle updated');
+                        loadVehicles();
                     },
                     error: function(xhr) {
-                        // Reset button text
-                        saveBtn.html('Save Changes');
-                        
-                        console.error('Error updating vehicle:', xhr);
-                        showNotification('Error updating vehicle: ' + (xhr.responseJSON?.message || 'Unknown error'), 'error');
+                        alert('Error: ' + (xhr.responseJSON?.message || 'Unknown error'));
                     }
                 });
             });
 
-            // Generate TOP for a single vehicle
-            $('#generateTopBtn').click(function() {
-                // Show loading state
-                $(this).html('<i class="fas fa-spinner fa-spin"></i> Generating...');
-                const generateBtn = $(this);
-                
-                generateTop(currentCallNumber, function() {
-                    // Reset button text
-                    generateBtn.html('Generate TOP');
-                    
-                    // Close modal
-                    var editModal = bootstrap.Modal.getInstance(document.getElementById('editModal'));
-                    editModal.hide();
-                });
-            });
-
-            // Toggle other reason field
             $('#releaseReason').change(function() {
-                if ($(this).val() === 'Other') {
-                    $('#otherReasonGroup').show();
-                } else {
-                    $('#otherReasonGroup').hide();
-                }
+                $('#otherReasonGroup').toggle($(this).val() === 'Other');
             });
 
-            // Mark vehicle as released
             $('#markReleasedBtn').click(function() {
                 const reason = $('#releaseReason').val() === 'Other' ? $('#otherReason').val() : $('#releaseReason').val();
-                if (!reason) {
-                    showNotification('Please select or enter a release reason', 'warning');
-                    return;
-                }
-
-                // Show loading state
-                $(this).html('<i class="fas fa-spinner fa-spin"></i> Processing...');
-                const releaseBtn = $(this);
-                
-                // Use selected date or default to today
-                const releaseDate = $('#releaseDate').val() || new Date().toISOString().split('T')[0];
-                const releaseTime = $('#releaseTime').val() || new Date().toTimeString().slice(0, 5);
-
                 const data = {
-                    release_reason: reason,
+                    release_reason: reason || 'Not specified',
                     recipient: $('#recipient').val(),
-                    release_date: releaseDate,
-                    release_time: releaseTime,
-                    archived: 1 // Mark as archived to move to completed tab
+                    release_date: $('#releaseDate').val(),
+                    release_time: $('#releaseTime').val()
                 };
-
                 $.ajax({
                     url: `/api/mark-released/${currentCallNumber}`,
                     type: 'POST',
                     contentType: 'application/json',
                     data: JSON.stringify(data),
                     success: function() {
-                        // Reset button text
-                        releaseBtn.html('Mark as Released');
-                        
-                        // Close modal
-                        var releaseModal = bootstrap.Modal.getInstance(document.getElementById('releaseModal'));
-                        releaseModal.hide();
-                        
-                        showNotification('Vehicle marked as released', 'success');
+                        bootstrap.Modal.getInstance(document.getElementById('releaseModal')).hide();
+                        alert('Vehicle released');
                         loadVehicles();
-                    },
-                    error: function(xhr) {
-                        // Reset button text
-                        releaseBtn.html('Mark as Released');
-                        
-                        showNotification('Error releasing vehicle: ' + (xhr.responseJSON?.message || 'Unknown error'), 'error');
                     }
                 });
             });
 
-            // Generate release notice
             $('#generateReleaseBtn').click(function() {
                 const reason = $('#releaseReason').val() === 'Other' ? $('#otherReason').val() : $('#releaseReason').val();
-                if (!reason) {
-                    showNotification('Please select or enter a release reason', 'warning');
-                    return;
-                }
-
-                // Show loading state
-                $(this).html('<i class="fas fa-spinner fa-spin"></i> Generating...');
-                const generateBtn = $(this);
-                
-                // Use selected date or default to today
-                const releaseDate = $('#releaseDate').val() || new Date().toISOString().split('T')[0];
-                const releaseTime = $('#releaseTime').val() || new Date().toTimeString().slice(0, 5);
-
                 const data = {
-                    release_reason: reason,
+                    release_reason: reason || 'Not specified',
                     recipient: $('#recipient').val(),
-                    release_date: releaseDate,
-                    release_time: releaseTime
+                    release_date: $('#releaseDate').val(),
+                    release_time: $('#releaseTime').val()
                 };
-
                 $.ajax({
                     url: `/api/generate-release/${currentCallNumber}`,
                     type: 'POST',
                     contentType: 'application/json',
                     data: JSON.stringify(data),
-                    xhrFields: {
-                        responseType: 'blob'
-                    },
+                    xhrFields: { responseType: 'blob' },
                     success: function(data) {
-                        // Reset button text
-                        generateBtn.html('Generate Release Notice');
-                        
                         const url = window.URL.createObjectURL(new Blob([data]));
                         const link = document.createElement('a');
                         link.href = url;
-                        link.setAttribute('download', `Release_${currentCallNumber}.pdf`);
-                        document.body.appendChild(link);
+                        link.download = `Release_${currentCallNumber}.pdf`;
                         link.click();
-                        link.remove();
-                        
-                        // Close modal
-                        var releaseModal = bootstrap.Modal.getInstance(document.getElementById('releaseModal'));
-                        releaseModal.hide();
-                        
-                        showNotification('Release notice generated', 'success');
+                        bootstrap.Modal.getInstance(document.getElementById('releaseModal')).hide();
                         loadVehicles();
-                    },
-                    error: function(xhr) {
-                        // Reset button text
-                        generateBtn.html('Generate Release Notice');
-                        
-                        showNotification('Error generating release notice: ' + (xhr.responseJSON?.message || 'Unknown error'), 'error');
                     }
                 });
             });
-            
-            // Bootstrap 5 modal event handlers
-            const editModal = document.getElementById('editModal');
-            if (editModal) {
-                editModal.addEventListener('hidden.bs.modal', function() {
-                    // Reset form data when modal is closed
-                    $('#editModalBody').empty();
-                });
-            }
-            
-            const releaseModal = document.getElementById('releaseModal');
-            if (releaseModal) {
-                releaseModal.addEventListener('hidden.bs.modal', function() {
-                    // Reset form data when modal is closed
-                    $('#releaseForm')[0].reset();
-                    $('#otherReasonGroup').hide();
-                });
-                
-                releaseModal.addEventListener('show.bs.modal', function() {
-                    // Set today's date and current time as default
-                    $('#releaseDate').val(new Date().toISOString().split('T')[0]);
-                    $('#releaseTime').val(new Date().toTimeString().slice(0, 5));
-                });
-            }
         });
-        
-        // Set active tab based on status parameter
-        function setActiveTabByStatus() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const status = urlParams.get('status') || 'New';
-            
-            // Clear previous active classes
-            $('.neo-tab').removeClass('active');
-            
-            // Set active tab
-            switch(status) {
-                case 'New':
-                    $('#newTab').addClass('active');
-                    break;
-                case 'TOP_Sent':
-                    $('#topSentTab').addClass('active');
-                    break;
-                case 'Ready':
-                    $('#readyTab').addClass('active');
-                    break;
-                case 'Paperwork':
-                    $('#paperworkTab').addClass('active');
-                    break;
-                case 'Action':
-                    $('#actionTab').addClass('active');
-                    break;
-                case 'InAuction':
-                    $('#inAuctionTab').addClass('active');
-                    break;
-                case 'Completed':
-                    $('#completedTab').addClass('active');
-                    break;
-                default:
-                    $('#newTab').addClass('active');
-            }
+
+        function setActiveTab() {
+            const status = new URLSearchParams(window.location.search).get('status') || 'New';
+            $('.tab').removeClass('active').filter(`[href="?status=${status}"]`).addClass('active');
         }
-        
-        // Load sort settings from localStorage
-        function loadSortSettings() {
-            const sortSettings = localStorage.getItem('vehicleTableSort');
-            if (sortSettings) {
-                const settings = JSON.parse(sortSettings);
-                currentSortColumn = settings.column;
-                currentSortDirection = settings.direction;
-            }
-        }
-        
-        // Save sort settings to localStorage
-        function saveSortSettings() {
-            if (currentSortColumn) {
-                const settings = {
-                    column: currentSortColumn,
-                    direction: currentSortDirection
+
+        function loadVehicles() {
+            const status = new URLSearchParams(window.location.search).get('status') || 'New';
+            $.get(`/api/vehicles?status_type=${status}`, function(data) {
+                const thead = $('#vehicleTableHead').empty();
+                const tbody = $('#vehicleTableBody').empty();
+                const headers = [
+                    { id: 'towbook_call_number', name: 'Call #' },
+                    { id: 'complaint_number', name: 'Complaint #' },
+                    { id: 'tow_date', name: 'Tow Date' },
+                    { id: 'vehicle_info', name: 'Vehicle Info' }
+                ];
+                const statusHeaders = {
+                    'New': [{ id: 'generate_top', name: 'Action' }],
+                    'TOP_Sent': [{ id: 'days_until_next_step', name: 'Days Until Ready' }],
+                    'Ready': [{ id: 'schedule', name: 'Action' }],
+                    'Scheduled': [{ id: 'decision', name: 'Decision' }],
+                    'Auction': [{ id: 'auction_date', name: 'Auction Date' }],
+                    'Completed': [{ id: 'release_reason', name: 'Release Type' }, { id: 'release_date', name: 'Release Date' }]
                 };
-                localStorage.setItem('vehicleTableSort', JSON.stringify(settings));
-            }
-        }
-        
-        // Initialize table sorting
-        function initTableSorting() {
-            $(document).on('click', 'th.sortable', function() {
-                const column = $(this).data('sort');
-                
-                // Toggle sort direction or set to asc if it's a new column
-                if (column === currentSortColumn) {
-                    currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
-                } else {
-                    currentSortColumn = column;
-                    currentSortDirection = 'asc';
-                }
-                
-                // Remove sort classes from all headers
-                $('th.sortable').removeClass('sort-asc sort-desc');
-                
-                // Add sort class to current header
-                $(this).addClass(currentSortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
-                
-                // Save sort settings
-                saveSortSettings();
-                
-                // Reload the table with sorting parameters
-                loadVehicles(currentSortColumn, currentSortDirection);
-            });
-            
-            // Apply initial sort settings if available
-            if (currentSortColumn) {
-                const th = $(`th.sortable[data-sort="${currentSortColumn}"]`);
-                if (th.length) {
-                    th.addClass(currentSortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
-                }
-            }
-        }
-        
-        function startScraping() {
-            // Show button loading state
-            $('#importDataBtn').html('<i class="fas fa-spinner fa-spin"></i> Starting...');
-            
-            $.ajax({
-                url: '/api/start-scraping',
-                type: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify({
-                    start_date: $('#startDate').val(),
-                    end_date: $('#endDate').val()
-                }),
-                success: function(response) {
-                    // Reset button text
-                    $('#importDataBtn').html('<i class="fas fa-sync-alt btn-icon"></i>Start Scraping');
-                    
-                    if (response.status === 'started') {
-                        $('#statusBar').show();
-                        scrapingInterval = setInterval(checkScrapingProgress, 1000);
-                    } else {
-                        showNotification('Scraping is already running', 'warning');
-                    }
-                },
-                error: function(xhr) {
-                    // Reset button text
-                    $('#importDataBtn').html('<i class="fas fa-sync-alt btn-icon"></i>Start Scraping');
-                    
-                    console.error('Scraping error:', xhr);
-                    showNotification('Error starting scraping: ' + (xhr.responseJSON?.message || 'Unknown error'), 'error');
-                }
-            });
-        }
+                headers.push(...(statusHeaders[status] || []), { id: 'actions', name: 'Actions' });
+                thead.append('<tr>' + headers.map(h => `<th data-sort="${h.id}">${h.name}</th>`).join('') + '</tr>');
 
-        function checkScrapingProgress() {
-            $.get('/scraping-progress', function(data) {
-                if (data.status === 'success') {
-                    const progress = data.progress;
-                    $('#progressBar').css('width', progress.percentage + '%').text(progress.percentage + '%');
-                    $('#statusText').text(progress.status);
-                    if (!progress.is_running) {
-                        clearInterval(scrapingInterval);
-                        $('#statusBar').hide();
-                        if (progress.error) {
-                            showNotification('Scraping failed: ' + progress.error, 'error');
-                        } else {
-                            showNotification('Scraping completed successfully', 'success');
-                        }
-                        loadVehicles();
-                    }
-                }
-            });
-        }
-
-        // Modified loadVehicles function to render status-specific columns
-        function loadVehicles(sortColumn = null, sortDirection = 'asc') {
-            const urlParams = new URLSearchParams(window.location.search);
-            const statusFilter = urlParams.get('status') || 'New';
-            let url = `/api/vehicles?status_type=${statusFilter}`;
-            
-            // Use saved sort settings if no parameters provided
-            if (!sortColumn && currentSortColumn) {
-                sortColumn = currentSortColumn;
-                sortDirection = currentSortDirection;
-            }
-            
-            // Add sorting parameters if specified
-            if (sortColumn) {
-                url += `&sort=${sortColumn}&direction=${sortDirection}`;
-            }
-            
-            // Show loading indicator
-            $('#vehicleTableBody').html('<tr><td colspan="12" class="text-center"><i class="fas fa-spinner fa-spin me-2"></i>Loading vehicles...</td></tr>');
-            
-            $.get(url, function(data) {
-                const tbody = $('#vehicleTableBody');
-                tbody.empty();
-                
-                // Update status counts
-                updateStatusCounts(data);
-                
-                // Get table headers based on status
-                updateTableHeaders(statusFilter);
-                
-                if (data.length === 0) {
-                    const colCount = $('#vehicleTable thead th').length || 12;
-                    tbody.html(`<tr><td colspan="${colCount}" class="text-center">No vehicles found in this category</td></tr>`);
+                if (!data.length) {
+                    tbody.append('<tr><td colspan="' + headers.length + '">No vehicles</td></tr>');
                     return;
                 }
-                
-                // Render each vehicle row
+
                 data.forEach(vehicle => {
-                    const row = createVehicleRow(vehicle, statusFilter);
+                    const row = $('<tr>').attr('data-call-number', vehicle.towbook_call_number);
+                    row.append(`<td>${vehicle.towbook_call_number || 'N/A'}</td>`);
+                    row.append(`<td>${vehicle.complaint_number || 'N/A'}</td>`);
+                    row.append(`<td>${vehicle.tow_date || 'N/A'}</td>`);
+                    row.append(`<td>${[vehicle.year, vehicle.make, vehicle.model, vehicle.color].filter(Boolean).join(' ')}<br>VIN: ${vehicle.vin || 'N/A'}</td>`);
+
+                    if (status === 'New') {
+                        row.append('<td><button class="btn btn-primary generate-top-btn">Generate TOP</button></td>');
+                    } else if (status === 'TOP_Sent') {
+                        row.append(`<td>${vehicle.days_until_next_step || 0} days</td>`);
+                    } else if (status === 'Ready') {
+                        row.append('<td><button class="btn btn-primary schedule-btn">Schedule Release</button></td>');
+                    } else if (status === 'Scheduled') {
+                        row.append('<td><div class="action-group"><button class="btn btn-success auction-btn">Auction</button><button class="btn btn-danger scrap-btn">Scrap</button></div></td>');
+                    } else if (status === 'Auction') {
+                        row.append(`<td>${vehicle.auction_date || 'N/A'}</td>`);
+                    } else if (status === 'Completed') {
+                        row.append(`<td>${vehicle.release_reason || 'N/A'}</td>`);
+                        row.append(`<td>${vehicle.release_date || 'N/A'}</td>`);
+                    }
+
+                    row.append(`
+                        <td class="action-group">
+                            <button class="btn btn-primary edit-btn" data-bs-toggle="tooltip" title="Edit vehicle details">Edit</button>
+                            <button class="btn btn-danger release-btn" data-bs-toggle="tooltip" title="Release vehicle manually">Release</button>
+                        </td>
+                    `);
                     tbody.append(row);
                 });
 
-                // Attach event handlers
-                attachEventHandlers();
-            }).fail(function(xhr) {
-                console.error('Error loading vehicles:', xhr);
-                $('#vehicleTableBody').html('<tr><td colspan="12" class="text-center">Error loading vehicles. Please try again.</td></tr>');
-            });
-        }
-        
-        // Update table headers based on current status view
-        function updateTableHeaders(statusFilter) {
-            const thead = $('#vehicleTable thead tr');
-            thead.empty();
-            
-            // Common columns for all views
-            const commonColumns = [
-                { id: 'towbook_call_number', name: 'Call #', sortable: true },
-                { id: 'complaint_number', name: 'Complaint #', sortable: true },
-                { id: 'jurisdiction', name: 'Jurisdiction', sortable: true },
-                { id: 'tow_date', name: 'Tow Date', sortable: true },
-                { id: 'vehicle_info', name: 'Vehicle Info', sortable: false }
-            ];
-            
-            // Status-specific columns
-            let statusColumns = [];
-            
-            switch(statusFilter) {
-                case 'New':
-                    statusColumns = [
-                        { id: 'days_since_tow', name: 'Days Since Tow', sortable: true },
-                        { id: 'top_action', name: 'TOP Action', sortable: false }
-                    ];
-                    break;
-                    
-                case 'TOP_Sent':
-                    statusColumns = [
-                        { id: 'top_form_sent_date', name: 'TOP Sent Date', sortable: true },
-                        { id: 'days_since_tow', name: 'Days Since Tow', sortable: true },
-                        { id: 'days_until_next_step', name: 'Days Until Ready', sortable: true }
-                    ];
-                    break;
-                    
-                case 'Ready':
-                    statusColumns = [
-                        { id: 'tr52_available_date', name: 'TR-52 Available', sortable: true },
-                        { id: 'paperwork_action', name: 'Paperwork Action', sortable: false }
-                    ];
-                    break;
-                    
-                case 'Paperwork':
-                    statusColumns = [
-                        { id: 'decision_action', name: 'Decision', sortable: false }
-                    ];
-                    break;
-                    
-                case 'Action':
-                    statusColumns = [
-                        { id: 'action_type', name: 'Action Type', sortable: true },
-                        { id: 'estimated_date', name: 'Estimated Date', sortable: true }
-                    ];
-                    break;
-                    
-                case 'InAuction':
-                    statusColumns = [
-                        { id: 'auction_date', name: 'Auction Date', sortable: true },
-                        { id: 'days_until_auction', name: 'Days Until Auction', sortable: true }
-                    ];
-                    break;
-                    
-                case 'Completed':
-                    statusColumns = [
-                        { id: 'release_reason', name: 'Release Type', sortable: true },
-                        { id: 'release_date', name: 'Release Date', sortable: true }
-                    ];
-                    break;
-            }
-            
-            // Actions column for all views
-            const actionsColumn = { id: 'actions', name: 'Actions', sortable: false };
-            
-            // Combine and render all columns
-            const allColumns = [...commonColumns, ...statusColumns, actionsColumn];
-            
-            allColumns.forEach(column => {
-                if (column.sortable) {
-                    thead.append(`
-                        <th class="sortable" data-sort="${column.id}">
-                            ${column.name} <span class="sort-icon"></span>
-                        </th>
-                    `);
-                } else {
-                    thead.append(`<th>${column.name}</th>`);
-                }
-            });
-        }
-        
-        // Create a vehicle row based on status
-        function createVehicleRow(vehicle, statusFilter) {
-            // Common cell data
-            const callNumberCell = `<td data-field="towbook_call_number" class="editable">${vehicle.towbook_call_number || 'N/A'}</td>`;
-            const complaintNumberCell = `<td data-field="complaint_number" class="editable">${vehicle.complaint_number || 'N/A'}</td>`;
-            const jurisdictionCell = `<td data-field="jurisdiction" class="editable">${vehicle.jurisdiction || 'N/A'}</td>`;
-            const towDateCell = `<td data-field="tow_date">${vehicle.tow_date || 'N/A'}</td>`;
-            
-            // Vehicle info cell combines multiple fields
-            const vehicleInfoCell = `
-                <td class="vehicle-info">
-                    ${vehicle.year || ''} ${vehicle.make || ''} ${vehicle.model || ''} ${vehicle.color || ''}<br>
-                    VIN: ${vehicle.vin || 'N/A'} | Plate: ${vehicle.plate || 'N/A'}
-                </td>
-            `;
-            
-            // Status-specific cells
-            let statusCells = '';
-            
-            switch(statusFilter) {
-                case 'New':
-                    statusCells = `
-                        <td data-field="days_since_tow">${vehicle.days_since_tow || '0'} days</td>
-                        <td>
-                            <button class="btn btn-sm btn-neo-primary generate-top-btn">
-                                <i class="fas fa-file-pdf me-1"></i>Generate TOP
-                            </button>
-                        </td>
-                    `;
-                    break;
-                    
-                case 'TOP_Sent':
-                    statusCells = `
-                        <td data-field="top_form_sent_date">${formatDate(vehicle.top_form_sent_date) || 'N/A'}</td>
-                        <td data-field="days_since_tow">${vehicle.days_since_tow || '0'} days</td>
-                        <td data-field="days_until_next_step">
-                            <span class="countdown-badge ${getDaysClass(vehicle.days_until_next_step || 0)}">
-                                ${vehicle.days_until_next_step || '0'} days
-                            </span>
-                        </td>
-                    `;
-                    break;
-                    
-                case 'Ready':
-                    statusCells = `
-                        <td data-field="tr52_available_date">${formatDate(vehicle.tr52_available_date) || 'N/A'}</td>
-                        <td>
-                            <button class="btn btn-sm btn-neo-primary paperwork-received-btn">
-                                <i class="fas fa-file-contract me-1"></i>Paperwork Received
-                            </button>
-                        </td>
-                    `;
-                    break;
-                    
-                case 'Paperwork':
-                    statusCells = `
-                        <td>
-                            <div class="btn-group" role="group">
-                                <button class="btn btn-sm btn-neo-warning decision-auction-btn">
-                                    <i class="fas fa-gavel me-1"></i>Auction
-                                </button>
-                                <button class="btn btn-sm btn-neo-danger decision-scrap-btn">
-                                    <i class="fas fa-trash me-1"></i>Scrap
-                                </button>
-                            </div>
-                        </td>
-                    `;
-                    break;
-                    
-                case 'Action':
-                    statusCells = `
-                        <td data-field="action_type">${vehicle.status === 'Ready for Auction' ? 'Auction' : 'Scrap'}</td>
-                        <td data-field="estimated_date">${formatDate(vehicle.estimated_date) || 'Not set'}</td>
-                    `;
-                    break;
-                    
-                case 'InAuction':
-                    statusCells = `
-                        <td data-field="auction_date">${formatDate(vehicle.auction_date) || 'Not set'}</td>
-                        <td data-field="days_until_auction">
-                            <span class="countdown-badge ${getDaysClass(vehicle.days_until_auction || 0)}">
-                                ${vehicle.days_until_auction || '0'} days
-                            </span>
-                        </td>
-                    `;
-                    break;
-                    
-                case 'Completed':
-                    statusCells = `
-                        <td data-field="release_reason" class="release-highlight">${vehicle.release_reason || 'N/A'}</td>
-                        <td data-field="release_date" class="release-highlight">${formatDate(vehicle.release_date) || 'N/A'}</td>
-                    `;
-                    break;
-            }
-            
-            // Actions cell with hover explanations
-            const actionsCell = `
-                <td class="action-cell">
-                    <button class="action-btn btn btn-neo-primary edit-btn">
-                        <i class="fas fa-edit"></i>
-                    </button>
-                    <div class="hover-explanation">
-                        <div class="hover-explanation-content">
-                            <div class="hover-explanation-title">Edit Vehicle</div>
-                            <div class="hover-explanation-text">
-                                Edit all vehicle details including call #, complaint #, and vehicle information
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <button class="action-btn btn btn-neo-secondary logs-btn">
-                        <i class="fas fa-history"></i>
-                    </button>
-                    <div class="hover-explanation">
-                        <div class="hover-explanation-content">
-                            <div class="hover-explanation-title">View Activity Log</div>
-                            <div class="hover-explanation-text">
-                                See all status changes and actions for this vehicle
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <button class="action-btn btn btn-neo-danger delete-btn">
-                        <i class="fas fa-trash-alt"></i>
-                    </button>
-                    <div class="hover-explanation">
-                        <div class="hover-explanation-content">
-                            <div class="hover-explanation-title">Delete Vehicle</div>
-                            <div class="hover-explanation-text">
-                                Permanently remove this vehicle from the database
-                            </div>
-                        </div>
-                    </div>
-                </td>
-            `;
-            
-            // Combine all cells into a row
-            return `
-                <tr class="vehicle-row" data-call-number="${vehicle.towbook_call_number}" data-status="${vehicle.status}">
-                    ${callNumberCell}
-                    ${complaintNumberCell}
-                    ${jurisdictionCell}
-                    ${towDateCell}
-                    ${vehicleInfoCell}
-                    ${statusCells}
-                    ${actionsCell}
-                </tr>
-            `;
-        }
-        
-        // Helper to format dates
-        function formatDate(dateStr) {
-            if (!dateStr) return '';
-            try {
-                const date = new Date(dateStr);
-                return date.toLocaleDateString();
-            } catch (e) {
-                return dateStr;
-            }
-        }
-        
-        // Helper to get color class based on days
-        function getDaysClass(days) {
-            if (days <= 3) return 'danger';
-            if (days <= 7) return 'warning';
-            return 'success';
-        }
-        
-        // Update status counts
-        function updateStatusCounts(data) {
-            // Get counts for each status type
-            $.get('/api/vehicles?count_by_status=true', function(countData) {
-                if (countData && countData.counts) {
-                    // Update header counts
-                    $('#activeCount').text(countData.counts.active || 0);
-                    $('#completedCount').text(countData.counts.completed || 0);
-                    
-                    // Update tab badges
-                    $('.status-badge').remove(); // Clear existing badges
-                    $('#newTab').append(`<span class="status-badge">${countData.counts.new || 0}</span>`);
-                    $('#topSentTab').append(`<span class="status-badge">${countData.counts.topSent || 0}</span>`);
-                    $('#readyTab').append(`<span class="status-badge">${countData.counts.ready || 0}</span>`);
-                    $('#paperworkTab').append(`<span class="status-badge">${countData.counts.paperwork || 0}</span>`);
-                    $('#actionTab').append(`<span class="status-badge">${countData.counts.action || 0}</span>`);
-                    $('#inAuctionTab').append(`<span class="status-badge">${countData.counts.inAuction || 0}</span>`);
-                    $('#completedTab').append(`<span class="status-badge">${countData.counts.completed || 0}</span>`);
-                }
-            });
-        }
-        
-        // Attach event handlers for the table rows
-        function attachEventHandlers() {
-            // Edit button click handler
-            $('.edit-btn').click(function() {
-                const row = $(this).closest('tr');
-                currentCallNumber = row.attr('data-call-number');
-
-                $.get(`/api/vehicles?call_number=${currentCallNumber}`, function(data) {
-                    if (data && data.length > 0) {
+                $('.edit-btn').click(function() {
+                    currentCallNumber = $(this).closest('tr').data('call-number');
+                    $.get(`/api/vehicles?call_number=${currentCallNumber}`, function(data) {
                         const vehicle = data[0];
-                        let modalContent = '<div class="container-fluid"><div class="row g-3">';
                         const fields = [
-                            {name: 'towbook_call_number', label: 'Call Number', type: 'text'},
-                            {name: 'invoice_number', label: 'Invoice Number', type: 'text', readonly: true},
-                            {name: 'complaint_number', label: 'Complaint #', type: 'text'},
-                            {name: 'jurisdiction', label: 'Jurisdiction', type: 'text'},
-                            {name: 'tow_date', label: 'Tow Date', type: 'date'},
-                            {name: 'tow_time', label: 'Tow Time', type: 'time'},
-                            {name: 'location', label: 'Location', type: 'text'},
-                            {name: 'requestor', label: 'Requestor', type: 'text'},
-                            {name: 'vin', label: 'VIN', type: 'text'},
-                            {name: 'year', label: 'Year', type: 'text'},
-                            {name: 'make', label: 'Make', type: 'text'},
-                            {name: 'model', label: 'Model', type: 'text'},
-                            {name: 'color', label: 'Color', type: 'text'},
-                            {name: 'plate', label: 'Plate', type: 'text'},
-                            {name: 'state', label: 'State', type: 'text'},
-                            {name: 'case_number', label: 'Case Number', type: 'text'},
-                            {name: 'officer_name', label: 'Officer Name', type: 'text'},
-                            {name: 'owner_known', label: 'Owner Known', type: 'select', options: ['Yes', 'No']}
+                            'towbook_call_number', 'complaint_number', 'jurisdiction', 'tow_date', 'tow_time', 'location',
+                            'vin', 'year', 'make', 'model', 'color', 'plate', 'status', 'days_until_next_step', 
+                            'auction_date', 'ad_placement_date'
                         ];
-
-                        fields.forEach((field, index) => {
-                            if (index % 2 === 0) {
-                                modalContent += index > 0 ? '</div><div class="row g-3">' : '';
-                            }
-                            
-                            if (field.type === 'select') {
-                                modalContent += `
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label class="form-label">${field.label}</label>
-                                            <select class="form-select" data-field="${field.name}" ${field.readonly ? 'readonly' : ''}>
-                                                ${field.options.map(option => 
-                                                    `<option value="${option}" ${vehicle[field.name] === option ? 'selected' : ''}>${option}</option>`
-                                                ).join('')}
-                                            </select>
-                                        </div>
+                        $('#editModalBody').html(fields.map(f => {
+                            if (f === 'status') {
+                                return `
+                                    <div class="mb-3">
+                                        <label>Status</label>
+                                        <select class="form-control" data-field="status" data-bs-toggle="tooltip" title="Revert or change vehicle status">
+                                            <option value="New" ${vehicle.status === 'New' ? 'selected' : ''}>New</option>
+                                            <option value="TOP Sent" ${vehicle.status === 'TOP Sent' ? 'selected' : ''}>TOP Sent</option>
+                                            <option value="Ready" ${vehicle.status === 'Ready' ? 'selected' : ''}>Ready</option>
+                                            <option value="Scheduled for Release" ${vehicle.status === 'Scheduled for Release' ? 'selected' : ''}>Scheduled for Release</option>
+                                            <option value="Auction" ${vehicle.status === 'Auction' ? 'selected' : ''}>Auction</option>
+                                            <option value="Released" ${vehicle.status === 'Released' ? 'selected' : ''}>Released</option>
+                                            <option value="Scrapped" ${vehicle.status === 'Scrapped' ? 'selected' : ''}>Scrapped</option>
+                                            <option value="Auctioned" ${vehicle.status === 'Auctioned' ? 'selected' : ''}>Auctioned</option>
+                                        </select>
                                     </div>
                                 `;
                             } else {
-                                modalContent += `
-                                    <div class="col-md-6">
-                                        <div class="mb-3">
-                                            <label class="form-label">${field.label}</label>
-                                            <input type="${field.type}" class="form-control" data-field="${field.name}" value="${vehicle[field.name] || ''}" ${field.readonly ? 'readonly' : ''}>
-                                        </div>
+                                const fieldType = f.includes('date') ? 'date' : 'text';
+                                const tooltip = f === 'days_until_next_step' ? 'Manually override days until next step' : 
+                                               f === 'auction_date' ? 'Set or override auction date' : 
+                                               f === 'ad_placement_date' ? 'Set newspaper ad date to calculate auction date' : 
+                                               f === 'jurisdiction' ? 'Edit jurisdiction for this vehicle' : '';
+                                return `
+                                    <div class="mb-3">
+                                        <label>${f.replace('_', ' ').toUpperCase()}</label>
+                                        <input type="${fieldType}" class="form-control" data-field="${f}" value="${vehicle[f] || ''}" data-bs-toggle="tooltip" title="${tooltip}">
                                     </div>
                                 `;
                             }
-                        });
-
-                        modalContent += '</div></div>';
-                        $('#editModalBody').html(modalContent);
-                        
-                        // Use Bootstrap 5 modal show method
-                        var editModal = new bootstrap.Modal(document.getElementById('editModal'));
-                        editModal.show();
-                    } else {
-                        showNotification('Vehicle not found', 'error');
-                    }
-                }).fail(function(xhr) {
-                    console.error('Error fetching vehicle data:', xhr);
-                    showNotification('Error loading vehicle data: ' + (xhr.responseJSON?.message || 'Unknown error'), 'error');
+                        }).join(''));
+                        new bootstrap.Modal(document.getElementById('editModal')).show();
+                    });
                 });
-            });
 
-            // Generate TOP button
-            $('.generate-top-btn').click(function() {
-                const callNumber = $(this).closest('tr').attr('data-call-number');
-                generateTop(callNumber);
-            });
-            
-            // Paperwork received button
-            $('.paperwork-received-btn').click(function() {
-                const callNumber = $(this).closest('tr').attr('data-call-number');
-                const row = $(this).closest('tr');
-                const statusCell = row.find('td:nth-child(8)'); // Adjust based on actual column position
-                
-                // Update vehicle status to "Paperwork"
-                updateVehicleStatus(callNumber, 'Paperwork', statusCell);
-            });
-            
-            // Decision buttons
-            $('.decision-auction-btn').click(function() {
-                const callNumber = $(this).closest('tr').attr('data-call-number');
-                const row = $(this).closest('tr');
-                const statusCell = row.find('td:nth-child(8)'); // Adjust based on actual column position
-                
-                // Update vehicle status to "Ready for Auction"
-                updateVehicleStatus(callNumber, 'Ready for Auction', statusCell);
-            });
-            
-            $('.decision-scrap-btn').click(function() {
-                const callNumber = $(this).closest('tr').attr('data-call-number');
-                const row = $(this).closest('tr');
-                const statusCell = row.find('td:nth-child(8)'); // Adjust based on actual column position
-                
-                // Update vehicle status to "Ready for Scrap"
-                updateVehicleStatus(callNumber, 'Ready for Scrap', statusCell);
-            });
-            
-            // Release button
-            $('.release-btn').click(function() {
-                currentCallNumber = $(this).closest('tr').attr('data-call-number');
-                $('#releaseForm')[0].reset();
-                
-                // Set default values for date and time
-                $('#releaseDate').val(new Date().toISOString().split('T')[0]);
-                $('#releaseTime').val(new Date().toTimeString().slice(0, 5));
-                
-                // Use Bootstrap 5 modal show method
-                var releaseModal = new bootstrap.Modal(document.getElementById('releaseModal'));
-                releaseModal.show();
-            });
-
-            // Logs button
-            $('.logs-btn').click(function() {
-                const callNumber = $(this).closest('tr').attr('data-call-number');
-                loadVehicleLogs(callNumber);
-            });
-            
-            // Toggle status button
-            $('.toggle-status-btn').click(function() {
-                const callNumber = $(this).closest('tr').attr('data-call-number');
-                toggleVehicleStatus(callNumber);
-            });
-
-            // Delete button
-            $('.delete-btn').click(function() {
-                const callNumber = $(this).closest('tr').attr('data-call-number');
-                if (confirm(`Are you sure you want to delete vehicle ${callNumber}?`)) {
+                $('.generate-top-btn').click(function() {
+                    const callNumber = $(this).closest('tr').data('call-number');
                     $.ajax({
-                        url: `/api/vehicles/${callNumber}`,
-                        type: 'DELETE',
-                        success: function() {
-                            showNotification('Vehicle deleted successfully', 'success');
+                        url: `/api/generate-top/${callNumber}`,
+                        type: 'POST',
+                        contentType: 'application/json',
+                        xhrFields: { responseType: 'blob' },
+                        success: function(data) {
+                            const url = window.URL.createObjectURL(new Blob([data]));
+                            const link = document.createElement('a');
+                            link.href = url;
+                            link.download = `TOP_${callNumber}.pdf`;
+                            link.click();
                             loadVehicles();
-                        },
-                        error: function(xhr) {
-                            showNotification('Error deleting vehicle: ' + (xhr.responseJSON?.message || 'Unknown error'), 'error');
                         }
                     });
-                }
-            });
-            
-            // Handle status dropdown changes
-            $('.status-dropdown').change(function() {
-                const callNumber = $(this).data('call-number');
-                const newStatus = $(this).val();
-                const currentStatus = $(this).data('current');
-                const statusCell = $(this).closest('td');
-                
-                if (newStatus !== currentStatus) {
-                    updateVehicleStatus(callNumber, newStatus, statusCell);
-                }
-            });
-        }
-        
-        function toggleVehicleStatus(callNumber) {
-            $.ajax({
-                url: `/api/vehicles/toggle-status/${callNumber}`,
-                type: 'POST',
-                success: function(response) {
-                    showNotification(response.message, 'success');
-                    loadVehicles();
-                },
-                error: function(xhr) {
-                    showNotification('Error toggling vehicle status: ' + (xhr.responseJSON?.message || 'Unknown error'), 'error');
-                }
-            });
-        }
-        
-        function loadVehicleLogs(callNumber) {
-            // Show loading indicator
-            $('#logsTableBody').html('<tr><td colspan="3" class="text-center"><i class="fas fa-spinner fa-spin me-2"></i>Loading logs...</td></tr>');
-            
-            // Show the logs modal first so loading is visible
-            var logsModal = new bootstrap.Modal(document.getElementById('logsModal'));
-            logsModal.show();
-            
-            $.get(`/api/logs?vehicle_id=${callNumber}`, function(data) {
-                const tbody = $('#logsTableBody');
-                tbody.empty();
-                
-                if (data && data.length > 0) {
-                    data.forEach(log => {
-                        // Format timestamp for display
-                        let formattedTime = log.timestamp;
-                        try {
-                            const timestamp = new Date(log.timestamp);
-                            formattedTime = timestamp.toLocaleString();
-                        } catch (e) {
-                            // Use the original format if parsing fails
+                });
+
+                $('.schedule-btn').click(function() {
+                    const callNumber = $(this).closest('tr').data('call-number');
+                    $.ajax({
+                        url: `/api/update-status/${callNumber}`,
+                        type: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify({ status: 'Scheduled for Release' }),
+                        success: function() {
+                            loadVehicles();
                         }
-                        
-                        // Format action type for display
-                        let actionType = log.action_type;
-                        switch (log.action_type) {
-                            case 'STATUS_CHANGE': actionType = 'Status Change'; break;
-                            case 'RELEASE': actionType = 'Vehicle Released'; break;
-                            case 'UPDATE': actionType = 'Information Updated'; break;
-                            case 'INSERT': actionType = 'Vehicle Added'; break;
-                            case 'GENERATE_TOP': actionType = 'TOP Form Generated'; break;
-                            case 'ARCHIVE_TOGGLE': actionType = 'Status Changed'; break;
-                            default: actionType = log.action_type; break;
-                        }
-                        
-                        const row = `
-                            <tr>
-                                <td>${formattedTime}</td>
-                                <td>${actionType}</td>
-                                <td>${log.details || 'N/A'}</td>
-                            </tr>
-                        `;
-                        tbody.append(row);
                     });
-                } else {
-                    tbody.append('<tr><td colspan="3" class="text-center">No logs found for this vehicle</td></tr>');
-                }
-            }).fail(function(xhr) {
-                console.error('Error fetching vehicle logs:', xhr);
-                $('#logsTableBody').html('<tr><td colspan="3" class="text-center">Error loading logs. Please try again.</td></tr>');
-            });
-        }
-        
-        function updateVehicleStatus(callNumber, newStatus, statusCell) {
-            // Check if status should automatically mark vehicle as released
-            const isReleaseStatus = ['Released', 'Scrapped', 'Auctioned'].includes(newStatus);
-            const updateData = { 
-                status: newStatus,
-                last_updated: new Date().toISOString() // Add timestamp for status change
-            };
-            
-            // Special handling for TOP Sent status
-            if (newStatus === 'TOP_Sent') {
-                updateData.top_form_sent_date = new Date().toISOString().split('T')[0]; // Today's date
-            }
-            
-            // If it's a release status, show the release modal instead
-            if (isReleaseStatus) {
-                currentCallNumber = callNumber;
-                $('#releaseForm')[0].reset();
-                
-                // Default release reason based on status
-                if (newStatus === 'Scrapped') {
-                    $('#releaseReason').val('Scrapped');
-                    $('#releaseReason').val('Scrapped');
-                } else if (newStatus === 'Auctioned') {
-                    $('#releaseReason').val('Auctioned');
-                } else {
-                    $('#releaseReason').val('Released to Owner');
-                }
-                
-                // Set default values for date and time
-                $('#releaseDate').val(new Date().toISOString().split('T')[0]);
-                $('#releaseTime').val(new Date().toTimeString().slice(0, 5));
-                
-                // Use Bootstrap 5 modal show method
-                var releaseModal = new bootstrap.Modal(document.getElementById('releaseModal'));
-                releaseModal.show();
-                
-                // Reset the status cell if we're showing the release modal
-                if (statusCell) {
-                    statusCell.html(newStatus);
-                }
-                
-                return;
-            }
-            
-            // Make the API call
-            $.ajax({
-                url: `/api/update-status/${callNumber}`,
-                type: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify({ 
-                    status: newStatus,
-                    fields: {}
-                }),
-                success: function(response) {
-                    // Show success notification
-                    showNotification(`Status updated to "${newStatus}"`, 'success');
-                    
-                    // Reload vehicles to reflect the new status correctly
-                    loadVehicles();
-                },
-                error: function(xhr) {
-                    showNotification('Error updating status: ' + (xhr.responseJSON?.message || 'Unknown error'), 'error');
-                    
-                    // Reset the status cell
-                    if (statusCell) {
-                        statusCell.html(newStatus);
-                    }
-                }
-            });
-        }
-        
-        function generateTop(callNumber, callback) {
-            $.ajax({
-                url: `/api/generate-top/${callNumber}`,
-                type: 'POST',
-                data: JSON.stringify({}),
-                contentType: 'application/json',
-                xhrFields: {
-                    responseType: 'blob'
-                },
-                success: function(data) {
-                    const url = window.URL.createObjectURL(new Blob([data]));
-                    const link = document.createElement('a');
-                    link.href = url;
-                    link.setAttribute('download', `TOP_${callNumber}.pdf`);
-                    document.body.appendChild(link);
-                    link.click();
-                    link.remove();
-                    
-                    // Update status after generating TOP
-                    updateVehicleStatus(callNumber, 'TOP_Sent', $(`tr[data-call-number="${callNumber}"] td:nth-child(8)`));
-                    
-                    showNotification('TOP form generated successfully', 'success');
-                    
-                    if (callback) callback();
-                },
-                error: function(xhr) {
-                    console.error('Error generating TOP form:', xhr);
-                    showNotification('Error generating TOP form: ' + (xhr.responseJSON?.error || 'Unknown error'), 'error');
-                    
-                    if (callback) callback();
-                }
-            });
-        }
-        
-        // Toast notification system
-        function showNotification(message, type = 'info', duration = 4000) {
-            // Create toast container if it doesn't exist
-            if (!$('#toast-container').length) {
-                $('body').append('<div id="toast-container" style="position: fixed; top: 20px; right: 20px; z-index: 9999;"></div>');
-            }
-            
-            // Set icon and color based on type
-            let icon, color;
-            switch(type) {
-                case 'success':
-                    icon = 'fas fa-check-circle';
-                    color = '#38b000';
-                    break;
-                case 'error':
-                    icon = 'fas fa-exclamation-circle';
-                    color = '#fb5607';
-                    break;
-                case 'warning':
-                    icon = 'fas fa-exclamation-triangle';
-                    color = '#ffbe0b';
-                    break;
-                default:
-                    icon = 'fas fa-info-circle';
-                    color = '#e94560';
-            }
-            
-            // Create toast HTML
-            const toastId = 'toast-' + Date.now();
-            const toast = `
-                <div id="${toastId}" class="toast" style="background-color: #16213e; color: #e6e6e6; border-left: 4px solid ${color}; box-shadow: 0 4px 12px rgba(0,0,0,0.2); margin-bottom: 0.75rem; width: 320px; opacity: 0; transition: opacity 0.3s;">
-                    <div class="toast-header" style="background-color: #0f3460; color: #e6e6e6; border-bottom: 1px solid rgba(99, 99, 149, 0.1); padding: 0.75rem;">
-                        <i class="${icon}" style="color: ${color}; margin-right: 8px;"></i>
-                        <strong class="me-auto">${type.charAt(0).toUpperCase() + type.slice(1)}</strong>
-                        <button type="button" class="btn-close" style="font-size: 0.75rem; color: #a6a6c8;" onclick="$('#${toastId}').remove();"></button>
-                    </div>
-                    <div class="toast-body" style="padding: 0.75rem;">
-                        ${message}
-                    </div>
-                </div>
-            `;
-            
-            // Add toast to container
-            $('#toast-container').append(toast);
-            
-            // Animate and auto-remove
-            setTimeout(() => {
-                $(`#${toastId}`).css('opacity', '1');
-                setTimeout(() => {
-                    $(`#${toastId}`).css('opacity', '0');
-                    setTimeout(() => {
-                        $(`#${toastId}`).remove();
-                    }, 300);
-                }, duration);
-            }, 100);
-        }
-        
-        // Toggle card sections
-        $(document).on('click', '[data-bs-toggle="collapse"]', function() {
-            const icon = $(this).find('i');
-            if (icon.hasClass('fa-chevron-up')) {
-                icon.removeClass('fa-chevron-up').addClass('fa-chevron-down');
-            } else {
-                icon.removeClass('fa-chevron-down').addClass('fa-chevron-up');
-            }
-        });
-        
-        // Batch Edit functionality
-        $('#batchEditBtn').click(function() {
-            // Populate the vehicle list in the modal
-            const vehicleList = $('.vehicle-list');
-            vehicleList.empty();
-            
-            // Show loading indicator
-            vehicleList.html('<div class="text-center"><i class="fas fa-spinner fa-spin me-2"></i>Loading vehicles...</div>');
-            
-            // Get the current status filter to only show relevant vehicles
-            const urlParams = new URLSearchParams(window.location.search);
-            const statusFilter = urlParams.get('status') || 'New';
-            
-            // Get vehicles from the current view
-            $.get(`/api/vehicles?status_type=${statusFilter}`, function(data) {
-                vehicleList.empty();
-                
-                if (data.length === 0) {
-                    vehicleList.html('<div class="text-center">No vehicles available in this status category</div>');
-                    return;
-                }
-                
-                // Add vehicles to the list
-                data.forEach(function(vehicle) {
-                    const callNumber = vehicle.towbook_call_number;
-                    const vehicleInfo = `${vehicle.year || ''} ${vehicle.make || ''} ${vehicle.model || ''} ${vehicle.color || ''}`;
-                    const vinInfo = vehicle.vin ? `VIN: ${vehicle.vin}` : '';
-                    
-                    vehicleList.append(`
-                        <div class="form-check mb-2">
-                            <input class="form-check-input vehicle-checkbox" type="checkbox" 
-                                value="${callNumber}" id="vehicle-${callNumber}">
-                            <label class="form-check-label" for="vehicle-${callNumber}">
-                                ${callNumber} - ${vehicleInfo} ${vinInfo}
-                            </label>
-                        </div>
-                    `);
                 });
-            }).fail(function(xhr) {
-                vehicleList.html('<div class="text-center text-danger">Error loading vehicles</div>');
-                console.error('Error loading vehicles for batch edit:', xhr);
-            });
-            
-            // Display the modal
-            const batchModal = new bootstrap.Modal(document.getElementById('statusEditorModal'));
-            batchModal.show();
-        });
 
-        // Implement "Select All" functionality
-        $('#selectAllVehicles').click(function() {
-            $('.vehicle-checkbox').prop('checked', $(this).prop('checked'));
-        });
-
-        // Implement the batch update button
-        $('#updateStatusesBtn').click(function() {
-            const selectedVehicles = [];
-            $('.vehicle-checkbox:checked').each(function() {
-                selectedVehicles.push($(this).val());
-            });
-            
-            if (selectedVehicles.length === 0) {
-                showNotification('Please select at least one vehicle', 'warning');
-                return;
-            }
-            
-            const newStatus = $('#newStatusSelect').val();
-            
-            // Confirm the update
-            if (!confirm(`Are you sure you want to update ${selectedVehicles.length} vehicles to status "${newStatus}"?`)) {
-                return;
-            }
-            
-            // Show loading state
-            $(this).html('<i class="fas fa-spinner fa-spin"></i> Updating...');
-            const updateBtn = $(this);
-            
-            // Call the batch update API
-            $.ajax({
-                url: '/api/batch-update-status',
-                type: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify({
-                    vehicle_ids: selectedVehicles,
-                    status: newStatus
-                }),
-                success: function(response) {
-                    updateBtn.html('Update Statuses');
-                    
-                    // Close modal
-                    const batchModal = bootstrap.Modal.getInstance(document.getElementById('statusEditorModal'));
-                    batchModal.hide();
-                    
-                    showNotification(response.message || 'Vehicles updated successfully', 'success');
-                    loadVehicles(); // Reload the table
-                },
-                error: function(xhr) {
-                    updateBtn.html('Update Statuses');
-                    showNotification('Error updating vehicles: ' + (xhr.responseJSON?.message || 'Unknown error'), 'error');
-                }
-            });
-        });
-        
-        // Enhanced functionality
-        $(document).ready(function() {
-            // Double-click on row to edit
-            $(document).on('dblclick', '.vehicle-row', function(e) {
-                // Skip if clicked on a button or link
-                if ($(e.target).is('button, a, .btn, input, select') || 
-                    $(e.target).parents('button, a, .btn').length) {
-                    return;
-                }
-                
-                // Get call number from row
-                const callNumber = $(this).data('call-number');
-                
-                // Find and click the edit button in this row
-                $(this).find('.edit-btn').click();
-            });
-            
-            // Highlight row on hover
-            $(document).on('mouseenter', '.vehicle-row', function() {
-                $(this).css('background-color', 'rgba(99, 99, 149, 0.1)');
-            }).on('mouseleave', '.vehicle-row', function() {
-                $(this).css('background-color', '');
-            });
-            
-            // Keyboard shortcuts
-            $(document).keydown(function(e) {
-                // Only activate shortcuts if not in input field
-                if ($(e.target).is('input, textarea, select')) {
-                    return;
-                }
-                
-                // Ctrl+A: Add new vehicle
-                if (e.ctrlKey && e.key === 'a') {
-                    e.preventDefault();
-                    $('#addVehicleBtn').click();
-                    return;
-                }
-                
-                // Ctrl+E: Batch edit selected vehicles
-                if (e.ctrlKey && e.key === 'e') {
-                    e.preventDefault();
-                    $('#batchEditBtn').click();
-                    return;
-                }
-                
-                // Shortcuts for tabs (1-7)
-                if (e.key >= '1' && e.key <= '7') {
-                    const tabIndex = parseInt(e.key) - 1;
-                    const tabs = $('.neo-tab');
-                    if (tabIndex < tabs.length) {
-                        window.location.href = tabs.eq(tabIndex).attr('href');
-                    }
-                }
-            });
-            
-            // Add quick filter panel
-            const filterPanel = $(`
-                <div id="filterPanel" class="neo-card mb-3" style="display: none;">
-                    <div class="card-header">
-                        <div>
-                            <i class="fas fa-filter card-header-icon"></i>
-                            Filter Vehicles
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-3 mb-2">
-                                <input type="text" class="form-control" id="filterCallNumber" placeholder="Call Number">
-                            </div>
-                            <div class="col-md-3 mb-2">
-                                <input type="text" class="form-control" id="filterVin" placeholder="VIN">
-                            </div>
-                            <div class="col-md-3 mb-2">
-                                <input type="text" class="form-control" id="filterMakeModel" placeholder="Make/Model">
-                            </div>
-                            <div class="col-md-3 mb-2">
-                                <input type="text" class="form-control" id="filterPlate" placeholder="License Plate">
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-12">
-                                <button id="applyFiltersBtn" class="btn btn-neo-primary btn-sm">
-                                    <i class="fas fa-search btn-icon"></i>Apply Filters
-                                </button>
-                                <button id="resetFiltersBtn" class="btn btn-neo-secondary btn-sm ms-2">
-                                    <i class="fas fa-times btn-icon"></i>Reset
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `);
-            
-            // Add filter button to header
-            $('.header-actions').append(`
-                <button id="toggleFilterBtn" class="btn btn-neo-secondary btn-sm ms-2">
-                    <i class="fas fa-filter btn-icon"></i>Filter
-                </button>
-            `);
-            
-            filterPanel.insertAfter($('.app-header'));
-            
-            // Toggle filter panel
-            $('#toggleFilterBtn').click(function() {
-                $('#filterPanel').slideToggle('fast');
-            });
-            
-            // Apply filters
-            $(document).on('click', '#applyFiltersBtn', function() {
-                const callNumberFilter = $('#filterCallNumber').val().toLowerCase();
-                const vinFilter = $('#filterVin').val().toLowerCase();
-                const makeModelFilter = $('#filterMakeModel').val().toLowerCase();
-                const plateFilter = $('#filterPlate').val().toLowerCase();
-                
-                $('.vehicle-row').each(function() {
-                    const row = $(this);
-                    const callNumber = row.data('call-number').toString().toLowerCase();
-                    const vin = row.find('td:contains("VIN:")').text().toLowerCase();
-                    const makeModel = row.find('.vehicle-info').text().toLowerCase();
-                    const plate = row.find('td:contains("Plate:")').text().toLowerCase();
-                    
-                    let showRow = true;
-                    
-                    if (callNumberFilter && !callNumber.includes(callNumberFilter)) {
-                        showRow = false;
-                    }
-                    
-                    if (vinFilter && !vin.includes(vinFilter)) {
-                        showRow = false;
-                    }
-                    
-                    if (makeModelFilter && !makeModel.includes(makeModelFilter)) {
-                        showRow = false;
-                    }
-                    
-                    if (plateFilter && !plate.includes(plateFilter)) {
-                        showRow = false;
-                    }
-                    
-                    row.toggle(showRow);
+                $('.auction-btn').click(function() {
+                    const callNumber = $(this).closest('tr').data('call-number');
+                    $.ajax({
+                        url: `/api/decision/${callNumber}`,
+                        type: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify({ decision: 'auction' }),
+                        success: function() {
+                            loadVehicles();
+                        }
+                    });
                 });
-                
-                // Show message if no results
-                const visibleRows = $('.vehicle-row:visible').length;
-                const totalRows = $('.vehicle-row').length;
-                
-                if (visibleRows === 0 && totalRows > 0) {
-                    if (!$('#noResultsMessage').length) {
-                        $('#vehicleTableBody').append(`
-                            <tr id="noResultsMessage">
-                                <td colspan="12" class="text-center">
-                                    No vehicles match the current filters. <a href="#" id="clearFilters">Clear filters</a>
-                                </td>
-                            </tr>
-                        `);
-                        
-                        $('#clearFilters').click(function(e) {
-                            e.preventDefault();
-                            $('#resetFiltersBtn').click();
-                            $('#noResultsMessage').remove();
-                        });
-                    }
-                } else {
-                    $('#noResultsMessage').remove();
-                }
+
+                $('.scrap-btn').click(function() {
+                    const callNumber = $(this).closest('tr').data('call-number');
+                    $.ajax({
+                        url: `/api/decision/${callNumber}`,
+                        type: 'POST',
+                        contentType: 'application/json',
+                        data: JSON.stringify({ decision: 'scrap' }),
+                        success: function() {
+                            loadVehicles();
+                        }
+                    });
+                });
+
+                $('.release-btn').click(function() {
+                    currentCallNumber = $(this).closest('tr').data('call-number');
+                    $('#releaseForm')[0].reset();
+                    $('#releaseDate').val(today);
+                    $('#releaseTime').val(new Date().toTimeString().slice(0, 5));
+                    new bootstrap.Modal(document.getElementById('releaseModal')).show();
+                });
             });
-            
-            // Reset filters
-            $(document).on('click', '#resetFiltersBtn', function() {
-                $('#filterCallNumber, #filterVin, #filterMakeModel, #filterPlate').val('');
-                $('.vehicle-row').show(); // Show all rows
-                $('#noResultsMessage').remove();
-            });
-            
-            // Improve form validation
-            const validateForm = function(formId) {
-                const form = document.getElementById(formId);
-                if (!form) return true;
-                
-                form.classList.add('was-validated');
-                return form.checkValidity();
-            };
-            
-            const originalSaveNewVehicleBtn = $('#saveNewVehicleBtn').click;
-            $('#saveNewVehicleBtn').click(function(e) {
-                if (!validateForm('addVehicleForm')) {
-                    e.preventDefault();
-                    return false;
-                }
-                
-                // Continue with original handler
-                originalSaveNewVehicleBtn.apply(this, arguments);
-            });
-            
-            // Setup quick actions for vehicle rows
-            $(document).on('click', '.edit-btn, .generate-top-btn, .paperwork-received-btn, .decision-auction-btn, .decision-scrap-btn, .logs-btn, .release-btn, .delete-btn', function() {
-                // Add pulse animation to clicked row
-                $(this).closest('tr').addClass('success-pulse');
-                
-                // Remove animation class after it finishes
-                setTimeout(() => {
-                    $('.success-pulse').removeClass('success-pulse');
-                }, 1500);
-            });
-        });
+        }
     </script>
 </body>
 </html>

@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iTow Impound Manager</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css">
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px; }
+        .container { max-width: 1200px; }
+        .card { background-color: #fff; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .card-header { background-color: #e0e0e0; padding: 10px 15px; font-weight: bold; }
+        .card-body { padding: 15px; }
+        .btn { border-radius: 5px; padding: 8px 15px; margin: 5px; }
+        .tabs { display: flex; background-color: #e0e0e0; border-radius: 8px 8px 0 0; }
+        .tab { flex: 1; padding: 15px; text-align: center; color: #333; text-decoration: none; }
+        .tab:hover, .tab.active { background-color: #007bff; color: #fff; }
+        .table { background-color: #fff; border: 1px solid #ddd; border-radius: 8px; }
+        .table th, .table td { padding: 12px; border-bottom: 1px solid #ddd; }
+        .table th { background-color: #e0e0e0; }
+        .table tr:hover { background-color: #f9f9f9; }
+        #statusBar { background-color: #fff; padding: 15px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px; display: none; }
+        .text-danger { color: #dc3545; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>iTow Impound Manager</h1>
+
+        <div class="card">
+            <div class="card-header">Data Import</div>
+            <div class="card-body">
+                <form id="scrapeForm">
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label for="startDate">Start Date</label>
+                            <input type="date" id="startDate" class="form-control" required>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label for="endDate">End Date</label>
+                            <input type="date" id="endDate" class="form-control" required>
+                        </div>
+                        <div class="col-md-3 mb-3 align-self-end">
+                            <button type="button" id="startScrapingBtn" class="btn btn-primary">Start Scraping</button>
+                        </div>
+                        <div class="col-md-3 mb-3 align-self-end">
+                            <button type="button" id="addVehicleBtn" class="btn btn-success">Add Vehicle</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div id="statusBar">
+            <div class="progress">
+                <div id="progressBar" class="progress-bar" style="width: 0%;"></div>
+            </div>
+            <p id="statusText" class="mt-2"></p>
+        </div>
+
+        <div class="tabs">
+            <a href="?status=New" class="tab" id="newTab">New</a>
+            <a href="?status=TOP Sent" class="tab" id="topSentTab">TOP Sent</a>
+            <a href="?status=Ready" class="tab" id="readyTab">Ready</a>
+            <a href="?status=Scheduled for Release" class="tab" id="scheduledTab">Scheduled</a>
+            <a href="?status=Auction" class="tab" id="auctionTab">Auction</a>
+            <a href="?status=Completed" class="tab" id="completedTab">Completed</a>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table">
+                <thead id="vehicleTableHead"></thead>
+                <tbody id="vehicleTableBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Edit Vehicle Modal -->
+    <div class="modal fade" id="editModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit Vehicle</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editForm"></form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="saveEditBtn">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Vehicle Modal -->
+    <div class="modal fade" id="addModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add New Vehicle</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addForm">
+                        <div class="mb-3">
+                            <label for="newCallNumber">Call Number</label>
+                            <input type="text" id="newCallNumber" class="form-control" placeholder="Optional - system will generate if blank">
+                        </div>
+                        <div class="mb-3">
+                            <label for="newJurisdiction">Jurisdiction</label>
+                            <input type="text" id="newJurisdiction" class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label for="newTowDate">Tow Date</label>
+                            <input type="date" id="newTowDate" class="form-control" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="newTowTime">Tow Time</label>
+                            <input type="time" id="newTowTime" class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label for="newLocation">Location</label>
+                            <input type="text" id="newLocation" class="form-control" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="newVin">VIN</label>
+                            <input type="text" id="newVin" class="form-control">
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="newYear">Year</label>
+                                <input type="text" id="newYear" class="form-control">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="newMake">Make</label>
+                                <input type="text" id="newMake" class="form-control">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="newModel">Model</label>
+                                <input type="text" id="newModel" class="form-control">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="newColor">Color</label>
+                                <input type="text" id="newColor" class="form-control">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="newPlate">License Plate</label>
+                                <input type="text" id="newPlate" class="form-control">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="newState">State</label>
+                                <input type="text" id="newState" class="form-control">
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="saveAddBtn">Save Vehicle</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Update Modal -->
+    <div class="modal fade" id="statusModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Update Status</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="statusForm">
+                        <div class="mb-3">
+                            <label for="newStatus">Select New Status</label>
+                            <select id="newStatus" class="form-select">
+                                <option value="New">New</option>
+                                <option value="TOP Sent">TOP Sent</option>
+                                <option value="Ready">Ready</option>
+                                <option value="Scheduled for Release">Scheduled for Release</option>
+                                <option value="Auction">Auction</option>
+                                <option value="Released">Released</option>
+                                <option value="Scrapped">Scrapped</option>
+                                <option value="Auctioned">Auctioned</option>
+                            </select>
+                        </div>
+                        <div id="statusVehicleInfo"></div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="updateStatusBtn">Update Status</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentVehicle = null;
+        
+        $(document).ready(function() {
+            const today = new Date().toISOString().split('T')[0];
+            $('#startDate, #endDate, #newTowDate').val(today);
+            $('#newTowTime').val(new Date().toTimeString().slice(0, 5));
+
+            setActiveTab();
+            loadVehicles();
+
+            $('#startScrapingBtn').click(function() {
+                const startDate = $('#startDate').val();
+                const endDate = $('#endDate').val();
+                
+                if (!startDate || !endDate) {
+                    alert('Please enter start and end dates');
+                    return;
+                }
+                
+                $(this).prop('disabled', true).text('Starting...');
+                
+                $.ajax({
+                    url: '/api/start-scraping',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ start_date: startDate, end_date: endDate }),
+                    success: function() {
+                        $('#statusBar').show();
+                        $('#startScrapingBtn').prop('disabled', false).text('Start Scraping');
+                        
+                        // Poll for progress
+                        const interval = setInterval(() => {
+                            $.get('/scraping-progress', function(data) {
+                                const prog = data.progress;
+                                const percentage = prog.percentage;
+                                $('#progressBar').css('width', percentage + '%').text(percentage + '%');
+                                
+                                let statusText = prog.status || 'Processing...';
+                                statusText += `<br>Processed: ${prog.processed}/${prog.total}`;
+                                
+                                if (prog.error) {
+                                    statusText += `<br><span class="text-danger">Error: ${prog.error}</span>`;
+                                }
+                                
+                                $('#statusText').html(statusText);
+                                
+                                if (!prog.is_running) {
+                                    clearInterval(interval);
+                                    setTimeout(() => {
+                                        loadVehicles();
+                                        setTimeout(() => $('#statusBar').hide(), 2000);
+                                    }, 1000);
+                                }
+                            });
+                        }, 1000);
+                    },
+                    error: function(xhr) {
+                        $('#startScrapingBtn').prop('disabled', false).text('Start Scraping');
+                        alert('Error: ' + (xhr.responseJSON?.message || 'Failed to start scraping'));
+                    }
+                });
+            });
+
+            // Add Vehicle button
+            $('#addVehicleBtn').click(function() {
+                $('#addForm')[0].reset();
+                $('#newTowDate').val(today);
+                $('#newTowTime').val(new Date().toTimeString().slice(0, 5));
+                new bootstrap.Modal(document.getElementById('addModal')).show();
+            });
+
+            // Save Add Vehicle
+            $('#saveAddBtn').click(function() {
+                const data = {
+                    towbook_call_number: $('#newCallNumber').val() || ('MANUAL-' + Date.now()),
+                    jurisdiction: $('#newJurisdiction').val(),
+                    tow_date: $('#newTowDate').val(),
+                    tow_time: $('#newTowTime').val(),
+                    location: $('#newLocation').val(),
+                    vin: $('#newVin').val(),
+                    year: $('#newYear').val(),
+                    make: $('#newMake').val(),
+                    model: $('#newModel').val(),
+                    color: $('#newColor').val(),
+                    plate: $('#newPlate').val(),
+                    state: $('#newState').val(),
+                    status: 'New',
+                    requestor: 'PROPERTY OWNER'
+                };
+                
+                if (!data.location || !data.tow_date) {
+                    alert('Please enter location and tow date');
+                    return;
+                }
+                
+                $.ajax({
+                    url: '/api/vehicles/add',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(data),
+                    success: function() {
+                        bootstrap.Modal.getInstance(document.getElementById('addModal')).hide();
+                        alert('Vehicle added successfully');
+                        loadVehicles();
+                    },
+                    error: function(xhr) {
+                        alert('Error: ' + (xhr.responseJSON?.message || 'Failed to add vehicle'));
+                    }
+                });
+            });
+            
+            // Save Edit Vehicle
+            $('#saveEditBtn').click(function() {
+                const updatedData = {};
+                
+                $('#editForm input, #editForm select').each(function() {
+                    const field = $(this).attr('name');
+                    const value = $(this).val();
+                    if (field && value !== '') {
+                        updatedData[field] = value;
+                    }
+                });
+                
+                $.ajax({
+                    url: `/api/vehicles/${currentVehicle}`,
+                    type: 'PUT',
+                    contentType: 'application/json',
+                    data: JSON.stringify(updatedData),
+                    success: function() {
+                        bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+                        alert('Vehicle updated successfully');
+                        loadVehicles();
+                    },
+                    error: function(xhr) {
+                        alert('Error: ' + (xhr.responseJSON?.message || 'Failed to update vehicle'));
+                    }
+                });
+            });
+            
+            // Update Status button
+            $('#updateStatusBtn').click(function() {
+                const newStatus = $('#newStatus').val();
+                
+                $.ajax({
+                    url: `/api/update-status/${currentVehicle}`,
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ status: newStatus }),
+                    success: function() {
+                        bootstrap.Modal.getInstance(document.getElementById('statusModal')).hide();
+                        alert(`Status updated to ${newStatus}`);
+                        loadVehicles();
+                    },
+                    error: function(xhr) {
+                        alert('Error: ' + (xhr.responseJSON?.message || 'Failed to update status'));
+                    }
+                });
+            });
+        });
+
+        function setActiveTab() {
+            const status = new URLSearchParams(window.location.search).get('status') || 'New';
+            $('.tab').removeClass('active');
+            $(`.tab[href="?status=${status}"]`).addClass('active');
+        }
+
+        function loadVehicles() {
+            const status = new URLSearchParams(window.location.search).get('status') || 'New';
+            
+            $.get(`/api/vehicles?status_type=${status}`, function(data) {
+                const thead = $('#vehicleTableHead').empty();
+                const tbody = $('#vehicleTableBody').empty();
+                
+                // Define headers based on status
+                const headers = ['Call #', 'Complaint #', 'Tow Date', 'Vehicle Info', 'Jurisdiction'];
+                
+                // Add status-specific column
+                if (status === 'New') {
+                    headers.push('Action');
+                } else if (status === 'TOP Sent') {
+                    headers.push('Days Until Ready');
+                } else if (status === 'Ready') {
+                    headers.push('Schedule');
+                } else if (status === 'Scheduled for Release') {
+                    headers.push('Decision');
+                } else if (status === 'Auction') {
+                    headers.push('Auction Date');
+                } else if (status === 'Completed') {
+                    headers.push('Release Date');
+                }
+                
+                // Always add controls column
+                headers.push('Controls');
+                
+                // Create header row
+                thead.append('<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>');
+                
+                if (!data.length) {
+                    tbody.append(`<tr><td colspan="${headers.length}">No vehicles found</td></tr>`);
+                    return;
+                }
+                
+                // Create data rows
+                data.forEach(vehicle => {
+                    const row = $('<tr>');
+                    row.append(`<td>${vehicle.towbook_call_number || 'N/A'}</td>`);
+                    row.append(`<td>${vehicle.complaint_number || 'N/A'}</td>`);
+                    row.append(`<td>${vehicle.tow_date || 'N/A'}</td>`);
+                    
+                    // Vehicle info column
+                    const vehicleInfo = [vehicle.year, vehicle.make, vehicle.model, vehicle.color]
+                        .filter(Boolean)
+                        .join(' ');
+                    row.append(`<td>${vehicleInfo || 'N/A'}<br>VIN: ${vehicle.vin || 'N/A'}</td>`);
+                    
+                    row.append(`<td>${vehicle.jurisdiction || 'N/A'}</td>`);
+                    
+                    // Status-specific column
+                    if (status === 'New') {
+                        row.append(`<td><button class="btn btn-primary btn-sm generate-top-btn" data-call="${vehicle.towbook_call_number}">Generate TOP</button></td>`);
+                    } else if (status === 'TOP Sent') {
+                        row.append(`<td>${vehicle.days_until_next_step || 'N/A'}</td>`);
+                    } else if (status === 'Ready') {
+                        row.append(`<td><button class="btn btn-primary btn-sm schedule-btn" data-call="${vehicle.towbook_call_number}">Schedule</button></td>`);
+                    } else if (status === 'Scheduled for Release') {
+                        row.append(`<td>
+                            <button class="btn btn-success btn-sm auction-btn" data-call="${vehicle.towbook_call_number}">Auction</button>
+                            <button class="btn btn-danger btn-sm scrap-btn" data-call="${vehicle.towbook_call_number}">Scrap</button>
+                        </td>`);
+                    } else if (status === 'Auction') {
+                        row.append(`<td>${vehicle.auction_date || 'Not set'}</td>`);
+                    } else if (status === 'Completed') {
+                        row.append(`<td>${vehicle.release_date || 'N/A'}</td>`);
+                    }
+                    
+                    // Controls column
+                    row.append(`<td>
+                        <button class="btn btn-secondary btn-sm edit-btn" data-call="${vehicle.towbook_call_number}">Edit</button>
+                        <button class="btn btn-info btn-sm status-btn" data-call="${vehicle.towbook_call_number}">Status</button>
+                        <button class="btn btn-danger btn-sm release-btn" data-call="${vehicle.towbook_call_number}">Release</button>
+                    </td>`);
+                    
+                    tbody.append(row);
+                });
+                
+                // Attach event handlers
+                
+                // Generate TOP form
+                $('.generate-top-btn').click(function() {
+                    const callNumber = $(this).data('call');
+                    
+                    $.ajax({
+                        url: `/api/generate-top/${callNumber}`,
+                        type: 'POST',
+                        xhrFields: { responseType: 'blob' },
+                        success: function(blob) {
+                            // Create download link
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.style.display = 'none';
+                            a.href = url;
+                            a.download = `TOP_${callNumber}.pdf`;
+                            document.body.appendChild(a);
+                            a.click();
+                            
+                            // Cleanup
+                            window.URL.revokeObjectURL(url);
+                            alert('TOP form generated successfully!');
+                            loadVehicles();
+                        },
+                        error: function(xhr) {
+                            alert('Error generating TOP form: ' + (xhr.responseJSON?.message || 'Unknown error'));
+                        }
+                    });
+                });
+                
+                // Schedule button
+                $('.schedule-btn').click(function() {
+                    const callNumber = $(this).data('call');
+                    
+                    if (confirm('Schedule this vehicle for release?')) {
+                        $.ajax({
+                            url: `/api/update-status/${callNumber}`,
+                            type: 'POST',
+                            contentType: 'application/json',
+                            data: JSON.stringify({ status: 'Scheduled for Release' }),
+                            success: function() {
+                                alert('Vehicle scheduled for release');
+                                loadVehicles();
+                            },
+                            error: function(xhr) {
+                                alert('Error: ' + (xhr.responseJSON?.message || 'Failed to update status'));
+                            }
+                        });
+                    }
+                });
+                
+                // Auction button
+                $('.auction-btn').click(function() {
+                    const callNumber = $(this).data('call');
+                    
+                    if (confirm('Send this vehicle to auction?')) {
+                        $.ajax({
+                            url: `/api/decision/${callNumber}`,
+                            type: 'POST',
+                            contentType: 'application/json',
+                            data: JSON.stringify({ decision: 'auction' }),
+                            success: function() {
+                                alert('Vehicle sent to auction');
+                                loadVehicles();
+                            },
+                            error: function(xhr) {
+                                alert('Error: ' + (xhr.responseJSON?.message || 'Failed to update status'));
+                            }
+                        });
+                    }
+                });
+                
+                // Scrap button
+                $('.scrap-btn').click(function() {
+                    const callNumber = $(this).data('call');
+                    
+                    if (confirm('Send this vehicle to scrap?')) {
+                        $.ajax({
+                            url: `/api/decision/${callNumber}`,
+                            type: 'POST',
+                            contentType: 'application/json',
+                            data: JSON.stringify({ decision: 'scrap' }),
+                            success: function() {
+                                alert('Vehicle marked for scrapping');
+                                loadVehicles();
+                            },
+                            error: function(xhr) {
+                                alert('Error: ' + (xhr.responseJSON?.message || 'Failed to update status'));
+                            }
+                        });
+                    }
+                });
+                
+                // Edit button
+                $('.edit-btn').click(function() {
+                    const callNumber = $(this).data('call');
+                    currentVehicle = callNumber;
+                    
+                    $.get(`/api/vehicles?call_number=${callNumber}`, function(data) {
+                        if (data && data.length > 0) {
+                            const vehicle = data[0];
+                            
+                            let formHtml = '';
+                            
+                            // Create form fields
+                            const fields = [
+                                { name: 'towbook_call_number', label: 'Call Number', type: 'text' },
+                                { name: 'complaint_number', label: 'Complaint Number', type: 'text' },
+                                { name: 'jurisdiction', label: 'Jurisdiction', type: 'text' },
+                                { name: 'tow_date', label: 'Tow Date', type: 'date' },
+                                { name: 'tow_time', label: 'Tow Time', type: 'time' },
+                                { name: 'location', label: 'Location', type: 'text' },
+                                { name: 'vin', label: 'VIN', type: 'text' },
+                                { name: 'year', label: 'Year', type: 'text' },
+                                { name: 'make', label: 'Make', type: 'text' },
+                                { name: 'model', label: 'Model', type: 'text' },
+                                { name: 'color', label: 'Color', type: 'text' },
+                                { name: 'plate', label: 'License Plate', type: 'text' },
+                                { name: 'state', label: 'State', type: 'text' }
+                            ];
+                            
+                            fields.forEach(field => {
+                                formHtml += `
+                                    <div class="mb-3">
+                                        <label for="edit_${field.name}">${field.label}</label>
+                                        <input type="${field.type}" class="form-control" id="edit_${field.name}" 
+                                               name="${field.name}" value="${vehicle[field.name] || ''}">
+                                    </div>
+                                `;
+                            });
+                            
+                            $('#editForm').html(formHtml);
+                            new bootstrap.Modal(document.getElementById('editModal')).show();
+                        } else {
+                            alert('Vehicle not found');
+                        }
+                    });
+                });
+                
+                // Status change button
+                $('.status-btn').click(function() {
+                    const callNumber = $(this).data('call');
+                    currentVehicle = callNumber;
+                    
+                    $.get(`/api/vehicles?call_number=${callNumber}`, function(data) {
+                        if (data && data.length > 0) {
+                            const vehicle = data[0];
+                            $('#newStatus').val(vehicle.status || 'New');
+                            
+                            // Show vehicle summary
+                            const vehicleInfo = [vehicle.year, vehicle.make, vehicle.model, vehicle.color]
+                                .filter(Boolean)
+                                .join(' ');
+                                
+                            $('#statusVehicleInfo').html(`
+                                <div class="mt-3 mb-3 card">
+                                    <div class="card-body">
+                                        <h6>Vehicle Info</h6>
+                                        <p><strong>Call Number:</strong> ${vehicle.towbook_call_number}</p>
+                                        <p><strong>Current Status:</strong> ${vehicle.status || 'New'}</p>
+                                        <p><strong>Vehicle:</strong> ${vehicleInfo}</p>
+                                        <p><strong>VIN:</strong> ${vehicle.vin || 'N/A'}</p>
+                                    </div>
+                                </div>
+                            `);
+                            
+                            new bootstrap.Modal(document.getElementById('statusModal')).show();
+                        } else {
+                            alert('Vehicle not found');
+                        }
+                    });
+                });
+                
+                // Release button
+                $('.release-btn').click(function() {
+                    const callNumber = $(this).data('call');
+                    
+                    if (confirm('Mark this vehicle as released?')) {
+                        $.ajax({
+                            url: `/api/mark-released/${callNumber}`,
+                            type: 'POST',
+                            contentType: 'application/json',
+                            data: JSON.stringify({
+                                release_reason: 'Released to Owner',
+                                recipient: 'Owner',
+                                release_date: new Date().toISOString().split('T')[0],
+                                release_time: new Date().toTimeString().slice(0, 5)
+                            }),
+                            success: function() {
+                                alert('Vehicle marked as released');
+                                loadVehicles();
+                            },
+                            error: function(xhr) {
+                                alert('Error: ' + (xhr.responseJSON?.message || 'Failed to release vehicle'));
+                            }
+                        });
+                    }
+                });
+            }).fail(function(xhr) {
+                $('#vehicleTableBody').html(`<tr><td colspan="7">Error loading vehicles: ${xhr.responseJSON?.message || 'Unknown error'}</td></tr>`);
+            });
+        }
+    </script>
+</body>
+</html>

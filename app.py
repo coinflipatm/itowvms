@@ -47,7 +47,7 @@ def run_status_checks():
 @app.route('/')
 def index():
     status = request.args.get('status', 'New')
-    return render_template('batch_review.html', status=status)
+    return render_template('index.html', status=status)
 
 @app.route('/api/vehicles')
 def api_get_vehicles():
@@ -173,7 +173,9 @@ def generate_top(call_number):
         os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
         success, error = pdf_gen.generate_top(data, pdf_path)
         if success:
+            # Update the status to TOP Sent
             update_fields = {'top_form_sent_date': datetime.now().strftime('%Y-%m-%d')}
+            # This line was buggy - fix it to always update the status
             update_vehicle_status(call_number, 'TOP Sent', update_fields)
             log_action("GENERATE_TOP", call_number, "TOP form generated")
             return send_file(pdf_path, as_attachment=True)

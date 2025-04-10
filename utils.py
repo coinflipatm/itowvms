@@ -98,18 +98,170 @@ def calculate_newspaper_ad_date(auction_date):
 
 def get_status_filter(status_type):
     """
-    Map UI status types to database statuses based on the desired flow:
-    New → TOP Sent → Ready → Scheduled for Release → Auction → Completed
+    Map UI status types to database statuses based on your existing flow:
+    New → TOP Generated → Ready → Scheduled for Release → Released/Scrapped
     """
     filters = {
         'New': ['New'],
-        'TOP_Sent': ['TOP Sent'],
+        'TOP_Generated': ['TOP Generated'],
         'Ready': ['Ready'],
         'Scheduled': ['Scheduled for Release'],
-        'Auction': ['Auction'],
+        'Auction': ['Auction'],  # Added to match your existing status
         'Completed': ['Released', 'Scrapped', 'Auctioned']
     }
     return filters.get(status_type, [])
+
+def calculate_tr52_countdown(top_sent_date):
+    """Calculate days until TR52 is ready (20 days from TOP sent)"""
+    if not top_sent_date:
+        return None
+    
+    try:
+        if isinstance(top_sent_date, str):
+            top_date = datetime.strptime(top_sent_date, '%Y-%m-%d').date()
+        else:
+            top_date = top_sent_date
+            
+        tr52_date = top_date + timedelta(days=20)
+        today = datetime.now().date()
+        
+        days_left = (tr52_date - today).days
+        return max(0, days_left)
+    except Exception as e:
+        logging.error(f"Error calculating TR52 countdown: {e}")
+        return None
+
+def convert_frontend_status(frontend_status):
+    """Convert frontend status to database status"""
+    status_map = {
+        'New': 'New',
+        'TOP_Generated': 'TOP Generated',
+        'Ready': 'Ready',
+        'Scheduled': 'Scheduled for Release',
+        'Auction': 'Auction',
+        'Scrapped': 'Scrapped', 
+        'Released': 'Released',
+        'Completed': 'Released'  # Default completed status
+    }
+    return status_map.get(frontend_status, frontend_status)
+
+def update_vehicle_status(towbook_call_number, new_status, update_fields=None):
+    """
+    Update a vehicle's status with proper handling of existing workflow
+    
+    Args:
+        towbook_call_number: Vehicle identifier
+        new_status: The new status to set
+        update_fields: Additional fields to update
+    
+    Returns:
+        bool: Success flag
+    """
+    from utils import log_action
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM vehicles WHERE towbook_call_number = ?", (towbook_call_number,))
+        vehicle = cursor.fetchone()
+        if not vehicle:
+            conn.close()
+            return False
+        
+        if not update_fields:
+            update_fields = {}
+        update_fields['status'] = new_status
+        update_fields['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        if new_status == 'TOP Generated':
+            # Set the date the TOP form was sent
+            update_fields['top_form_sent_date'] = datetime.now().strftime('%Y-%m-%d')
+            
+            # Calculate the date when TR52 will be available (20 days after TOP sent)
+            tr52_date = datetime.now() + timedelta(days=20)
+            update_fields['tr52_available_date'] = tr52_date.strftime('%Y-%m-%d')
+            
+            # Set the days until TR52 is ready
+            update_fields['days_until_next_step'] = 20
+        
+        elif new_status == 'Ready':
+            # Ready for disposition decision
+            pass
+        
+        elif new_status == 'Scheduled for Release':
+            # Vehicle is scheduled for release
+            update_fields['paperwork_received_date'] = datetime.now().strftime('%Y-%m-%d')
+        
+        elif new_status == 'Auction':
+            # Calculate next auction date (Monday after 10 days)
+            today = datetime.now().date()
+            days_to_monday = (7 - today.weekday()) % 7  # Days until next Monday
+            if days_to_monday < 3:  # If Monday is less than 3 days away, target the following Monday
+                days_to_monday += 7
+            
+            auction_date = today + timedelta(days=max(10, days_to_monday))  # At least 10 days
+            update_fields['auction_date'] = auction_date.strftime('%Y-%m-%d')
+            update_fields['decision'] = 'Auction'
+            update_fields['decision_date'] = datetime.now().strftime('%Y-%m-%d')
+            
+            # Calculate days until auction
+            update_fields['days_until_auction'] = (auction_date - today).days
+        
+        elif new_status == 'Scrapped':
+            # Schedule scrap for 7 days from today
+            scrap_date = datetime.now().date() + timedelta(days=7)
+            update_fields['estimated_date'] = scrap_date.strftime('%Y-%m-%d')
+            update_fields['decision'] = 'Scrap'
+            update_fields['decision_date'] = datetime.now().strftime('%Y-%m-%d')
+            
+            # Mark as archived for completed items
+            update_fields['archived'] = 1
+            
+            # Set release reason to Scrapped
+            update_fields['release_reason'] = 'Scrapped'
+            update_fields['release_date'] = datetime.now().strftime('%Y-%m-%d')
+        
+        elif new_status in ['Released', 'Auctioned']:
+            # Mark as archived for completed items
+            update_fields['archived'] = 1
+            
+            # Set release information if not provided
+            if 'release_date' not in update_fields:
+                update_fields['release_date'] = datetime.now().strftime('%Y-%m-%d')
+            if 'release_time' not in update_fields:
+                update_fields['release_time'] = datetime.now().strftime('%H:%M')
+                
+            # Set release reason if not provided
+            if 'release_reason' not in update_fields:
+                if new_status == 'Released':
+                    update_fields['release_reason'] = 'Released to Owner'
+                elif new_status == 'Auctioned':
+                    update_fields['release_reason'] = 'Auctioned'
+        
+        set_clause = ', '.join([f"{k} = ?" for k in update_fields.keys()])
+        values = list(update_fields.values()) + [towbook_call_number]
+        cursor.execute(f'UPDATE vehicles SET {set_clause} WHERE towbook_call_number = ?', values)
+        conn.commit()
+        conn.close()
+        log_action("STATUS_CHANGE", towbook_call_number, f"Status changed to {new_status}")
+        return True
+    except Exception as e:
+        logging.error(f"Status update error: {e}")
+        return False
+
+
+def convert_db_status(db_status):
+    """Convert database status to frontend status"""
+    status_map = {
+        'New': 'New',
+        'TOP Generated': 'TOP_Generated',
+        'TR52 Ready': 'TR52_Ready',
+        'Ready for Auction': 'Ready_Auction',
+        'Ready for Scrap': 'Ready_Scrap',
+        'Auctioned': 'Completed',
+        'Scrapped': 'Completed',
+        'Released': 'Completed'
+    }
+    return status_map.get(db_status, db_status)
 
 def setup_logging():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s',

@@ -6,7 +6,7 @@ from generator import PDFGenerator
 from scraper import TowBookScraper
 from utils import (generate_complaint_number, release_vehicle, log_action, 
                    ensure_logs_table_exists, setup_logging, get_status_filter)
-from datetime import datetime
+from datetime import datetime, timedelta
 import threading
 import os
 import logging
@@ -39,7 +39,7 @@ def run_status_checks():
         try:
             check_and_update_statuses()
             log_action("SYSTEM", "AUTO", "Ran automated status checks")
-            time.sleep(86400)  # Daily check (24 hours)
+            time.sleep(3600)  # Hourly check (1 hour)
         except Exception as e:
             logging.error(f"Status check error: {e}")
             time.sleep(60)  # Brief sleep on error
@@ -59,18 +59,31 @@ def api_get_vehicles():
     if count_by_status:
         conn = get_db_connection()
         cursor = conn.cursor()
+        
+        # Get exact counts for each status
+        cursor.execute("SELECT status, COUNT(*) as count FROM vehicles GROUP BY status")
+        status_breakdown = {row[0] or 'undefined': row[1] for row in cursor.fetchall()}
+        
+        # Calculate counts for UI categories
         counts = {
-            'new': cursor.execute("SELECT COUNT(*) FROM vehicles WHERE status = 'New' AND archived = 0").fetchone()[0],
-            'topSent': cursor.execute("SELECT COUNT(*) FROM vehicles WHERE status = 'TOP Sent' AND archived = 0").fetchone()[0],
-            'ready': cursor.execute("SELECT COUNT(*) FROM vehicles WHERE status = 'Ready' AND archived = 0").fetchone()[0],
-            'scheduled': cursor.execute("SELECT COUNT(*) FROM vehicles WHERE status = 'Scheduled for Release' AND archived = 0").fetchone()[0],
-            'auction': cursor.execute("SELECT COUNT(*) FROM vehicles WHERE status = 'Auction' AND archived = 0").fetchone()[0],
-            'completed': cursor.execute("SELECT COUNT(*) FROM vehicles WHERE status IN ('Released', 'Auctioned', 'Scrapped') AND archived = 0").fetchone()[0],
+            'new': status_breakdown.get('New', 0),
+            'topGenerated': status_breakdown.get('TOP Generated', 0),
+            'ready': status_breakdown.get('Ready', 0),
+            'scheduled': status_breakdown.get('Scheduled for Release', 0),
+            'auction': status_breakdown.get('Auction', 0),
+            'scrapped': status_breakdown.get('Scrapped', 0),
+            'released': status_breakdown.get('Released', 0),
+            'completed': sum([
+                status_breakdown.get('Released', 0),
+                status_breakdown.get('Scrapped', 0),
+                status_breakdown.get('Auctioned', 0)
+            ]),
             'active': cursor.execute("SELECT COUNT(*) FROM vehicles WHERE archived = 0").fetchone()[0],
             'total': cursor.execute("SELECT COUNT(*) FROM vehicles").fetchone()[0]
         }
+        
         conn.close()
-        return jsonify({'status': 'success', 'counts': counts})
+        return jsonify({'status': 'success', 'counts': counts, 'statusBreakdown': status_breakdown})
     
     if call_number:
         conn = get_db_connection()
@@ -102,7 +115,7 @@ def api_get_vehicles():
                 tow_date = datetime.strptime(vehicle['tow_date'], '%Y-%m-%d')
                 vehicle['days_since_tow'] = (datetime.now() - tow_date).days
                 
-                if vehicle['status'] == 'TOP Sent' and vehicle['tr52_available_date']:
+                if vehicle['status'] == 'TOP Generated' and vehicle['tr52_available_date']:
                     tr52_date = datetime.strptime(vehicle['tr52_available_date'], '%Y-%m-%d')
                     vehicle['days_until_next_step'] = max(0, (tr52_date - datetime.now()).days)
                     vehicle['next_step_label'] = 'days until Ready'
@@ -173,10 +186,16 @@ def generate_top(call_number):
         os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
         success, error = pdf_gen.generate_top(data, pdf_path)
         if success:
-            # Update the status to TOP Sent
+            # Update the status to TOP Generated
             update_fields = {'top_form_sent_date': datetime.now().strftime('%Y-%m-%d')}
-            # This line was buggy - fix it to always update the status
-            update_vehicle_status(call_number, 'TOP Sent', update_fields)
+            
+            # Calculate the TR52 available date (20 days from now)
+            tr52_date = datetime.now() + timedelta(days=20)
+            update_fields['tr52_available_date'] = tr52_date.strftime('%Y-%m-%d')
+            update_fields['days_until_next_step'] = 20
+            
+            # Update the status
+            update_vehicle_status(call_number, 'TOP Generated', update_fields)
             log_action("GENERATE_TOP", call_number, "TOP form generated")
             return send_file(pdf_path, as_attachment=True)
         logging.error(f"Failed to generate TOP: {error}")
@@ -184,6 +203,20 @@ def generate_top(call_number):
     except Exception as e:
         logging.error(f"Error generating TOP: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/mark-tr52-ready/<call_number>', methods=['POST'])
+def mark_tr52_ready(call_number):
+    """Mark a vehicle as TR52 Ready, indicating the TR52 form has been received"""
+    try:
+        update_fields = {'tr52_received_date': datetime.now().strftime('%Y-%m-%d')}
+        success = update_vehicle_status(call_number, 'TR52 Ready', update_fields)
+        if success:
+            log_action("TR52_READY", call_number, "TR52 form received")
+            return jsonify({'status': 'success', 'message': 'Vehicle marked as TR52 Ready'})
+        return jsonify({'status': 'error', 'message': 'Failed to update status'}), 500
+    except Exception as e:
+        logging.error(f"Error marking TR52 ready: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/paperwork-received/<call_number>', methods=['POST'])
 def paperwork_received(call_number):
@@ -325,6 +358,48 @@ def scraping_progress():
     except Exception as e:
         logging.error(f"Error getting progress: {e}")
         return jsonify({'status': 'error', 'message': str(e), 'progress': {'percentage': 0, 'is_running': False}})
+
+@app.route('/api/workflow-counts')
+def workflow_counts():
+    """Get workflow counts for dashboard"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        today = datetime.now().strftime('%Y-%m-%d')
+        
+        # Overdue actions
+        cursor.execute("""
+            SELECT COUNT(*) FROM vehicles
+            WHERE status = 'New' AND last_updated < DATE('now', '-2 day')
+            OR (status = 'TOP Generated' AND last_updated < DATE('now', '-20 day'))
+        """)
+        overdue = cursor.fetchone()[0]
+        
+        # Actions due today
+        cursor.execute("""
+            SELECT COUNT(*) FROM vehicles
+            WHERE status = 'New' AND last_updated = DATE('now', '-2 day')
+            OR (status = 'TOP Generated' AND last_updated = DATE('now', '-20 day'))
+        """)
+        due_today = cursor.fetchone()[0]
+        
+        # Ready for disposition
+        cursor.execute("""
+            SELECT COUNT(*) FROM vehicles
+            WHERE status = 'Ready'
+        """)
+        ready = cursor.fetchone()[0]
+        
+        conn.close()
+        
+        return jsonify({
+            'overdue': overdue,
+            'dueToday': due_today,
+            'ready': ready
+        })
+    except Exception as e:
+        logging.error(f"Error getting workflow counts: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     port = 5000

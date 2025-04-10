@@ -116,6 +116,93 @@ def insert_vehicle(vehicle_data):  # Removed unused 'data' parameter
         logging.error(f"Insert error: {e}")
         return False, str(e)
 
+def check_and_update_statuses():
+    """
+    Run automated status checks and updates:
+    - Update days_until_next_step for TOP Generated vehicles
+    - Update status when TR52 is ready (20 days after TOP sent)
+    - Update auction countdowns
+    """
+    from utils import log_action
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM vehicles WHERE archived = 0")
+        vehicles = cursor.fetchall()
+        today = datetime.now().date()
+        
+        for vehicle in vehicles:
+            tow_date = vehicle['tow_date']
+            if tow_date:
+                try:
+                    # Handle different date formats
+                    try:
+                        tow_date = datetime.strptime(tow_date, '%Y-%m-%d').date()
+                    except ValueError:
+                        tow_date = datetime.strptime(tow_date, '%m/%d/%Y').date()
+                        cursor.execute("UPDATE vehicles SET tow_date = ? WHERE towbook_call_number = ?",
+                                     (tow_date.strftime('%Y-%m-%d'), vehicle['towbook_call_number']))
+                    
+                    # Check TOP Generated vehicles for Ready status after 20 days
+                    if vehicle['status'] == 'TOP Generated' and vehicle['top_form_sent_date']:
+                        try:
+                            top_date = datetime.strptime(vehicle['top_form_sent_date'], '%Y-%m-%d').date()
+                            days_since_top = (today - top_date).days
+                            
+                            if days_since_top >= 20:
+                                cursor.execute("""
+                                    UPDATE vehicles SET status = ?, last_updated = ? 
+                                    WHERE towbook_call_number = ?
+                                """, ('Ready', datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 
+                                     vehicle['towbook_call_number']))
+                                log_action("AUTO_STATUS", vehicle['towbook_call_number'], 
+                                         "Automatically moved to Ready status after 20 days")
+                            else:
+                                # Update days until Ready
+                                days_left = 20 - days_since_top
+                                cursor.execute("""
+                                    UPDATE vehicles SET days_until_next_step = ? 
+                                    WHERE towbook_call_number = ?
+                                """, (days_left, vehicle['towbook_call_number']))
+                        except Exception as e:
+                            logging.warning(f"TOP date processing error for {vehicle['towbook_call_number']}: {e}")
+                    
+                    # Check Auction vehicles
+                    elif vehicle['status'] == 'Auction' and vehicle['auction_date']:
+                        try:
+                            auction_date = datetime.strptime(vehicle['auction_date'], '%Y-%m-%d').date()
+                            days_until_auction = (auction_date - today).days
+                            
+                            cursor.execute("""
+                                UPDATE vehicles SET days_until_auction = ? 
+                                WHERE towbook_call_number = ?
+                            """, (max(0, days_until_auction), vehicle['towbook_call_number']))
+                            
+                            # Auto-complete if auction date has passed
+                            if days_until_auction < -1:  # Give a 1-day buffer
+                                cursor.execute("""
+                                    UPDATE vehicles SET status = ?, archived = 1, release_reason = ?,
+                                    release_date = ?, last_updated = ?
+                                    WHERE towbook_call_number = ?
+                                """, ('Auctioned', 'Auto-completed auction', 
+                                     auction_date.strftime('%Y-%m-%d'),
+                                     datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                     vehicle['towbook_call_number']))
+                                log_action("AUTO_STATUS", vehicle['towbook_call_number'], 
+                                         "Automatically marked as Auctioned after auction date")
+                        except Exception as e:
+                            logging.warning(f"Auction date processing error for {vehicle['towbook_call_number']}: {e}")
+                            
+                except Exception as e:
+                    logging.warning(f"Date processing error for {vehicle['towbook_call_number']}: {e}")
+        
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        logging.error(f"Status check error: {e}")
+        return False
+    
 def update_vehicle_status(towbook_call_number, new_status, update_fields=None):
     from utils import log_action
     try:
@@ -132,22 +219,61 @@ def update_vehicle_status(towbook_call_number, new_status, update_fields=None):
         update_fields['status'] = new_status
         update_fields['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
-        if new_status == 'TOP Sent':
-            update_fields['top_form_sent_date'] = datetime.now().strftime('%Y-%m-%d')
-            tr52_date = datetime.now() + timedelta(days=20)
+        if new_status == 'TOP Generated':
+            # Set the date the TOP form was sent
+            top_date = datetime.now()
+            update_fields['top_form_sent_date'] = top_date.strftime('%Y-%m-%d')
+            
+            # Calculate the date when TR52 will be available (20 days after TOP sent)
+            tr52_date = top_date + timedelta(days=20)
             update_fields['tr52_available_date'] = tr52_date.strftime('%Y-%m-%d')
+            
+            # Set the days until TR52 is ready
+            update_fields['days_until_next_step'] = 20
         
-        elif new_status == 'Auction':
-            ad_placement_date = update_fields.get('ad_placement_date') or vehicle['ad_placement_date']
-            auction_date = calculate_next_auction_date(ad_placement_date)
+        elif new_status == 'TR52 Ready':
+            # No additional fields needed, this is just a status marker
+            pass
+        
+        elif new_status == 'Ready for Auction':
+            # Calculate next auction date (next Monday)
+            auction_date = calculate_next_auction_date(vehicle['ad_placement_date'])
             update_fields['auction_date'] = auction_date.strftime('%Y-%m-%d')
+            update_fields['decision'] = 'Auction'
+            update_fields['decision_date'] = datetime.now().strftime('%Y-%m-%d')
+            
+            # Calculate days until auction
+            days_until_auction = (auction_date.date() - datetime.now().date()).days
+            update_fields['days_until_auction'] = max(0, days_until_auction)
+        
+        elif new_status == 'Ready for Scrap':
+            # Schedule scrap for 7 days from now
+            scrap_date = datetime.now() + timedelta(days=7)
+            update_fields['estimated_date'] = scrap_date.strftime('%Y-%m-%d')
+            update_fields['decision'] = 'Scrap'
+            update_fields['decision_date'] = datetime.now().strftime('%Y-%m-%d')
+            
+            # Set days until scrap
+            update_fields['days_until_next_step'] = 7
         
         elif new_status in ['Released', 'Auctioned', 'Scrapped']:
+            # Mark as archived for completed items
             update_fields['archived'] = 1
+            
+            # Set release information if not provided
             if 'release_date' not in update_fields:
                 update_fields['release_date'] = datetime.now().strftime('%Y-%m-%d')
             if 'release_time' not in update_fields:
                 update_fields['release_time'] = datetime.now().strftime('%H:%M')
+                
+            # Set release reason if not provided
+            if 'release_reason' not in update_fields:
+                if new_status == 'Released':
+                    update_fields['release_reason'] = 'Released to Owner'
+                elif new_status == 'Auctioned':
+                    update_fields['release_reason'] = 'Auctioned'
+                elif new_status == 'Scrapped':
+                    update_fields['release_reason'] = 'Scrapped'
         
         set_clause = ', '.join([f"{k} = ?" for k in update_fields.keys()])
         values = list(update_fields.values()) + [towbook_call_number]
@@ -161,6 +287,10 @@ def update_vehicle_status(towbook_call_number, new_status, update_fields=None):
         return False
 
 def get_vehicles_by_status(status_type):
+    """
+    Get vehicles with the specified status type
+    Maps UI tabs to database statuses using get_status_filter
+    """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -168,22 +298,55 @@ def get_vehicles_by_status(status_type):
         if not status_filter:
             conn.close()
             return []
+            
+        # For completed items
         if status_type == 'Completed':
             cursor.execute("""
                 SELECT * FROM vehicles 
-                WHERE status IN ({}) AND archived = 0
-            """.format(','.join('?' * len(status_filter))), status_filter)
-        elif status_type == 'Scheduled':
-            cursor.execute("""
-                SELECT * FROM vehicles 
-                WHERE status = 'Scheduled for Release' AND archived = 0
-            """)
+                WHERE status IN ({}) OR archived = 1
+                ORDER BY release_date DESC
+            """.format(','.join(['?'] * len(status_filter))), status_filter)
         else:
             cursor.execute("""
                 SELECT * FROM vehicles 
                 WHERE status IN ({}) AND archived = 0
-            """.format(','.join('?' * len(status_filter))), status_filter)
-        vehicles = [dict(row) for row in cursor.fetchall()]
+                ORDER BY tow_date ASC
+            """.format(','.join(['?'] * len(status_filter))), status_filter)
+            
+        vehicles = cursor.fetchall()
+        
+        # Convert to list of dictionaries
+        vehicles = [dict(row) for row in vehicles]
+        
+        # Process dates and add additional info
+        today = datetime.now().date()
+        for vehicle in vehicles:
+            # Process tow date
+            if vehicle.get('tow_date'):
+                try:
+                    tow_date = datetime.strptime(vehicle['tow_date'], '%Y-%m-%d').date()
+                    vehicle['days_since_tow'] = (today - tow_date).days
+                except Exception as e:
+                    logging.warning(f"Tow date processing error: {e}")
+            
+            # Process TOP Generated countdowns
+            if vehicle.get('status') == 'TOP Generated' and vehicle.get('top_form_sent_date'):
+                try:
+                    top_date = datetime.strptime(vehicle['top_form_sent_date'], '%Y-%m-%d').date()
+                    tr52_date = top_date + timedelta(days=20)
+                    vehicle['days_until_ready'] = max(0, (tr52_date - today).days)
+                    vehicle['tr52_date'] = tr52_date.strftime('%Y-%m-%d')
+                except Exception as e:
+                    logging.warning(f"TOP date processing error: {e}")
+            
+            # Process auction date
+            if vehicle.get('status') == 'Auction' and vehicle.get('auction_date'):
+                try:
+                    auction_date = datetime.strptime(vehicle['auction_date'], '%Y-%m-%d').date()
+                    vehicle['days_until_auction'] = max(0, (auction_date - today).days)
+                except Exception as e:
+                    logging.warning(f"Auction date processing error: {e}")
+        
         conn.close()
         return vehicles
     except Exception as e:

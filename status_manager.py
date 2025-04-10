@@ -17,12 +17,10 @@ class StatusManager:
     # Define allowed transitions
     ALLOWED_TRANSITIONS = {
         'New': ['TOP Generated'],
-        'TOP Generated': ['Ready for Disposition'],
-        'Ready for Disposition': ['Paperwork Received'],
-        'Paperwork Received': ['Ready for Auction', 'Ready for Scrap'],
-        'Ready for Auction': ['In Auction'],
+        'TOP Generated': ['TR52 Ready'],
+        'TR52 Ready': ['Ready for Auction', 'Ready for Scrap'],
+        'Ready for Auction': ['Auctioned'],
         'Ready for Scrap': ['Scrapped'],
-        'In Auction': ['Auctioned', 'Released'],
         # Special case: Any status can go to Released
         '_any_': ['Released']
     }
@@ -30,40 +28,38 @@ class StatusManager:
     # Status display names
     STATUS_DISPLAY_NAMES = {
         'New': 'New',
-        'TOP Generated': 'TOP Sent',
-        'Ready for Disposition': 'Ready for Disposition',
-        'Paperwork Received': 'Paperwork Received',
+        'TOP Generated': 'TOP Generated',
+        'TR52 Ready': 'TR52 Ready',
         'Ready for Auction': 'Ready for Auction',
         'Ready for Scrap': 'Ready for Scrap',
-        'In Auction': 'In Auction',
-        'Released': 'Released',
         'Auctioned': 'Auctioned',
-        'Scrapped': 'Scrapped'
+        'Scrapped': 'Scrapped',
+        'Released': 'Released'
     }
     
     # Frontend to database status mapping
     FRONTEND_TO_DB_STATUS = {
         'New': 'New',
-        'TOP_Sent': 'TOP Generated',
-        'Ready': 'Ready for Disposition',
-        'Paperwork': 'Paperwork Received',
-        'Action': 'Ready for Action',  # Special case, handled separately
-        'InAuction': 'In Auction',
-        'Completed': 'Released'  # Default completed status
+        'TOP_Generated': 'TOP Generated',
+        'TR52_Ready': 'TR52 Ready', 
+        'Ready_Auction': 'Ready for Auction',
+        'Ready_Scrap': 'Ready for Scrap',
+        'Auctioned': 'Auctioned',
+        'Scrapped': 'Scrapped',
+        'Released': 'Released',
+        'Completed': 'Released'  # For backward compatibility
     }
     
     # Database to frontend status mapping
     DB_TO_FRONTEND_STATUS = {
         'New': 'New',
-        'TOP Generated': 'TOP_Sent',
-        'Ready for Disposition': 'Ready',
-        'Paperwork Received': 'Paperwork',
-        'Ready for Auction': 'Action',
-        'Ready for Scrap': 'Action',
-        'In Auction': 'InAuction',
-        'Released': 'Completed',
+        'TOP Generated': 'TOP_Generated',
+        'TR52 Ready': 'TR52_Ready',
+        'Ready for Auction': 'Ready_Auction',
+        'Ready for Scrap': 'Ready_Scrap',
         'Auctioned': 'Completed',
-        'Scrapped': 'Completed'
+        'Scrapped': 'Completed',
+        'Released': 'Completed'
     }
     
     @classmethod
@@ -98,11 +94,6 @@ class StatusManager:
         try:
             # If new_status is a frontend status, convert it to db status
             new_status = cls.get_db_status(new_status)
-            
-            # Special case for "Action" frontend status
-            if new_status == 'Ready for Action':
-                # Default to "Ready for Auction"
-                new_status = 'Ready for Auction'
             
             with transaction() as conn:
                 cursor = conn.cursor()
@@ -139,11 +130,12 @@ class StatusManager:
                     tr52_date = datetime.now() + timedelta(days=20)
                     fields['tr52_available_date'] = tr52_date.strftime('%Y-%m-%d')
                     
-                elif new_status == 'Paperwork Received':
-                    fields['paperwork_received_date'] = datetime.now().strftime('%Y-%m-%d')
+                elif new_status == 'TR52 Ready':
+                    # No additional fields needed for TR52 Ready status
+                    pass
                     
                 elif new_status == 'Ready for Auction':
-                    # Calculate next auction date (next Monday after paper deadline)
+                    # Calculate next auction date
                     try:
                         today = datetime.now().date()
                         days_to_monday = (7 - today.weekday()) % 7  # Days until next Monday
@@ -151,30 +143,22 @@ class StatusManager:
                             days_to_monday += 7
                         next_monday = today + timedelta(days=days_to_monday)
                         
-                        # Ensure we have at least 10 days for the newspaper ad
+                        # Auction must be at least 10 days from now for newspaper ad
                         if (next_monday - today).days < 10:
                             next_monday += timedelta(days=7)
                             
-                        fields['estimated_date'] = next_monday.strftime('%Y-%m-%d')
+                        fields['auction_date'] = next_monday.strftime('%Y-%m-%d')
                         fields['decision'] = 'Auction'
                         fields['decision_date'] = datetime.now().strftime('%Y-%m-%d')
                     except Exception as e:
                         logging.warning(f"Error calculating auction date: {e}")
                         
                 elif new_status == 'Ready for Scrap':
-                    # 7 days after paperwork received
-                    try:
-                        cursor.execute("SELECT paperwork_received_date FROM vehicles WHERE towbook_call_number = ?", (vehicle_id,))
-                        result = cursor.fetchone()
-                        if result and result['paperwork_received_date']:
-                            paperwork_date = datetime.strptime(result['paperwork_received_date'], '%Y-%m-%d')
-                            scrap_date = paperwork_date + timedelta(days=7)
-                            fields['estimated_date'] = scrap_date.strftime('%Y-%m-%d')
-                        
-                        fields['decision'] = 'Scrap'
-                        fields['decision_date'] = datetime.now().strftime('%Y-%m-%d')
-                    except Exception as e:
-                        logging.warning(f"Error calculating scrap date: {e}")
+                    # 7 days after TR52 Ready status
+                    scrap_date = datetime.now() + timedelta(days=7)
+                    fields['estimated_date'] = scrap_date.strftime('%Y-%m-%d')
+                    fields['decision'] = 'Scrap'
+                    fields['decision_date'] = datetime.now().strftime('%Y-%m-%d')
                 
                 # For release-type statuses, ensure we have a proper release reason if not specified
                 if new_status in ['Auctioned', 'Scrapped', 'Released']:
@@ -224,10 +208,6 @@ class StatusManager:
             # Convert frontend status to db status if needed
             db_status = cls.get_db_status(new_status)
             
-            # Special case for "Action" frontend status
-            if db_status == 'Ready for Action':
-                db_status = 'Ready for Auction'
-            
             with transaction() as conn:
                 cursor = conn.cursor()
                 updated_count = 0
@@ -270,30 +250,3 @@ class StatusManager:
         except Exception as e:
             logging.error(f"Error in batch update: {e}")
             return False, 0, str(e)
-
-# Standalone test if script is run directly
-if __name__ == '__main__':
-    # Configure logging
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    
-    # Test frontend/backend status conversion
-    print("Testing status conversion:")
-    frontend_statuses = ['New', 'TOP_Sent', 'Ready', 'Paperwork', 'Action', 'InAuction', 'Completed']
-    for status in frontend_statuses:
-        db_status = StatusManager.get_db_status(status)
-        back_to_frontend = StatusManager.get_frontend_status(db_status)
-        print(f"Frontend: {status} -> DB: {db_status} -> Frontend: {back_to_frontend}")
-    
-    # Test allowed transitions
-    print("\nTesting allowed transitions:")
-    for from_status, to_statuses in StatusManager.ALLOWED_TRANSITIONS.items():
-        if from_status == '_any_':
-            continue  # Skip special case
-        for to_status in to_statuses:
-            can_transition = StatusManager.can_transition(from_status, to_status)
-            print(f"{from_status} -> {to_status}: {can_transition}")
-    
-    # Test can't transition to invalid status
-    print("\nTesting invalid transitions:")
-    print(f"New -> Auctioned: {StatusManager.can_transition('New', 'Auctioned')}")
-    print(f"TOP Generated -> Scrapped: {StatusManager.can_transition('TOP Generated', 'Scrapped')}")

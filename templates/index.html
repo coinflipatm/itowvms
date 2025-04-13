@@ -13,9 +13,6 @@
         .card-header { background-color: #e0e0e0; padding: 10px 15px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
         .card-body { padding: 15px; }
         .btn { border-radius: 5px; padding: 8px 15px; margin: 5px; }
-        .tabs { display: flex; background-color: #e0e0e0; border-radius: 8px 8px 0 0; }
-        .tab { flex: 1; padding: 15px; text-align: center; color: #333; text-decoration: none; }
-        .tab:hover, .tab.active { background-color: #007bff; color: #fff; }
         .table { background-color: #fff; border: 1px solid #ddd; border-radius: 8px; }
         .table th, .table td { padding: 12px; border-bottom: 1px solid #ddd; }
         .table th { background-color: #e0e0e0; position: sticky; top: 0; z-index: 10; }
@@ -35,6 +32,7 @@
         
         .status-new { background-color: #cfe2ff; color: #084298; }
         .status-top { background-color: #d1e7dd; color: #0a3622; }
+        .status-tr52 { background-color: #e2e3e5; color: #41464b; }
         .status-ready { background-color: #fff3cd; color: #664d03; }
         .status-scheduled { background-color: #f8d7da; color: #58151c; }
         .status-auction { background-color: #e2e3e5; color: #41464b; }
@@ -73,7 +71,7 @@
             margin-bottom: 5px;
         }
         
-        /* Tooltips */
+        /* Tooltip styling */
         .tooltip-wrapper {
             position: relative;
             display: inline-block;
@@ -88,12 +86,13 @@
             border-radius: 6px;
             padding: 5px;
             position: absolute;
-            z-index: 1;
+            z-index: 9999; /* Increased z-index */
             bottom: 125%;
             left: 50%;
             margin-left: -60px;
             opacity: 0;
             transition: opacity 0.3s;
+            pointer-events: none; /* Prevents tooltip from blocking clicks */
         }
         
         .tooltip-wrapper:hover .tooltip-text {
@@ -150,6 +149,54 @@
         .status-count {
             margin-left: 10px;
         }
+        
+        /* Clickable stat cards */
+        .stat-card-link {
+            display: block;
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .stat-card-link:hover .stat-card {
+            background-color: #f0f0f0;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+            transform: translateY(-2px);
+            transition: all 0.2s ease;
+        }
+        
+        /* Sortable table headers */
+        .sortable {
+            cursor: pointer;
+            position: relative;
+        }
+
+        .sortable:after {
+            content: '⇕';
+            position: absolute;
+            right: 8px;
+            color: #999;
+        }
+
+        .sortable.asc:after {
+            content: '↑';
+            color: #333;
+        }
+
+        .sortable.desc:after {
+            content: '↓';
+            color: #333;
+        }
+
+        /* Delete button styling */
+        .delete-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+        }
+
+        .delete-btn:hover {
+            background-color: #c82333;
+        }
     </style>
 </head>
 <body>
@@ -176,6 +223,14 @@
                             <button type="button" id="addVehicleBtn" class="btn btn-success">Add Vehicle</button>
                         </div>
                     </div>
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="headlessMode">
+                                <label class="form-check-label" for="headlessMode">Headless Mode (Browser not visible)</label>
+                            </div>
+                        </div>
+                    </div>
                 </form>
             </div>
         </div>
@@ -196,53 +251,55 @@
             <div class="card-body">
                 <div class="row">
                     <div class="col-md-2">
-                        <div class="stat-card">
-                            <h6>New</h6>
-                            <div id="newCount" class="stat-number">-</div>
-                        </div>
+                        <a href="?status=New" class="stat-card-link">
+                            <div class="stat-card">
+                                <h6>New</h6>
+                                <div id="newCount" class="stat-number">-</div>
+                            </div>
+                        </a>
                     </div>
                     <div class="col-md-2">
-                        <div class="stat-card">
-                            <h6>TOP Generated</h6>
-                            <div id="topCount" class="stat-number">-</div>
-                        </div>
+                        <a href="?status=TOP_Generated" class="stat-card-link">
+                            <div class="stat-card">
+                                <h6>TOP Generated</h6>
+                                <div id="topCount" class="stat-number">-</div>
+                            </div>
+                        </a>
                     </div>
                     <div class="col-md-2">
-                        <div class="stat-card">
-                            <h6>Ready</h6>
-                            <div id="readyCount" class="stat-number">-</div>
-                        </div>
+                        <a href="?status=TR52_Ready" class="stat-card-link">
+                            <div class="stat-card">
+                                <h6>TR52 Ready</h6>
+                                <div id="tr52ReadyCount" class="stat-number">-</div>
+                            </div>
+                        </a>
                     </div>
                     <div class="col-md-2">
-                        <div class="stat-card">
-                            <h6>Scheduled</h6>
-                            <div id="scheduledCount" class="stat-number">-</div>
-                        </div>
+                        <a href="?status=Ready_Auction" class="stat-card-link">
+                            <div class="stat-card">
+                                <h6>Ready for Auction</h6>
+                                <div id="readyAuctionCount" class="stat-number">-</div>
+                            </div>
+                        </a>
                     </div>
                     <div class="col-md-2">
-                        <div class="stat-card">
-                            <h6>Auction</h6>
-                            <div id="auctionCount" class="stat-number">-</div>
-                        </div>
+                        <a href="?status=Ready_Scrap" class="stat-card-link">
+                            <div class="stat-card">
+                                <h6>Ready for Scrap</h6>
+                                <div id="readyScrapCount" class="stat-number">-</div>
+                            </div>
+                        </a>
                     </div>
                     <div class="col-md-2">
-                        <div class="stat-card">
-                            <h6>Completed</h6>
-                            <div id="completedCount" class="stat-number">-</div>
-                        </div>
+                        <a href="?status=Completed" class="stat-card-link">
+                            <div class="stat-card">
+                                <h6>Completed</h6>
+                                <div id="completedCount" class="stat-number">-</div>
+                            </div>
+                        </a>
                     </div>
                 </div>
             </div>
-        </div>
-
-        <!-- Tab Navigation -->
-        <div class="tabs">
-            <a href="?status=New" class="tab" id="newTab">New</a>
-            <a href="?status=TOP_Generated" class="tab" id="topGeneratedTab">TOP Generated</a>
-            <a href="?status=Ready" class="tab" id="readyTab">Ready</a>
-            <a href="?status=Scheduled" class="tab" id="scheduledTab">Scheduled</a>
-            <a href="?status=Auction" class="tab" id="auctionTab">Auction</a>
-            <a href="?status=Completed" class="tab" id="completedTab">Completed</a>
         </div>
 
         <div class="table-responsive">
@@ -364,8 +421,9 @@
                             <select id="newStatus" class="form-select">
                                 <option value="New">New</option>
                                 <option value="TOP Generated">TOP Generated</option>
-                                <option value="Ready">Ready</option>
-                                <option value="Scheduled for Release">Scheduled for Release</option>
+                                <option value="TR52 Ready">TR52 Ready</option>
+                                <option value="Ready for Auction">Ready for Auction</option>
+                                <option value="Ready for Scrap">Ready for Scrap</option>
                                 <option value="Auction">Auction</option>
                                 <option value="Released">Released</option>
                                 <option value="Scrapped">Scrapped</option>
@@ -391,6 +449,8 @@
     <script>
         let currentVehicle = null;
         let statusChart = null;
+        let currentSortColumn = 'tow_date';
+        let currentSortDirection = 'desc'; // Default to newest first
 
         // Format countdown display
         function formatCountdown(days, type) {
@@ -427,9 +487,9 @@
                     // Update the dashboard counts
                     $('#newCount').text(counts.new || 0);
                     $('#topCount').text(counts.topGenerated || 0);
-                    $('#readyCount').text(counts.ready || 0);
-                    $('#scheduledCount').text(counts.scheduled || 0);
-                    $('#auctionCount').text(counts.auction || 0);
+                    $('#tr52ReadyCount').text(counts.tr52Ready || 0);
+                    $('#readyAuctionCount').text(counts.readyAuction || 0);
+                    $('#readyScrapCount').text(counts.readyScrap || 0);
                     $('#completedCount').text(counts.completed || 0);
                     
                     // If we have detailed breakdown, create a tooltip
@@ -459,22 +519,22 @@
                         statusChart = new Chart(ctx, {
                             type: 'pie',
                             data: {
-                                labels: ['New', 'TOP Generated', 'Ready', 'Scheduled', 'Auction', 'Completed'],
+                                labels: ['New', 'TOP Generated', 'TR52 Ready', 'Ready for Auction', 'Ready for Scrap', 'Completed'],
                                 datasets: [{
                                     data: [
                                         counts.new || 0,
                                         counts.topGenerated || 0,
-                                        counts.ready || 0,
-                                        counts.scheduled || 0,
-                                        counts.auction || 0,
+                                        counts.tr52Ready || 0,
+                                        counts.readyAuction || 0,
+                                        counts.readyScrap || 0,
                                         counts.completed || 0
                                     ],
                                     backgroundColor: [
                                         'rgba(134, 226, 119, 0.7)',  // New
                                         'rgba(255, 189, 89, 0.7)',   // TOP Generated
-                                        'rgba(209, 107, 165, 0.7)',  // Ready
-                                        'rgba(255, 107, 107, 0.7)',  // Scheduled
-                                        'rgba(184, 169, 198, 0.7)',  // Auction
+                                        'rgba(209, 107, 165, 0.7)',  // TR52 Ready
+                                        'rgba(255, 107, 107, 0.7)',  // Ready for Auction
+                                        'rgba(184, 169, 198, 0.7)',  // Ready for Scrap
                                         'rgba(255, 141, 77, 0.7)'    // Completed
                                     ]
                                 }]
@@ -497,15 +557,29 @@
                         statusChart.data.datasets[0].data = [
                             counts.new || 0,
                             counts.topGenerated || 0,
-                            counts.ready || 0,
-                            counts.scheduled || 0,
-                            counts.auction || 0,
+                            counts.tr52Ready || 0,
+                            counts.readyAuction || 0,
+                            counts.readyScrap || 0,
                             counts.completed || 0
                         ];
                         statusChart.update();
                     }
                 }
             });
+        }
+
+        // Function to format the table headers with sort indicators
+        function formatSortableHeader(headerText, columnKey, defaultSort = false) {
+            let className = 'sortable';
+            if (currentSortColumn === columnKey) {
+                className += currentSortDirection === 'asc' ? ' asc' : ' desc';
+            } else if (defaultSort) {
+                // Mark the default sort column
+                className += ' desc'; 
+                currentSortColumn = columnKey;
+            }
+            
+            return `<th class="${className}" data-sort="${columnKey}">${headerText}</th>`;
         }
 
         // Load vehicles for the current tab
@@ -515,43 +589,60 @@
             // Update status counts
             updateStatusCounts();
             
-            $.get(`/api/vehicles?status_type=${status}`, function(data) {
+            // Add sort parameter if set
+            let apiUrl = `/api/vehicles?status_type=${status}`;
+            if (currentSortColumn) {
+                apiUrl += `&sort=${currentSortColumn}&direction=${currentSortDirection}`;
+            }
+            
+            $.get(apiUrl, function(data) {
                 const thead = $('#vehicleTableHead').empty();
                 const tbody = $('#vehicleTableBody').empty();
                 
                 // Define headers based on status
-                const headers = ['Call #', 'Complaint #', 'Tow Date', 'Vehicle Info', 'Jurisdiction'];
+                const headerRow = $('<tr>');
+                
+                // Define sortable headers
+                headerRow.append(formatSortableHeader('Call #', 'towbook_call_number'));
+                headerRow.append(formatSortableHeader('Complaint #', 'complaint_number'));
+                headerRow.append(formatSortableHeader('Tow Date', 'tow_date', true)); // Default sort by tow date
+                headerRow.append(`<th>Vehicle Info</th>`); // Not sortable
+                headerRow.append(formatSortableHeader('Jurisdiction', 'jurisdiction'));
                 
                 // Add status-specific column
                 let statusColumnHeader = 'Action';
                 if (status === 'TOP_Generated') {
                     statusColumnHeader = 'TR52 Countdown';
-                } else if (status === 'Ready') {
+                } else if (status === 'TR52_Ready') {
                     statusColumnHeader = 'Decision';
-                } else if (status === 'Scheduled') {
-                    statusColumnHeader = 'Options';
+                } else if (status === 'Ready_Auction') {
+                    statusColumnHeader = 'Auction Date';
+                } else if (status === 'Ready_Scrap') {
+                    statusColumnHeader = 'Scrap Countdown';
                 } else if (status === 'Auction') {
                     statusColumnHeader = 'Auction Date';
                 } else if (status === 'Completed') {
                     statusColumnHeader = 'Release Info';
                 }
                 
-                headers.push(statusColumnHeader);
+                headerRow.append(`<th>${statusColumnHeader}</th>`);
                 
                 // Always add controls column
-                headers.push('Controls');
+                headerRow.append('<th>Controls</th>');
                 
-                // Create header row
-                thead.append('<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>');
+                thead.append(headerRow);
                 
                 if (!data.length) {
-                    tbody.append(`<tr><td colspan="${headers.length}">No vehicles found</td></tr>`);
+                    tbody.append(`<tr><td colspan="${headerRow.children().length}">No vehicles found</td></tr>`);
                     return;
                 }
                 
                 // Create data rows
                 data.forEach(vehicle => {
                     const row = $('<tr>');
+                    row.attr('data-call-number', vehicle.towbook_call_number);
+                    row.attr('data-status', vehicle.status);
+                    
                     row.append(`<td>${vehicle.towbook_call_number || 'N/A'}</td>`);
                     row.append(`<td>${vehicle.complaint_number || 'N/A'}</td>`);
                     row.append(`<td>${vehicle.tow_date || 'N/A'}</td>`);
@@ -564,10 +655,12 @@
                     // Add status badge to vehicle info
                     let statusBadgeClass = 'status-new';
                     if (vehicle.status === 'TOP Generated') statusBadgeClass = 'status-top';
-                    else if (vehicle.status === 'Ready') statusBadgeClass = 'status-ready';
-                    else if (vehicle.status === 'Scheduled for Release') statusBadgeClass = 'status-scheduled';
+                    else if (vehicle.status === 'TR52 Ready') statusBadgeClass = 'status-tr52';
+                    else if (vehicle.status === 'Ready for Auction' || vehicle.status === 'Ready for Scrap') 
+                        statusBadgeClass = 'status-ready';
                     else if (vehicle.status === 'Auction') statusBadgeClass = 'status-auction';
-                    else if (['Released', 'Auctioned', 'Scrapped'].includes(vehicle.status)) statusBadgeClass = 'status-completed';
+                    else if (['Released', 'Auctioned', 'Scrapped'].includes(vehicle.status)) 
+                        statusBadgeClass = 'status-completed';
                     
                     const statusBadge = `<span class="status-badge ${statusBadgeClass}">${vehicle.status}</span>`;
                     
@@ -584,23 +677,39 @@
                         row.append(`<td><button class="btn btn-primary btn-sm generate-top-btn" data-call="${vehicle.towbook_call_number}">Generate TOP</button></td>`);
                     } else if (status === 'TOP_Generated') {
                         // Show countdown to TR52 (Ready)
-                        const daysUntilReady = vehicle.days_until_next_step || vehicle.days_until_tr52 || 20;
+                        const daysUntilReady = vehicle.days_until_next_step || 20;
                         const tr52Date = vehicle.tr52_date || vehicle.tr52_available_date || 'Unknown';
                         
                         row.append(`<td>
-                            ${formatCountdown(daysUntilReady, 'Ready')}<br>
-                            <small>Ready date: ${tr52Date}</small>
+                            ${formatCountdown(daysUntilReady, 'TR52 Ready')}<br>
+                            <small>TR52 date: ${tr52Date}</small>
                             ${daysUntilReady <= 0 ? 
-                                `<br><button class="btn btn-success btn-sm mark-ready-btn" data-call="${vehicle.towbook_call_number}">Mark Ready</button>` : ''}
+                                `<br><button class="btn btn-success btn-sm mark-tr52-ready-btn" data-call="${vehicle.towbook_call_number}">Mark TR52 Ready</button>` : ''}
                         </td>`);
-                    } else if (status === 'Ready') {
+                    } else if (status === 'TR52_Ready') {
                         row.append(`<td>
-                            <button class="btn btn-primary btn-sm schedule-btn" data-call="${vehicle.towbook_call_number}">Schedule</button>
+                            <button class="btn btn-primary btn-sm ready-auction-btn" data-call="${vehicle.towbook_call_number}">Ready for Auction</button>
+                            <button class="btn btn-warning btn-sm ready-scrap-btn" data-call="${vehicle.towbook_call_number}">Ready for Scrap</button>
                         </td>`);
-                    } else if (status === 'Scheduled') {
+                    } else if (status === 'Ready_Auction') {
+                        const auctionDate = vehicle.auction_date || 'Not set';
+                        const daysUntilAuction = vehicle.days_until_auction || 0;
+                        
                         row.append(`<td>
-                            <button class="btn btn-success btn-sm auction-btn" data-call="${vehicle.towbook_call_number}">Auction</button>
-                            <button class="btn btn-danger btn-sm scrap-btn" data-call="${vehicle.towbook_call_number}">Scrap</button>
+                            ${auctionDate}<br>
+                            ${formatCountdown(daysUntilAuction, 'auction')}
+                            ${daysUntilAuction <= 0 ? 
+                                `<br><button class="btn btn-success btn-sm complete-auction-btn" data-call="${vehicle.towbook_call_number}">Mark Auctioned</button>` : ''}
+                        </td>`);
+                    } else if (status === 'Ready_Scrap') {
+                        const daysUntilScrap = vehicle.days_until_next_step || 0;
+                        const scrapDate = vehicle.estimated_date || 'Not set';
+                        
+                        row.append(`<td>
+                            ${formatCountdown(daysUntilScrap, 'legal scrap date')}<br>
+                            <small>Can scrap on: ${scrapDate}</small>
+                            ${daysUntilScrap <= 0 ? 
+                                `<br><button class="btn btn-success btn-sm complete-scrap-btn" data-call="${vehicle.towbook_call_number}">Mark Scrapped</button>` : ''}
                         </td>`);
                     } else if (status === 'Auction') {
                         const auctionDate = vehicle.auction_date || 'Not set';
@@ -642,32 +751,31 @@
                             </button>
                             <span class="tooltip-text">Release</span>
                         </div>
+                        <div class="tooltip-wrapper">
+                            <button class="btn btn-danger btn-sm delete-btn" data-call="${vehicle.towbook_call_number}">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                            <span class="tooltip-text">Delete</span>
+                        </div>
                     </td>`);
                     
                     tbody.append(row);
                 });
                 
-                // Attach event handlers
-                
-                // Mark as Ready button (for TOP Generated)
-                $('.mark-ready-btn').click(function() {
-                    const callNumber = $(this).data('call');
+                // Attach event handlers for sortable columns
+                $('.sortable').click(function() {
+                    const column = $(this).data('sort');
                     
-                    if (confirm('Mark this vehicle as Ready?')) {
-                        $.ajax({
-                            url: `/api/update-status/${callNumber}`,
-                            type: 'POST',
-                            contentType: 'application/json',
-                            data: JSON.stringify({ status: 'Ready' }),
-                            success: function() {
-                                showNotification('Vehicle marked as Ready');
-                                loadVehicles();
-                            },
-                            error: function(xhr) {
-                                showNotification('Error: ' + (xhr.responseJSON?.message || 'Failed to update status'), 'error');
-                            }
-                        });
+                    // Update sort direction
+                    if (currentSortColumn === column) {
+                        currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        currentSortColumn = column;
+                        currentSortDirection = 'asc';
                     }
+                    
+                    // Reload with new sort
+                    loadVehicles();
                 });
                 
                 // Generate TOP form
@@ -699,18 +807,18 @@
                     });
                 });
                 
-                // Schedule button
-                $('.schedule-btn').click(function() {
+                // Mark as TR52 Ready button
+                $('.mark-tr52-ready-btn').click(function() {
                     const callNumber = $(this).data('call');
                     
-                    if (confirm('Schedule this vehicle for release?')) {
+                    if (confirm('Mark this vehicle as TR52 Ready?')) {
                         $.ajax({
                             url: `/api/update-status/${callNumber}`,
                             type: 'POST',
                             contentType: 'application/json',
-                            data: JSON.stringify({ status: 'Scheduled for Release' }),
+                            data: JSON.stringify({ status: 'TR52 Ready' }),
                             success: function() {
-                                showNotification('Vehicle scheduled for release');
+                                showNotification('Vehicle marked as TR52 Ready');
                                 loadVehicles();
                             },
                             error: function(xhr) {
@@ -720,18 +828,18 @@
                     }
                 });
                 
-                // Auction button
-                $('.auction-btn').click(function() {
+                // Mark as Ready for Auction
+                $('.ready-auction-btn').click(function() {
                     const callNumber = $(this).data('call');
                     
-                    if (confirm('Send this vehicle to auction?')) {
+                    if (confirm('Mark this vehicle as Ready for Auction?')) {
                         $.ajax({
                             url: `/api/update-status/${callNumber}`,
                             type: 'POST',
                             contentType: 'application/json',
-                            data: JSON.stringify({ status: 'Auction' }),
+                            data: JSON.stringify({ status: 'Ready for Auction' }),
                             success: function() {
-                                showNotification('Vehicle sent to auction');
+                                showNotification('Vehicle marked as Ready for Auction');
                                 loadVehicles();
                             },
                             error: function(xhr) {
@@ -741,24 +849,75 @@
                     }
                 });
                 
-                // Scrap button
-                $('.scrap-btn').click(function() {
+                // Mark as Ready for Scrap
+                $('.ready-scrap-btn').click(function() {
                     const callNumber = $(this).data('call');
                     
-                    if (confirm('Mark this vehicle for scrap?')) {
+                    if (confirm('Mark this vehicle as Ready for Scrap?')) {
+                        $.ajax({
+                            url: `/api/update-status/${callNumber}`,
+                            type: 'POST',
+                            contentType: 'application/json',
+                            data: JSON.stringify({ status: 'Ready for Scrap' }),
+                            success: function() {
+                                showNotification('Vehicle marked as Ready for Scrap');
+                                loadVehicles();
+                            },
+                            error: function(xhr) {
+                                showNotification('Error: ' + (xhr.responseJSON?.message || 'Failed to update status'), 'error');
+                            }
+                        });
+                    }
+                });
+                
+                // Mark as Auctioned
+                $('.complete-auction-btn').click(function() {
+                    const callNumber = $(this).data('call');
+                    
+                    if (confirm('Mark this vehicle as Auctioned (completed)?')) {
+                        $.ajax({
+                            url: `/api/update-status/${callNumber}`,
+                            type: 'POST',
+                            contentType: 'application/json',
+                            data: JSON.stringify({ status: 'Auctioned' }),
+                            success: function() {
+                                showNotification('Vehicle marked as Auctioned');
+                                loadVehicles();
+                            },
+                            error: function(xhr) {
+                                showNotification('Error: ' + (xhr.responseJSON?.message || 'Failed to update status'), 'error');
+                            }
+                        });
+                    }
+                });
+                
+                // Mark as Scrapped
+                $('.complete-scrap-btn').click(function() {
+                    const callNumber = $(this).data('call');
+                    
+                    if (confirm('Mark this vehicle as Scrapped (completed)?')) {
                         $.ajax({
                             url: `/api/update-status/${callNumber}`,
                             type: 'POST',
                             contentType: 'application/json',
                             data: JSON.stringify({ status: 'Scrapped' }),
                             success: function() {
-                                showNotification('Vehicle marked for scrapping');
+                                showNotification('Vehicle marked as Scrapped');
                                 loadVehicles();
                             },
                             error: function(xhr) {
                                 showNotification('Error: ' + (xhr.responseJSON?.message || 'Failed to update status'), 'error');
                             }
                         });
+                    }
+                });
+                
+                // Delete button
+                $('.delete-btn').click(function() {
+                    const callNumber = $(this).data('call');
+                    
+                    if (confirm(`Are you sure you want to permanently delete vehicle ${callNumber}? This cannot be undone.`)) {
+                        deleteVehicle(callNumber);
                     }
                 });
                 
@@ -791,11 +950,33 @@
                             ];
                             
                             fields.forEach(field => {
+                                // Format time field correctly - ensure it's in HH:MM format
+                                let value = vehicle[field.name] || '';
+                                
+                                if (field.name === 'tow_time' && value) {
+                                    // Try to format time to HH:MM if it's not already
+                                    try {
+                                        // Handle different time formats
+                                        if (value.includes(':')) {
+                                            // Already has a colon, make sure it's just HH:MM
+                                            const timeParts = value.split(':');
+                                            if (timeParts.length >= 2) {
+                                                value = `${timeParts[0].padStart(2, '0')}:${timeParts[1].padStart(2, '0')}`;
+                                            }
+                                        } else if (value.length === 4) {
+                                            // Military time without colon (e.g. 1430)
+                                            value = `${value.substring(0, 2)}:${value.substring(2, 4)}`;
+                                        }
+                                    } catch (e) {
+                                        console.error('Error formatting time:', e);
+                                    }
+                                }
+                                
                                 formHtml += `
                                     <div class="mb-3">
                                         <label for="edit_${field.name}">${field.label}</label>
                                         <input type="${field.type}" class="form-control" id="edit_${field.name}" 
-                                               name="${field.name}" value="${vehicle[field.name] || ''}">
+                                               name="${field.name}" value="${value}">
                                     </div>
                                 `;
                             });
@@ -872,11 +1053,25 @@
             });
         }
 
+        // Function to delete a vehicle
+        function deleteVehicle(callNumber) {
+            $.ajax({
+                url: `/api/vehicles/delete/${callNumber}`,
+                type: 'DELETE',
+                success: function() {
+                    showNotification('Vehicle deleted successfully');
+                    loadVehicles();
+                },
+                error: function(xhr) {
+                    showNotification('Error: ' + (xhr.responseJSON?.message || 'Failed to delete vehicle'), 'error');
+                }
+            });
+        }
+
         // Set the active tab based on URL parameter
         function setActiveTab() {
             const status = new URLSearchParams(window.location.search).get('status') || 'New';
-            $('.tab').removeClass('active');
-            $(`.tab[href="?status=${status}"]`).addClass('active');
+            // No need to set tab active class - we've removed tabs
         }
         
         $(document).ready(function() {
@@ -902,6 +1097,7 @@
             $('#startScrapingBtn').click(function() {
                 const startDate = $('#startDate').val();
                 const endDate = $('#endDate').val();
+                const headless = $('#headlessMode').prop('checked');
                 
                 if (!startDate || !endDate) {
                     showNotification('Please enter start and end dates', 'error');
@@ -914,7 +1110,11 @@
                     url: '/api/start-scraping',
                     type: 'POST',
                     contentType: 'application/json',
-                    data: JSON.stringify({ start_date: startDate, end_date: endDate }),
+                    data: JSON.stringify({ 
+                        start_date: startDate, 
+                        end_date: endDate,
+                        headless: headless 
+                    }),
                     success: function() {
                         $('#statusBar').show();
                         $('#startScrapingBtn').prop('disabled', false).text('Start Scraping');

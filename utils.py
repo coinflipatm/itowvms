@@ -98,18 +98,29 @@ def calculate_newspaper_ad_date(auction_date):
 
 def get_status_filter(status_type):
     """
-    Map UI status types to database statuses based on your existing flow:
-    New → TOP Generated → Ready → Scheduled for Release → Released/Scrapped
+    Map UI status types to database statuses based on updated workflow:
+    New → TOP Generated → TR52 Ready → Ready for Auction/Scrap → Auctioned/Scrapped/Released
     """
     filters = {
         'New': ['New'],
         'TOP_Generated': ['TOP Generated'],
-        'Ready': ['Ready'],
-        'Scheduled': ['Scheduled for Release'],
-        'Auction': ['Auction'],  # Added to match your existing status
+        'TR52_Ready': ['TR52 Ready'],
+        'Ready_Auction': ['Ready for Auction'],
+        'Ready_Scrap': ['Ready for Scrap'],
+        'Auction': ['Auction'],
         'Completed': ['Released', 'Scrapped', 'Auctioned']
     }
-    return filters.get(status_type, [])
+    
+    # For backward compatibility, support older status types
+    backward_compat = {
+        'Ready': ['TR52 Ready', 'Ready for Auction', 'Ready for Scrap'],
+        'Scheduled': ['Scheduled for Release']
+    }
+    
+    # Check both standard and backward compatibility maps
+    status_filters = filters.get(status_type, backward_compat.get(status_type, []))
+    
+    return status_filters
 
 def calculate_tr52_countdown(top_sent_date):
     """Calculate days until TR52 is ready (20 days from TOP sent)"""
@@ -136,8 +147,9 @@ def convert_frontend_status(frontend_status):
     status_map = {
         'New': 'New',
         'TOP_Generated': 'TOP Generated',
-        'Ready': 'Ready',
-        'Scheduled': 'Scheduled for Release',
+        'TR52_Ready': 'TR52 Ready',
+        'Ready_Auction': 'Ready for Auction',
+        'Ready_Scrap': 'Ready for Scrap',
         'Auction': 'Auction',
         'Scrapped': 'Scrapped', 
         'Released': 'Released',
@@ -183,15 +195,11 @@ def update_vehicle_status(towbook_call_number, new_status, update_fields=None):
             # Set the days until TR52 is ready
             update_fields['days_until_next_step'] = 20
         
-        elif new_status == 'Ready':
-            # Ready for disposition decision
+        elif new_status == 'TR52 Ready':
+            # Vehicle is ready for disposition decision
             pass
         
-        elif new_status == 'Scheduled for Release':
-            # Vehicle is scheduled for release
-            update_fields['paperwork_received_date'] = datetime.now().strftime('%Y-%m-%d')
-        
-        elif new_status == 'Auction':
+        elif new_status == 'Ready for Auction':
             # Calculate next auction date (Monday after 10 days)
             today = datetime.now().date()
             days_to_monday = (7 - today.weekday()) % 7  # Days until next Monday
@@ -206,7 +214,7 @@ def update_vehicle_status(towbook_call_number, new_status, update_fields=None):
             # Calculate days until auction
             update_fields['days_until_auction'] = (auction_date - today).days
         
-        elif new_status == 'Scrapped':
+        elif new_status == 'Ready for Scrap':
             # Schedule scrap for 7 days from today
             scrap_date = datetime.now().date() + timedelta(days=7)
             update_fields['estimated_date'] = scrap_date.strftime('%Y-%m-%d')
@@ -220,7 +228,7 @@ def update_vehicle_status(towbook_call_number, new_status, update_fields=None):
             update_fields['release_reason'] = 'Scrapped'
             update_fields['release_date'] = datetime.now().strftime('%Y-%m-%d')
         
-        elif new_status in ['Released', 'Auctioned']:
+        elif new_status in ['Released', 'Auctioned', 'Scrapped']:
             # Mark as archived for completed items
             update_fields['archived'] = 1
             
@@ -236,6 +244,8 @@ def update_vehicle_status(towbook_call_number, new_status, update_fields=None):
                     update_fields['release_reason'] = 'Released to Owner'
                 elif new_status == 'Auctioned':
                     update_fields['release_reason'] = 'Auctioned'
+                elif new_status == 'Scrapped':
+                    update_fields['release_reason'] = 'Scrapped'
         
         set_clause = ', '.join([f"{k} = ?" for k in update_fields.keys()])
         values = list(update_fields.values()) + [towbook_call_number]

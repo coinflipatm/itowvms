@@ -55,6 +55,8 @@ def api_get_vehicles():
     count_by_status = request.args.get('count_by_status') == 'true'
     auction_only = request.args.get('auction_only') == 'true'
     call_number = request.args.get('call_number')
+    sort_column = request.args.get('sort')
+    sort_direction = request.args.get('direction', 'desc')  # Default to newest first
     
     if count_by_status:
         conn = get_db_connection()
@@ -68,8 +70,9 @@ def api_get_vehicles():
         counts = {
             'new': status_breakdown.get('New', 0),
             'topGenerated': status_breakdown.get('TOP Generated', 0),
-            'ready': status_breakdown.get('Ready', 0),
-            'scheduled': status_breakdown.get('Scheduled for Release', 0),
+            'tr52Ready': status_breakdown.get('TR52 Ready', 0),
+            'readyAuction': status_breakdown.get('Ready for Auction', 0),
+            'readyScrap': status_breakdown.get('Ready for Scrap', 0),
             'auction': status_breakdown.get('Auction', 0),
             'scrapped': status_breakdown.get('Scrapped', 0),
             'released': status_breakdown.get('Released', 0),
@@ -95,17 +98,30 @@ def api_get_vehicles():
     if auction_only:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vehicles WHERE status = 'Auction' AND archived = 0 ORDER BY tow_date ASC")
+        cursor.execute("SELECT * FROM vehicles WHERE status = 'Auction' AND archived = 0 ORDER BY tow_date DESC")
         vehicles = [dict(v) for v in cursor.fetchall()]
         conn.close()
         return jsonify(vehicles)
     
     if status_type:
-        vehicles = get_vehicles_by_status(status_type)  # Updated to match new signature
+        vehicles = get_vehicles_by_status(status_type, sort_column, sort_direction)
     else:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vehicles WHERE archived = 0")
+        
+        # Add sorting if specified
+        sort_by = "tow_date DESC"  # Default sort
+        if sort_column:
+            # Sanitize sort column
+            valid_columns = [
+                'towbook_call_number', 'complaint_number', 'vin', 'make', 'model', 
+                'year', 'color', 'tow_date', 'jurisdiction', 'status', 'last_updated'
+            ]
+            if sort_column in valid_columns:
+                sort_dir = "ASC" if sort_direction.lower() == 'asc' else "DESC"
+                sort_by = f"{sort_column} {sort_dir}"
+                
+        cursor.execute(f"SELECT * FROM vehicles WHERE archived = 0 ORDER BY {sort_by}")
         vehicles = [dict(row) for row in cursor.fetchall()]
         conn.close()
 
@@ -118,11 +134,21 @@ def api_get_vehicles():
                 if vehicle['status'] == 'TOP Generated' and vehicle['tr52_available_date']:
                     tr52_date = datetime.strptime(vehicle['tr52_available_date'], '%Y-%m-%d')
                     vehicle['days_until_next_step'] = max(0, (tr52_date - datetime.now()).days)
-                    vehicle['next_step_label'] = 'days until Ready'
+                    vehicle['next_step_label'] = 'days until TR52 Ready'
+                
+                elif vehicle['status'] == 'TR52 Ready':
+                    vehicle['next_step_label'] = 'days since TR52 Ready'
+                    vehicle['days_until_next_step'] = vehicle.get('days_until_next_step', 0)
+                
+                elif vehicle['status'] == 'Ready for Scrap' and vehicle.get('estimated_date'):
+                    estimated_date = datetime.strptime(vehicle['estimated_date'], '%Y-%m-%d')
+                    vehicle['days_until_next_step'] = max(0, (estimated_date - datetime.now()).days)
+                    vehicle['next_step_label'] = 'days until legal scrap date'
                     
-                elif vehicle['status'] == 'Auction' and vehicle['auction_date']:
+                elif vehicle['status'] == 'Ready for Auction' and vehicle['auction_date']:
                     auction_date = datetime.strptime(vehicle['auction_date'], '%Y-%m-%d')
                     vehicle['days_until_auction'] = max(0, (auction_date - datetime.now()).days)
+                    vehicle['next_step_label'] = 'days until auction'
             except Exception as e:
                 logging.warning(f"Date processing error for {vehicle['towbook_call_number']}: {e}")
     
@@ -139,6 +165,34 @@ def update_vehicle_api(call_number):
         return jsonify({'status': 'error', 'message': message}), 400
     except Exception as e:
         logging.error(f"Error updating vehicle {call_number}: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/vehicles/delete/<call_number>', methods=['DELETE'])
+def delete_vehicle(call_number):
+    """Delete a vehicle completely from the database"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check if vehicle exists
+        cursor.execute("SELECT COUNT(*) FROM vehicles WHERE towbook_call_number = ?", (call_number,))
+        if cursor.fetchone()[0] == 0:
+            conn.close()
+            return jsonify({'status': 'error', 'message': 'Vehicle not found'}), 404
+        
+        # Delete logs first (foreign key constraint)
+        cursor.execute("DELETE FROM logs WHERE vehicle_id = ?", (call_number,))
+        
+        # Then delete the vehicle
+        cursor.execute("DELETE FROM vehicles WHERE towbook_call_number = ?", (call_number,))
+        
+        conn.commit()
+        conn.close()
+        
+        log_action("SYSTEM", "ADMIN", f"Vehicle {call_number} permanently deleted")
+        return jsonify({'status': 'success', 'message': f'Vehicle {call_number} deleted'})
+    except Exception as e:
+        logging.error(f"Error deleting vehicle {call_number}: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/vehicles/add', methods=['POST'])
@@ -244,10 +298,10 @@ def api_decision(call_number):
 
     if decision == 'auction':
         auction_date = calculate_next_auction_date(ad_placement_date)
-        update_vehicle_status(call_number, 'Auction', {'auction_date': auction_date.strftime('%Y-%m-%d')})
+        update_vehicle_status(call_number, 'Ready for Auction', {'auction_date': auction_date.strftime('%Y-%m-%d')})
         log_action("USER", call_number, f"Decision: Auction, scheduled for {auction_date}")
     elif decision == 'scrap':
-        update_vehicle_status(call_number, 'Scrapped')
+        update_vehicle_status(call_number, 'Ready for Scrap')
         log_action("USER", call_number, "Decision: Scrap")
     else:
         conn.close()
@@ -334,15 +388,20 @@ def start_scraping():
         data = request.json
         start_date = data.get('start_date')
         end_date = data.get('end_date')
+        headless = data.get('headless', True)  # Default to headless mode
+        
         if not start_date or not end_date:
             return jsonify({'status': 'error', 'message': 'Dates required'}), 400
+        
         if scraper is None:
             scraper = TowBookScraper("iTow05", "iTow2023", database='vehicles.db')
+        
         app.scraping_thread = threading.Thread(
-            target=lambda: scraper.start_scraping_with_date_range(start_date, end_date)
+            target=lambda: scraper.start_scraping_with_date_range(start_date, end_date, headless)
         )
         app.scraping_thread.daemon = True
         app.scraping_thread.start()
+        
         return jsonify({'status': 'started'})
     except Exception as e:
         logging.error(f"Error starting scraping: {e}")
@@ -386,7 +445,7 @@ def workflow_counts():
         # Ready for disposition
         cursor.execute("""
             SELECT COUNT(*) FROM vehicles
-            WHERE status = 'Ready'
+            WHERE status = 'TR52 Ready'
         """)
         ready = cursor.fetchone()[0]
         
@@ -399,6 +458,67 @@ def workflow_counts():
         })
     except Exception as e:
         logging.error(f"Error getting workflow counts: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/statistics')
+def get_statistics():
+    """Get overall statistics for dashboard"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Total vehicles
+        cursor.execute("SELECT COUNT(*) FROM vehicles")
+        total_vehicles = cursor.fetchone()[0]
+        
+        # Vehicles by status
+        cursor.execute("""
+            SELECT status, COUNT(*) as count
+            FROM vehicles
+            GROUP BY status
+        """)
+        status_counts = {row[0]: row[1] for row in cursor.fetchall()}
+        
+        # Vehicles by jurisdiction
+        cursor.execute("""
+            SELECT jurisdiction, COUNT(*) as count
+            FROM vehicles
+            WHERE jurisdiction IS NOT NULL AND jurisdiction != ''
+            GROUP BY jurisdiction
+            ORDER BY count DESC
+            LIMIT 5
+        """)
+        jurisdiction_counts = {row[0]: row[1] for row in cursor.fetchall()}
+        
+        # Vehicle processing time
+        cursor.execute("""
+            SELECT 
+                AVG(JULIANDAY(COALESCE(release_date, DATE('now'))) - JULIANDAY(tow_date)) as avg_days
+            FROM vehicles
+            WHERE tow_date IS NOT NULL
+        """)
+        avg_processing_days = cursor.fetchone()[0]
+        
+        # Recent activity
+        cursor.execute("""
+            SELECT action_type, vehicle_id, details, timestamp
+            FROM logs
+            ORDER BY timestamp DESC
+            LIMIT 5
+        """)
+        recent_activity = [dict(row) for row in cursor.fetchall()]
+        
+        conn.close()
+        
+        return jsonify({
+            'totalVehicles': total_vehicles,
+            'statusCounts': status_counts,
+            'jurisdictionCounts': jurisdiction_counts,
+            'avgProcessingDays': round(avg_processing_days, 1) if avg_processing_days else 0,
+            'recentActivity': recent_activity
+        })
+    except Exception as e:
+        logging.error(f"Error getting statistics: {e}")
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':

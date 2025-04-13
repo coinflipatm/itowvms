@@ -37,7 +37,8 @@ class TowBookScraper:
             'error': None
         }
 
-    def _init_driver(self):
+    def _init_driver(self, headless=True):
+        """Initialize the WebDriver with configurable headless option"""
         if self.driver:
             return self.driver
             
@@ -45,14 +46,17 @@ class TowBookScraper:
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--window-size=1920,1080')
-        # chrome_options.add_argument('--headless')  # Uncomment for production
+        
+        # Only add headless mode if requested
+        if headless:
+            chrome_options.add_argument('--headless')
         
         try:
             self.driver = webdriver.Chrome(service=Service(), options=chrome_options)
             # Use different wait times
             self.wait = WebDriverWait(self.driver, 30)  # Longer timeout
             self.short_wait = WebDriverWait(self.driver, 5)  # Shorter timeout for quick checks
-            logging.info("WebDriver initialized")
+            logging.info(f"WebDriver initialized (headless: {headless})")
             return self.driver
         except Exception as e:
             logging.error(f"Failed to initialize WebDriver: {str(e)}")
@@ -118,7 +122,10 @@ class TowBookScraper:
     def login(self):
         try:
             self.progress['status'] = "Logging in to TowBook"
-            self._init_driver()
+            # Use the existing driver or initialize a new one
+            if not self.driver:
+                self._init_driver()
+                
             self.driver.get('https://app.towbook.com/Security/Login.aspx')
             
             # Wait for and fill username field
@@ -343,9 +350,12 @@ class TowBookScraper:
 
     def extract_datetime_fields(self, vehicle_data):
         """Extract date and time with multiple fallback methods"""
+        # Define various selectors for different field types
         date_selectors = ["input#x-impound-date-date", "input[id*='impound'][id*='date']", "input.datepicker", "input[name*='date']", "#serviceDate"]
         time_selectors = ["input#x-impound-date-time", "input[id*='impound'][id*='time']", "input.timepicker", "input[name*='time']", "#serviceTime"]
+        po_selectors = ["input#poNumber", "input[id*='poNumber']", "input[name*='poNumber']", "input[placeholder*='PO']", "input[placeholder*='po']"]
 
+        # Get tow date
         date_value = ""
         for selector in date_selectors:
             date_value = self.get_element_value_by_css(selector)
@@ -353,13 +363,72 @@ class TowBookScraper:
                 logging.info(f"Found date: {date_value} with {selector}")
                 break
 
+        # Get tow time - improved to ensure we get this value
         time_value = ""
         for selector in time_selectors:
             time_value = self.get_element_value_by_css(selector)
             if time_value:
                 logging.info(f"Found time: {time_value} with {selector}")
                 break
+        
+        # Try additional time selectors if not found
+        if not time_value:
+            # Try JavaScript approach to find time input
+            try:
+                time_value = self.driver.execute_script("""
+                    return Array.from(document.querySelectorAll('input')).find(i => 
+                        (i.placeholder && i.placeholder.toLowerCase().includes('time')) || 
+                        (i.id && i.id.toLowerCase().includes('time')) ||
+                        (i.name && i.name.toLowerCase().includes('time'))
+                    )?.value || '';
+                """)
+                if time_value:
+                    logging.info(f"Found time using JavaScript: {time_value}")
+            except Exception as e:
+                logging.warning(f"JavaScript time extraction error: {e}")
+        
+        # If still no time value, use current time as fallback
+        if not time_value:
+            time_value = datetime.now().strftime('%H:%M')
+            logging.info(f"Using current time as fallback: {time_value}")
+        
+        # Get PO number for complaint number
+        po_value = ""
+        for selector in po_selectors:
+            po_value = self.get_element_value_by_css(selector)
+            if po_value:
+                logging.info(f"Found PO#: {po_value} with {selector}")
+                break
+        
+        # Try additional PO selectors if not found
+        if not po_value:
+            try:
+                # Try JavaScript approach to find PO input
+                po_value = self.driver.execute_script("""
+                    return Array.from(document.querySelectorAll('input')).find(i => 
+                        (i.placeholder && i.placeholder.toLowerCase().includes('po')) || 
+                        (i.id && i.id.toLowerCase().includes('po')) ||
+                        (i.name && i.name.toLowerCase().includes('po'))
+                    )?.value || '';
+                """)
+                if po_value:
+                    logging.info(f"Found PO# using JavaScript: {po_value}")
+                    
+                # If still not found, try to look for a field with 'reference' or 'ref' in its attributes
+                if not po_value:
+                    po_value = self.driver.execute_script("""
+                        return Array.from(document.querySelectorAll('input')).find(i => 
+                            (i.placeholder && (i.placeholder.toLowerCase().includes('reference') || i.placeholder.toLowerCase().includes('ref'))) || 
+                            (i.id && (i.id.toLowerCase().includes('reference') || i.id.toLowerCase().includes('ref'))) ||
+                            (i.name && (i.name.toLowerCase().includes('reference') || i.name.toLowerCase().includes('ref')))
+                        )?.value || '';
+                    """)
+                    if po_value:
+                        logging.info(f"Found PO# as reference number using JavaScript: {po_value}")
+            except Exception as e:
+                logging.warning(f"JavaScript PO extraction error: {e}")
 
+        # Update vehicle data
         if date_value:
             vehicle_data['tow_date'] = date_value
             
@@ -373,12 +442,15 @@ class TowBookScraper:
                     # Try another common format
                     tow_date = datetime.strptime(date_value, '%Y-%m-%d')
                     # Already in the right format
-            except:
+            except Exception as e:
+                logging.warning(f"Date format conversion error: {e}")
                 # If we can't parse it, leave it as is
-                pass
-            
+                
         if time_value:
             vehicle_data['tow_time'] = time_value
+        
+        if po_value:
+            vehicle_data['complaint_number'] = po_value
         
         return vehicle_data
 
@@ -526,7 +598,7 @@ class TowBookScraper:
                         self.progress['processed'] = index
                         continue
                     
-                    # Extract data using the specific selectors that work with TowBook's modal
+                    # Extract date and time data
                     vehicle_data = self.extract_datetime_fields(vehicle_data)
                     
                     # Use the same field selectors from your working code
@@ -709,7 +781,7 @@ class TowBookScraper:
             self.progress['error'] = f"Storage failed: {str(e)}"
             return False
 
-    def start_scraping_with_date_range(self, start_date_str, end_date_str):
+    def start_scraping_with_date_range(self, start_date_str, end_date_str, headless=True):
         self.progress = {
             'percentage': 0,
             'is_running': True,
@@ -720,6 +792,9 @@ class TowBookScraper:
         }
         
         try:
+            # Initialize driver with headless option
+            self._init_driver(headless)
+            
             # Login - retry up to 3 times
             login_attempts = 0
             login_success = False

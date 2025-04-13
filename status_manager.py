@@ -129,34 +129,66 @@ class StatusManager:
                     # Calculate TR-52 date (20 days after TOP generation)
                     tr52_date = datetime.now() + timedelta(days=20)
                     fields['tr52_available_date'] = tr52_date.strftime('%Y-%m-%d')
+                    fields['days_until_next_step'] = 20
                     
                 elif new_status == 'TR52 Ready':
-                    # No additional fields needed for TR52 Ready status
-                    pass
+                    # Set TR52 received date
+                    if 'tr52_received_date' not in update_fields:
+                        fields['tr52_received_date'] = datetime.now().strftime('%Y-%m-%d')
                     
                 elif new_status == 'Ready for Auction':
                     # Calculate next auction date
                     try:
                         today = datetime.now().date()
+                        # Calculate auction date - must be at least 10 days from now
                         days_to_monday = (7 - today.weekday()) % 7  # Days until next Monday
-                        if days_to_monday < 3:  # If Monday is less than 3 days away, target the following Monday
+                        if days_to_monday < 3:  # If Monday is less than 3 days away, use following Monday
                             days_to_monday += 7
-                        next_monday = today + timedelta(days=days_to_monday)
-                        
-                        # Auction must be at least 10 days from now for newspaper ad
-                        if (next_monday - today).days < 10:
-                            next_monday += timedelta(days=7)
                             
+                        next_monday = today + timedelta(days=max(10, days_to_monday))
+                        
                         fields['auction_date'] = next_monday.strftime('%Y-%m-%d')
                         fields['decision'] = 'Auction'
                         fields['decision_date'] = datetime.now().strftime('%Y-%m-%d')
+                        
+                        # Calculate days until auction
+                        fields['days_until_auction'] = (next_monday - today).days
                     except Exception as e:
                         logging.warning(f"Error calculating auction date: {e}")
                         
                 elif new_status == 'Ready for Scrap':
-                    # 7 days after TR52 Ready status
-                    scrap_date = datetime.now() + timedelta(days=7)
-                    fields['estimated_date'] = scrap_date.strftime('%Y-%m-%d')
+                    # Calculate total days - check if we've reached 27 days from tow date
+                    cursor.execute(
+                        "SELECT tow_date FROM vehicles WHERE towbook_call_number = ?",
+                        (vehicle_id,)
+                    )
+                    tow_date_result = cursor.fetchone()
+                    
+                    if tow_date_result and tow_date_result['tow_date']:
+                        try:
+                            tow_date = datetime.strptime(tow_date_result['tow_date'], '%Y-%m-%d').date()
+                            today = datetime.now().date()
+                            days_since_tow = (today - tow_date).days
+                            
+                            # If less than 27 days, set estimated scrap date
+                            if days_since_tow < 27:
+                                scrap_date = tow_date + timedelta(days=27)
+                                fields['estimated_date'] = scrap_date.strftime('%Y-%m-%d')
+                                fields['days_until_next_step'] = max(0, 27 - days_since_tow)
+                            else:
+                                # Already past 27 days, can scrap immediately
+                                fields['estimated_date'] = today.strftime('%Y-%m-%d')
+                                fields['days_until_next_step'] = 0
+                        except Exception as e:
+                            logging.warning(f"Error calculating scrap date: {e}")
+                            # Default to 7 days from now if calculation fails
+                            scrap_date = datetime.now() + timedelta(days=7)
+                            fields['estimated_date'] = scrap_date.strftime('%Y-%m-%d')
+                    else:
+                        # No tow date found, default to 7 days from now
+                        scrap_date = datetime.now() + timedelta(days=7)
+                        fields['estimated_date'] = scrap_date.strftime('%Y-%m-%d')
+                    
                     fields['decision'] = 'Scrap'
                     fields['decision_date'] = datetime.now().strftime('%Y-%m-%d')
                 

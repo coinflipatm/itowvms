@@ -2,11 +2,28 @@ import sqlite3
 from datetime import datetime, timedelta
 import logging
 from utils import calculate_next_auction_date, calculate_newspaper_ad_date, get_status_filter
+import json
 
 def get_db_connection():
     conn = sqlite3.connect('vehicles.db')
     conn.row_factory = sqlite3.Row
     return conn
+
+def transaction():
+    """Context manager for database transactions"""
+    class Transaction:
+        def __enter__(self):
+            self.conn = get_db_connection()
+            return self.conn
+            
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            if exc_type is not None:
+                self.conn.rollback()
+            else:
+                self.conn.commit()
+            self.conn.close()
+    
+    return Transaction()
 
 def init_db():
     conn = get_db_connection()
@@ -286,11 +303,47 @@ def update_vehicle_status(towbook_call_number, new_status, update_fields=None):
         logging.error(f"Status update error: {e}")
         return False
 
-def get_vehicles_by_status(status_type):
+def get_vehicles(tab, sort_column=None, sort_direction='asc'):
+    """
+    Get vehicles based on tab and sorting options
+    This is a wrapper around get_vehicles_by_status to support the export functionality
+    """
+    try:
+        # If tab is 'active', return all non-archived vehicles
+        if tab == 'active':
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Add sorting if specified
+            sort_by = "tow_date DESC"  # Default sort
+            if sort_column:
+                # Sanitize sort column
+                valid_columns = [
+                    'towbook_call_number', 'complaint_number', 'vin', 'make', 'model', 
+                    'year', 'color', 'tow_date', 'jurisdiction', 'status', 'last_updated'
+                ]
+                if sort_column in valid_columns:
+                    sort_dir = "ASC" if sort_direction.lower() == 'asc' else "DESC"
+                    sort_by = f"{sort_column} {sort_dir}"
+                    
+            cursor.execute(f"SELECT * FROM vehicles WHERE archived = 0 ORDER BY {sort_by}")
+            vehicles = cursor.fetchall()
+            conn.close()
+            return vehicles
+        # Otherwise, treat tab as a status type
+        else:
+            return get_vehicles_by_status(tab, sort_column, sort_direction)
+    except Exception as e:
+        logging.error(f"Get vehicles error (tab={tab}): {e}")
+        return []
+
+def get_vehicles_by_status(status_type, sort_column=None, sort_direction='asc'):
     """
     Get vehicles with the specified status type
     Maps UI tabs to database statuses using get_status_filter
     """
+    from utils import get_status_filter
+    
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -299,19 +352,31 @@ def get_vehicles_by_status(status_type):
             conn.close()
             return []
             
+        # Create sort clause if specified
+        sort_clause = "tow_date ASC"  # Default sorting
+        if sort_column:
+            # Sanitize sort column to prevent SQL injection
+            valid_columns = [
+                'towbook_call_number', 'complaint_number', 'vin', 'make', 'model', 
+                'year', 'color', 'tow_date', 'jurisdiction', 'status', 'last_updated'
+            ]
+            if sort_column in valid_columns:
+                sort_dir = "ASC" if sort_direction.lower() == 'asc' else "DESC"
+                sort_clause = f"{sort_column} {sort_dir}"
+            
         # For completed items
         if status_type == 'Completed':
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT * FROM vehicles 
-                WHERE status IN ({}) OR archived = 1
-                ORDER BY release_date DESC
-            """.format(','.join(['?'] * len(status_filter))), status_filter)
+                WHERE status IN ({','.join(['?'] * len(status_filter))}) OR archived = 1
+                ORDER BY {sort_clause}
+            """, status_filter)
         else:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT * FROM vehicles 
-                WHERE status IN ({}) AND archived = 0
-                ORDER BY tow_date ASC
-            """.format(','.join(['?'] * len(status_filter))), status_filter)
+                WHERE status IN ({','.join(['?'] * len(status_filter))}) AND archived = 0
+                ORDER BY {sort_clause}
+            """, status_filter)
             
         vehicles = cursor.fetchall()
         
@@ -319,6 +384,8 @@ def get_vehicles_by_status(status_type):
         vehicles = [dict(row) for row in vehicles]
         
         # Process dates and add additional info
+        from datetime import datetime, timedelta
+        
         today = datetime.now().date()
         for vehicle in vehicles:
             # Process tow date
@@ -352,7 +419,7 @@ def get_vehicles_by_status(status_type):
     except Exception as e:
         logging.error(f"Get vehicles error: {e}")
         return []
-
+    
 def update_vehicle(old_call_number, data):
     from utils import log_action
     try:

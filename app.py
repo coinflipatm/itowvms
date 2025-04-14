@@ -51,108 +51,115 @@ def index():
 
 @app.route('/api/vehicles')
 def api_get_vehicles():
-    status_type = request.args.get('status_type')
-    count_by_status = request.args.get('count_by_status') == 'true'
-    auction_only = request.args.get('auction_only') == 'true'
-    call_number = request.args.get('call_number')
-    sort_column = request.args.get('sort')
-    sort_direction = request.args.get('direction', 'desc')  # Default to newest first
-    
-    if count_by_status:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+    try:
+        status_type = request.args.get('status_type')
+        count_by_status = request.args.get('count_by_status') == 'true'
+        auction_only = request.args.get('auction_only') == 'true'
+        call_number = request.args.get('call_number')
+        sort_column = request.args.get('sort')
+        sort_direction = request.args.get('direction', 'desc')  # Default to newest first
         
-        # Get exact counts for each status
-        cursor.execute("SELECT status, COUNT(*) as count FROM vehicles GROUP BY status")
-        status_breakdown = {row[0] or 'undefined': row[1] for row in cursor.fetchall()}
+        logging.info(f"API request: status_type={status_type}, sort={sort_column}, direction={sort_direction}")
         
-        # Calculate counts for UI categories
-        counts = {
-            'new': status_breakdown.get('New', 0),
-            'topGenerated': status_breakdown.get('TOP Generated', 0),
-            'tr52Ready': status_breakdown.get('TR52 Ready', 0),
-            'readyAuction': status_breakdown.get('Ready for Auction', 0),
-            'readyScrap': status_breakdown.get('Ready for Scrap', 0),
-            'auction': status_breakdown.get('Auction', 0),
-            'scrapped': status_breakdown.get('Scrapped', 0),
-            'released': status_breakdown.get('Released', 0),
-            'completed': sum([
-                status_breakdown.get('Released', 0),
-                status_breakdown.get('Scrapped', 0),
-                status_breakdown.get('Auctioned', 0)
-            ]),
-            'active': cursor.execute("SELECT COUNT(*) FROM vehicles WHERE archived = 0").fetchone()[0],
-            'total': cursor.execute("SELECT COUNT(*) FROM vehicles").fetchone()[0]
-        }
+        if count_by_status:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Get exact counts for each status
+            cursor.execute("SELECT status, COUNT(*) as count FROM vehicles GROUP BY status")
+            status_breakdown = {row[0] or 'undefined': row[1] for row in cursor.fetchall()}
+            
+            # Calculate counts for UI categories
+            counts = {
+                'new': status_breakdown.get('New', 0),
+                'topGenerated': status_breakdown.get('TOP Generated', 0),
+                'tr52Ready': status_breakdown.get('TR52 Ready', 0),
+                'readyAuction': status_breakdown.get('Ready for Auction', 0),
+                'readyScrap': status_breakdown.get('Ready for Scrap', 0),
+                'auction': status_breakdown.get('Auction', 0),
+                'scrapped': status_breakdown.get('Scrapped', 0),
+                'released': status_breakdown.get('Released', 0),
+                'completed': sum([
+                    status_breakdown.get('Released', 0),
+                    status_breakdown.get('Scrapped', 0),
+                    status_breakdown.get('Auctioned', 0)
+                ]),
+                'active': cursor.execute("SELECT COUNT(*) FROM vehicles WHERE archived = 0").fetchone()[0],
+                'total': cursor.execute("SELECT COUNT(*) FROM vehicles").fetchone()[0]
+            }
+            
+            conn.close()
+            return jsonify({'status': 'success', 'counts': counts, 'statusBreakdown': status_breakdown})
         
-        conn.close()
-        return jsonify({'status': 'success', 'counts': counts, 'statusBreakdown': status_breakdown})
-    
-    if call_number:
-        conn = get_db_connection()
-        vehicle = conn.execute("SELECT * FROM vehicles WHERE towbook_call_number = ? AND archived = 0", (call_number,)).fetchone()
-        conn.close()
-        vehicle_data = dict(vehicle) if vehicle else {}
-        return jsonify([vehicle_data] if vehicle else [])
-    
-    if auction_only:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM vehicles WHERE status = 'Auction' AND archived = 0 ORDER BY tow_date DESC")
-        vehicles = [dict(v) for v in cursor.fetchall()]
-        conn.close()
-        return jsonify(vehicles)
-    
-    if status_type:
-        vehicles = get_vehicles_by_status(status_type, sort_column, sort_direction)
-    else:
-        conn = get_db_connection()
-        cursor = conn.cursor()
+        if call_number:
+            conn = get_db_connection()
+            vehicle = conn.execute("SELECT * FROM vehicles WHERE towbook_call_number = ? AND archived = 0", (call_number,)).fetchone()
+            conn.close()
+            vehicle_data = dict(vehicle) if vehicle else {}
+            return jsonify([vehicle_data] if vehicle else [])
         
-        # Add sorting if specified
-        sort_by = "tow_date DESC"  # Default sort
-        if sort_column:
-            # Sanitize sort column
-            valid_columns = [
-                'towbook_call_number', 'complaint_number', 'vin', 'make', 'model', 
-                'year', 'color', 'tow_date', 'jurisdiction', 'status', 'last_updated'
-            ]
-            if sort_column in valid_columns:
-                sort_dir = "ASC" if sort_direction.lower() == 'asc' else "DESC"
-                sort_by = f"{sort_column} {sort_dir}"
-                
-        cursor.execute(f"SELECT * FROM vehicles WHERE archived = 0 ORDER BY {sort_by}")
-        vehicles = [dict(row) for row in cursor.fetchall()]
-        conn.close()
-
-    for vehicle in vehicles:
-        if 'tow_date' in vehicle and vehicle['tow_date']:
-            try:
-                tow_date = datetime.strptime(vehicle['tow_date'], '%Y-%m-%d')
-                vehicle['days_since_tow'] = (datetime.now() - tow_date).days
-                
-                if vehicle['status'] == 'TOP Generated' and vehicle['tr52_available_date']:
-                    tr52_date = datetime.strptime(vehicle['tr52_available_date'], '%Y-%m-%d')
-                    vehicle['days_until_next_step'] = max(0, (tr52_date - datetime.now()).days)
-                    vehicle['next_step_label'] = 'days until TR52 Ready'
-                
-                elif vehicle['status'] == 'TR52 Ready':
-                    vehicle['next_step_label'] = 'days since TR52 Ready'
-                    vehicle['days_until_next_step'] = vehicle.get('days_until_next_step', 0)
-                
-                elif vehicle['status'] == 'Ready for Scrap' and vehicle.get('estimated_date'):
-                    estimated_date = datetime.strptime(vehicle['estimated_date'], '%Y-%m-%d')
-                    vehicle['days_until_next_step'] = max(0, (estimated_date - datetime.now()).days)
-                    vehicle['next_step_label'] = 'days until legal scrap date'
+        if auction_only:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM vehicles WHERE status = 'Auction' AND archived = 0 ORDER BY tow_date DESC")
+            vehicles = [dict(v) for v in cursor.fetchall()]
+            conn.close()
+            return jsonify(vehicles)
+        
+        if status_type:
+            vehicles = get_vehicles_by_status(status_type, sort_column, sort_direction)
+            logging.info(f"Found {len(vehicles)} vehicles for status type {status_type}")
+        else:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            
+            # Add sorting if specified
+            sort_by = "tow_date DESC"  # Default sort
+            if sort_column:
+                # Sanitize sort column
+                valid_columns = [
+                    'towbook_call_number', 'complaint_number', 'vin', 'make', 'model', 
+                    'year', 'color', 'tow_date', 'jurisdiction', 'status', 'last_updated'
+                ]
+                if sort_column in valid_columns:
+                    sort_dir = "ASC" if sort_direction.lower() == 'asc' else "DESC"
+                    sort_by = f"{sort_column} {sort_dir}"
                     
-                elif vehicle['status'] == 'Ready for Auction' and vehicle['auction_date']:
-                    auction_date = datetime.strptime(vehicle['auction_date'], '%Y-%m-%d')
-                    vehicle['days_until_auction'] = max(0, (auction_date - datetime.now()).days)
-                    vehicle['next_step_label'] = 'days until auction'
-            except Exception as e:
-                logging.warning(f"Date processing error for {vehicle['towbook_call_number']}: {e}")
+            cursor.execute(f"SELECT * FROM vehicles WHERE archived = 0 ORDER BY {sort_by}")
+            vehicles = [dict(row) for row in cursor.fetchall()]
+            conn.close()
     
-    return jsonify(vehicles)
+        for vehicle in vehicles:
+            if 'tow_date' in vehicle and vehicle['tow_date']:
+                try:
+                    tow_date = datetime.strptime(vehicle['tow_date'], '%Y-%m-%d')
+                    vehicle['days_since_tow'] = (datetime.now() - tow_date).days
+                    
+                    if vehicle['status'] == 'TOP Generated' and vehicle.get('tr52_available_date'):
+                        tr52_date = datetime.strptime(vehicle['tr52_available_date'], '%Y-%m-%d')
+                        vehicle['days_until_next_step'] = max(0, (tr52_date - datetime.now()).days)
+                        vehicle['next_step_label'] = 'days until TR52 Ready'
+                    
+                    elif vehicle['status'] == 'TR52 Ready':
+                        vehicle['next_step_label'] = 'days since TR52 Ready'
+                        vehicle['days_until_next_step'] = vehicle.get('days_until_next_step', 0)
+                    
+                    elif vehicle['status'] == 'Ready for Scrap' and vehicle.get('estimated_date'):
+                        estimated_date = datetime.strptime(vehicle['estimated_date'], '%Y-%m-%d')
+                        vehicle['days_until_next_step'] = max(0, (estimated_date - datetime.now()).days)
+                        vehicle['next_step_label'] = 'days until legal scrap date'
+                        
+                    elif vehicle['status'] == 'Ready for Auction' and vehicle.get('auction_date'):
+                        auction_date = datetime.strptime(vehicle['auction_date'], '%Y-%m-%d')
+                        vehicle['days_until_auction'] = max(0, (auction_date - datetime.now()).days)
+                        vehicle['next_step_label'] = 'days until auction'
+                except Exception as e:
+                    logging.warning(f"Date processing error for {vehicle['towbook_call_number']}: {e}")
+        
+        return jsonify(vehicles)
+    except Exception as e:
+        logging.error(f"Error in api_get_vehicles: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/vehicles/<call_number>', methods=['PUT'])
 def update_vehicle_api(call_number):
@@ -219,13 +226,36 @@ def add_vehicle():
 
 @app.route('/api/update-status/<call_number>', methods=['POST'])
 def api_update_status(call_number):
-    data = request.get_json()
-    new_status = data.get('status')
-    if new_status:
-        update_vehicle_status(call_number, new_status)
-        log_action("USER", call_number, f"Status updated to {new_status}")
-        return jsonify({"message": "Status updated"}), 200
-    return jsonify({"error": "No status provided"}), 400
+    try:
+        data = request.get_json()
+        new_status = data.get('status')
+        
+        if not new_status:
+            return jsonify({"error": "No status provided"}), 400
+            
+        # Use the update_vehicle_status function from utils
+        from utils import update_vehicle_status, convert_frontend_status
+        
+        # Convert status if needed (frontend to database format)
+        if new_status:
+            new_status = convert_frontend_status(new_status)
+            
+        # Log the status change attempt
+        logging.info(f"Attempting status update for {call_number} to {new_status}")
+        
+        # Update the status
+        success = update_vehicle_status(call_number, new_status)
+        
+        if success:
+            logging.info(f"Status updated: {call_number} => {new_status}")
+            log_action("USER", call_number, f"Status updated to {new_status}")
+            return jsonify({"status": "success", "message": "Status updated"}), 200
+        else:
+            logging.error(f"Failed to update status for {call_number} to {new_status}")
+            return jsonify({"error": "Status update failed"}), 500
+    except Exception as e:
+        logging.error(f"Error in api_update_status: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/generate-top/<call_number>', methods=['POST'])
 def generate_top(call_number):

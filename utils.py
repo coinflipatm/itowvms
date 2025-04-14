@@ -2,9 +2,15 @@ from datetime import datetime, timedelta
 import sqlite3
 import logging
 
+def get_db_connection():
+    """Get a connection to the SQLite database with Row factory"""
+    conn = sqlite3.connect('vehicles.db')
+    conn.row_factory = sqlite3.Row
+    return conn
+
 def generate_complaint_number():
     try:
-        conn = sqlite3.connect('vehicles.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         current_year = datetime.now().strftime('%y')
         cursor.execute("SELECT complaint_sequence FROM vehicles WHERE complaint_year = ? ORDER BY complaint_sequence DESC LIMIT 1", (current_year,))
@@ -18,7 +24,7 @@ def generate_complaint_number():
 
 def ensure_logs_table_exists():
     try:
-        conn = sqlite3.connect('vehicles.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, action_type TEXT, vehicle_id TEXT, details TEXT, timestamp TEXT)')
         conn.commit()
@@ -29,7 +35,7 @@ def ensure_logs_table_exists():
 def log_action(action_type, vehicle_id, details):
     ensure_logs_table_exists()
     try:
-        conn = sqlite3.connect('vehicles.db')
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("INSERT INTO logs (action_type, vehicle_id, details, timestamp) VALUES (?, ?, ?, ?)",
                        (action_type, vehicle_id, details, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
@@ -39,6 +45,31 @@ def log_action(action_type, vehicle_id, details):
     except Exception as e:
         logging.error(f"Log error: {e}")
         return False
+
+def convert_frontend_status(frontend_status):
+    """Convert frontend status to database status"""
+    status_map = {
+        'New': 'New',
+        'TOP_Generated': 'TOP Generated',
+        'TR52_Ready': 'TR52 Ready',
+        'Ready_Auction': 'Ready for Auction',
+        'Ready_Scrap': 'Ready for Scrap',
+        'Auction': 'Auction',
+        'Scrapped': 'Scrapped', 
+        'Released': 'Released',
+        'Completed': 'Released',  # Default completed status
+        # Same entries without underscores in case they're passed directly from UI
+        'TOP Generated': 'TOP Generated',
+        'TR52 Ready': 'TR52 Ready',
+        'Ready for Auction': 'Ready for Auction',
+        'Ready for Scrap': 'Ready for Scrap',
+        'Auctioned': 'Auctioned'
+    }
+    
+    # Log the conversion for debugging
+    logging.info(f"Converting status: {frontend_status} → {status_map.get(frontend_status, frontend_status)}")
+    
+    return status_map.get(frontend_status, frontend_status)
 
 def release_vehicle(call_number, reason, recipient=None, release_date=None, release_time=None):
     from database import update_vehicle_status  # Move import here to avoid circular import
@@ -142,21 +173,6 @@ def calculate_tr52_countdown(top_sent_date):
         logging.error(f"Error calculating TR52 countdown: {e}")
         return None
 
-def convert_frontend_status(frontend_status):
-    """Convert frontend status to database status"""
-    status_map = {
-        'New': 'New',
-        'TOP_Generated': 'TOP Generated',
-        'TR52_Ready': 'TR52 Ready',
-        'Ready_Auction': 'Ready for Auction',
-        'Ready_Scrap': 'Ready for Scrap',
-        'Auction': 'Auction',
-        'Scrapped': 'Scrapped', 
-        'Released': 'Released',
-        'Completed': 'Released'  # Default completed status
-    }
-    return status_map.get(frontend_status, frontend_status)
-
 def update_vehicle_status(towbook_call_number, new_status, update_fields=None):
     """
     Update a vehicle's status with proper handling of existing workflow
@@ -169,14 +185,20 @@ def update_vehicle_status(towbook_call_number, new_status, update_fields=None):
     Returns:
         bool: Success flag
     """
-    from utils import log_action
     try:
+        # Convert the status if it's a frontend status
+        new_status = convert_frontend_status(new_status)
+        
+        # Log the status update request
+        logging.info(f"Updating vehicle {towbook_call_number} to status: {new_status}")
+        
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM vehicles WHERE towbook_call_number = ?", (towbook_call_number,))
         vehicle = cursor.fetchone()
         if not vehicle:
             conn.close()
+            logging.error(f"Vehicle not found: {towbook_call_number}")
             return False
         
         if not update_fields:
@@ -184,6 +206,7 @@ def update_vehicle_status(towbook_call_number, new_status, update_fields=None):
         update_fields['status'] = new_status
         update_fields['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
+        # Process status-specific logic
         if new_status == 'TOP Generated':
             # Set the date the TOP form was sent
             update_fields['top_form_sent_date'] = datetime.now().strftime('%Y-%m-%d')
@@ -196,37 +219,30 @@ def update_vehicle_status(towbook_call_number, new_status, update_fields=None):
             update_fields['days_until_next_step'] = 20
         
         elif new_status == 'TR52 Ready':
-            # Vehicle is ready for disposition decision
-            pass
+            # Set TR52 received date if not already set
+            if 'tr52_received_date' not in update_fields:
+                update_fields['tr52_received_date'] = datetime.now().strftime('%Y-%m-%d')
         
         elif new_status == 'Ready for Auction':
-            # Calculate next auction date (Monday after 10 days)
-            today = datetime.now().date()
-            days_to_monday = (7 - today.weekday()) % 7  # Days until next Monday
-            if days_to_monday < 3:  # If Monday is less than 3 days away, target the following Monday
-                days_to_monday += 7
-            
-            auction_date = today + timedelta(days=max(10, days_to_monday))  # At least 10 days
+            # Calculate next auction date
+            auction_date = calculate_next_auction_date()
             update_fields['auction_date'] = auction_date.strftime('%Y-%m-%d')
             update_fields['decision'] = 'Auction'
             update_fields['decision_date'] = datetime.now().strftime('%Y-%m-%d')
             
             # Calculate days until auction
-            update_fields['days_until_auction'] = (auction_date - today).days
+            days_until_auction = (auction_date - datetime.now().date()).days
+            update_fields['days_until_auction'] = max(0, days_until_auction)
         
         elif new_status == 'Ready for Scrap':
-            # Schedule scrap for 7 days from today
-            scrap_date = datetime.now().date() + timedelta(days=7)
+            # Schedule scrap for 7 days from now
+            scrap_date = datetime.now() + timedelta(days=7)
             update_fields['estimated_date'] = scrap_date.strftime('%Y-%m-%d')
             update_fields['decision'] = 'Scrap'
             update_fields['decision_date'] = datetime.now().strftime('%Y-%m-%d')
             
-            # Mark as archived for completed items
-            update_fields['archived'] = 1
-            
-            # Set release reason to Scrapped
-            update_fields['release_reason'] = 'Scrapped'
-            update_fields['release_date'] = datetime.now().strftime('%Y-%m-%d')
+            # Set days until scrap
+            update_fields['days_until_next_step'] = 7
         
         elif new_status in ['Released', 'Auctioned', 'Scrapped']:
             # Mark as archived for completed items
@@ -247,31 +263,32 @@ def update_vehicle_status(towbook_call_number, new_status, update_fields=None):
                 elif new_status == 'Scrapped':
                     update_fields['release_reason'] = 'Scrapped'
         
+        # Build the update query
         set_clause = ', '.join([f"{k} = ?" for k in update_fields.keys()])
         values = list(update_fields.values()) + [towbook_call_number]
+        
+        logging.info(f"Update fields: {update_fields}")
+        
+        # Execute the update
         cursor.execute(f'UPDATE vehicles SET {set_clause} WHERE towbook_call_number = ?', values)
         conn.commit()
+        
+        # Verify the update was successful
+        cursor.execute("SELECT status FROM vehicles WHERE towbook_call_number = ?", (towbook_call_number,))
+        updated = cursor.fetchone()
+        
         conn.close()
-        log_action("STATUS_CHANGE", towbook_call_number, f"Status changed to {new_status}")
-        return True
+        
+        if updated and updated['status'] == new_status:
+            logging.info(f"Status successfully updated to {new_status} for {towbook_call_number}")
+            log_action("STATUS_CHANGE", towbook_call_number, f"Status changed to {new_status}")
+            return True
+        else:
+            logging.error(f"Status update verification failed for {towbook_call_number}")
+            return False
     except Exception as e:
         logging.error(f"Status update error: {e}")
         return False
-
-
-def convert_db_status(db_status):
-    """Convert database status to frontend status"""
-    status_map = {
-        'New': 'New',
-        'TOP Generated': 'TOP_Generated',
-        'TR52 Ready': 'TR52_Ready',
-        'Ready for Auction': 'Ready_Auction',
-        'Ready for Scrap': 'Ready_Scrap',
-        'Auctioned': 'Completed',
-        'Scrapped': 'Completed',
-        'Released': 'Completed'
-    }
-    return status_map.get(db_status, db_status)
 
 def setup_logging():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s',

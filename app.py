@@ -256,6 +256,60 @@ def api_update_status(call_number):
     except Exception as e:
         logging.error(f"Error in api_update_status: {e}")
         return jsonify({"error": str(e)}), 500
+    
+@app.route('/api/check-statuses', methods=['POST'])
+def check_statuses():
+    """Check for and fix incorrect statuses"""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check for vehicles with 'Auction' status (should be 'Ready for Auction')
+        cursor.execute("SELECT towbook_call_number FROM vehicles WHERE status = 'Auction'")
+        auction_vehicles = cursor.fetchall()
+        
+        # Update incorrect 'Auction' statuses to 'Ready for Auction'
+        fixed_count = 0
+        if auction_vehicles:
+            logging.info(f"Found {len(auction_vehicles)} vehicles with incorrect 'Auction' status")
+            for vehicle in auction_vehicles:
+                call_number = vehicle['towbook_call_number']
+                
+                # Update to correct status
+                cursor.execute("""
+                    UPDATE vehicles 
+                    SET status = 'Ready for Auction', 
+                        last_updated = ?
+                    WHERE towbook_call_number = ?
+                """, (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), call_number))
+                
+                # Calculate next auction date (next Monday)
+                today = datetime.now().date()
+                days_to_monday = (7 - today.weekday()) % 7
+                if days_to_monday < 3:  # If Monday is less than 3 days away, use the following Monday
+                    days_to_monday += 7
+                auction_date = today + timedelta(days=days_to_monday)
+                
+                # Update auction date
+                cursor.execute("""
+                    UPDATE vehicles
+                    SET auction_date = ?,
+                        days_until_auction = ?
+                    WHERE towbook_call_number = ?
+                """, (auction_date.strftime('%Y-%m-%d'), days_to_monday, call_number))
+                
+                # Log the status correction
+                log_action("STATUS_CORRECTION", call_number, f"Changed incorrect status 'Auction' to 'Ready for Auction'")
+                logging.info(f"Fixed status for vehicle {call_number}")
+                fixed_count += 1
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'status': 'success', 'fixed': fixed_count})
+    except Exception as e:
+        logging.error(f"Error checking statuses: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/generate-top/<call_number>', methods=['POST'])
 def generate_top(call_number):

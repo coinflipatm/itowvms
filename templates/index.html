@@ -4,1290 +4,397 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>iTow Impound Manager</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css" rel="stylesheet">
     <style>
-        body { font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px; }
-        .container { max-width: 1200px; }
-        .card { background-color: #fff; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        .card-header { background-color: #e0e0e0; padding: 10px 15px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
-        .card-body { padding: 15px; }
-        .btn { border-radius: 5px; padding: 8px 15px; margin: 5px; }
-        .table { background-color: #fff; border: 1px solid #ddd; border-radius: 8px; }
-        .table th, .table td { padding: 12px; border-bottom: 1px solid #ddd; }
-        .table th { background-color: #e0e0e0; position: sticky; top: 0; z-index: 10; }
-        .table tr:hover { background-color: #f9f9f9; }
-        #statusBar { background-color: #fff; padding: 15px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 20px; display: none; }
-        .text-danger { color: #dc3545; }
-        
-        /* Status badges */
-        .status-badge {
-            display: inline-block;
-            padding: 3px 6px;
-            border-radius: 4px;
-            font-size: 0.8rem;
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-        
-        .status-new { background-color: #cfe2ff; color: #084298; }
-        .status-top { background-color: #d1e7dd; color: #0a3622; }
-        .status-tr52 { background-color: #e2e3e5; color: #41464b; }
-        .status-ready { background-color: #fff3cd; color: #664d03; }
-        .status-scheduled { background-color: #f8d7da; color: #58151c; }
-        .status-auction { background-color: #e2e3e5; color: #41464b; }
-        .status-completed { background-color: #d3d3d3; color: #212529; }
-        
-        /* Countdown styling */
-        .countdown-display {
-            display: block;
-            font-size: 0.9rem;
-            margin-top: 5px;
-            color: #6c757d;
-        }
-        
-        .countdown-urgent {
-            color: #dc3545;
-            font-weight: bold;
-        }
-        
-        .countdown-warning {
-            color: #fd7e14;
-        }
-        
-        .countdown-normal {
-            color: #28a745;
-        }
-        
-        /* Improved table styles */
-        .table-responsive {
-            max-height: 70vh;
-            overflow-y: auto;
-        }
-        
-        /* Action buttons */
-        .action-btn {
-            margin-right: 5px;
-            margin-bottom: 5px;
-        }
-        
-        /* Tooltip styling */
-        .tooltip-wrapper {
-            position: relative;
-            display: inline-block;
-        }
-        
-        .tooltip-wrapper .tooltip-text {
-            visibility: hidden;
-            width: 120px;
-            background-color: #555;
-            color: #fff;
-            text-align: center;
-            border-radius: 6px;
-            padding: 5px;
-            position: absolute;
-            z-index: 9999; /* Increased z-index */
-            bottom: 125%;
-            left: 50%;
-            margin-left: -60px;
-            opacity: 0;
-            transition: opacity 0.3s;
-            pointer-events: none; /* Prevents tooltip from blocking clicks */
-        }
-        
-        .tooltip-wrapper:hover .tooltip-text {
-            visibility: visible;
-            opacity: 1;
-        }
-        
-        /* Status notification */
-        .status-notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 15px;
-            background-color: #28a745;
-            color: white;
-            border-radius: 5px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-            z-index: 9999;
-            display: none;
-        }
-        
-        /* Stats card styling */
-        .stat-card {
-            background-color: #f8f9fa;
-            border-radius: 5px;
-            padding: 10px;
-            text-align: center;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            height: 100%;
-        }
-        
-        .stat-number {
-            font-size: 24px;
-            font-weight: bold;
-            color: #007bff;
-        }
-        
-        /* Status breakdown tooltip */
-        .status-breakdown-tooltip {
-            padding: 10px;
-            min-width: 200px;
-        }
-        
-        .status-breakdown-tooltip div {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 5px;
-        }
-        
-        .status-name {
-            font-weight: bold;
-        }
-        
-        .status-count {
-            margin-left: 10px;
-        }
-        
-        /* Clickable stat cards */
-        .stat-card-link {
-            display: block;
-            text-decoration: none;
-            color: inherit;
-        }
-
-        .stat-card-link:hover .stat-card {
-            background-color: #f0f0f0;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-            transform: translateY(-2px);
-            transition: all 0.2s ease;
-        }
-        
-        /* Sortable table headers */
-        .sortable {
-            cursor: pointer;
-            position: relative;
-        }
-
-        .sortable:after {
-            content: '⇕';
-            position: absolute;
-            right: 8px;
-            color: #999;
-        }
-
-        .sortable.asc:after {
-            content: '↑';
-            color: #333;
-        }
-
-        .sortable.desc:after {
-            content: '↓';
-            color: #333;
-        }
-
-        /* Delete button styling */
-        .delete-btn {
-            background-color: #dc3545;
-            color: white;
-            border: none;
-        }
-
-        .delete-btn:hover {
-            background-color: #c82333;
-        }
+        body { display: flex; margin: 0; font-family: Arial, sans-serif; }
+        .sidebar { width: 250px; background-color: #343a40; color: white; height: 100vh; position: fixed; padding-top: 20px; }
+        .sidebar a { color: white; padding: 15px; display: block; text-decoration: none; }
+        .sidebar a:hover { background-color: #495057; }
+        .sidebar a.active { background-color: #495057; }
+        .content { margin-left: 250px; padding: 20px; width: calc(100% - 250px); }
+        .vehicle-table th { cursor: pointer; }
+        .navbar-brand img { width: 40px; vertical-align: middle; margin-right: 10px; }
+        #pending-notifications li { margin-bottom: 10px; }
+        .modal-lg { max-width: 800px; }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>iTow Impound Manager</h1>
-
-        <div class="card">
-            <div class="card-header">Data Import</div>
-            <div class="card-body">
-                <form id="scrapeForm">
-                    <div class="row">
-                        <div class="col-md-3 mb-3">
-                            <label for="startDate">Start Date</label>
-                            <input type="date" id="startDate" class="form-control" required>
-                        </div>
-                        <div class="col-md-3 mb-3">
-                            <label for="endDate">End Date</label>
-                            <input type="date" id="endDate" class="form-control" required>
-                        </div>
-                        <div class="col-md-3 mb-3 align-self-end">
-                            <button type="button" id="startScrapingBtn" class="btn btn-primary">Start Scraping</button>
-                        </div>
-                        <div class="col-md-3 mb-3 align-self-end">
-                            <button type="button" id="addVehicleBtn" class="btn btn-success">Add Vehicle</button>
-                        </div>
-                    </div>
-                    <div class="row">
-                        <div class="col-md-12">
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="headlessMode">
-                                <label class="form-check-label" for="headlessMode">Headless Mode (Browser not visible)</label>
-                            </div>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <div id="statusBar">
-            <div class="progress">
-                <div id="progressBar" class="progress-bar" style="width: 0%;"></div>
-            </div>
-            <p id="statusText" class="mt-2"></p>
-        </div>
-
-        <!-- Status Dashboard -->
-        <div class="card mb-4">
-            <div class="card-header">
-                <div>Status Overview</div>
-                <button id="statusBreakdownBtn" class="btn btn-sm btn-secondary" data-toggle="popover" title="Detailed Status Breakdown">View Details</button>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-2">
-                        <a href="?status=New" class="stat-card-link">
-                            <div class="stat-card">
-                                <h6>New</h6>
-                                <div id="newCount" class="stat-number">-</div>
-                            </div>
-                        </a>
-                    </div>
-                    <div class="col-md-2">
-                        <a href="?status=TOP_Generated" class="stat-card-link">
-                            <div class="stat-card">
-                                <h6>TOP Generated</h6>
-                                <div id="topCount" class="stat-number">-</div>
-                            </div>
-                        </a>
-                    </div>
-                    <div class="col-md-2">
-                        <a href="?status=TR52_Ready" class="stat-card-link">
-                            <div class="stat-card">
-                                <h6>TR52 Ready</h6>
-                                <div id="tr52ReadyCount" class="stat-number">-</div>
-                            </div>
-                        </a>
-                    </div>
-                    <div class="col-md-2">
-                        <a href="?status=Ready_Auction" class="stat-card-link">
-                            <div class="stat-card">
-                                <h6>Ready for Auction</h6>
-                                <div id="readyAuctionCount" class="stat-number">-</div>
-                            </div>
-                        </a>
-                    </div>
-                    <div class="col-md-2">
-                        <a href="?status=Ready_Scrap" class="stat-card-link">
-                            <div class="stat-card">
-                                <h6>Ready for Scrap</h6>
-                                <div id="readyScrapCount" class="stat-number">-</div>
-                            </div>
-                        </a>
-                    </div>
-                    <div class="col-md-2">
-                        <a href="?status=Completed" class="stat-card-link">
-                            <div class="stat-card">
-                                <h6>Completed</h6>
-                                <div id="completedCount" class="stat-number">-</div>
-                            </div>
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="table-responsive">
-            <table class="table">
-                <thead id="vehicleTableHead"></thead>
-                <tbody id="vehicleTableBody"></tbody>
-            </table>
-        </div>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <a class="navbar-brand text-white" href="/"><img src="/static/logo.png" alt="iTow Logo"> iTow Manager</a>
+        <hr class="bg-light">
+        <a href="#" data-tab="active" class="active"><i class="fas fa-car"></i> Active Vehicles</a>
+        <a href="#" data-tab="New"><i class="fas fa-plus"></i> New</a>
+        <a href="#" data-tab="TOP Generated"><i class="fas fa-file-alt"></i> TOP Generated</a>
+        <a href="#" data-tab="TR52 Ready"><i class="fas fa-check"></i> TR52 Ready</a>
+        <a href="#" data-tab="Ready for Auction"><i class="fas fa-gavel"></i> Ready for Auction</a>
+        <a href="#" data-tab="Ready for Scrap"><i class="fas fa-trash"></i> Ready for Scrap</a>
+        <a href="#" data-tab="Completed"><i class="fas fa-archive"></i> Completed</a>
+        <a href="#" data-tab="statistics"><i class="fas fa-chart-bar"></i> Statistics</a>
+        <a href="#" data-tab="compliance"><i class="fas fa-shield-alt"></i> Compliance</a>
     </div>
 
-    <!-- Status notification -->
-    <div id="statusNotification" class="status-notification"></div>
+    <!-- Main Content -->
+    <div class="content">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2 id="page-title">Active Vehicles</h2>
+            <div>
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addVehicleModal"><i class="fas fa-plus"></i> Add Vehicle</button>
+                <a href="/api/compliance-report" class="btn btn-success"><i class="fas fa-download"></i> Compliance Report</a>
+            </div>
+        </div>
 
-    <!-- Edit Vehicle Modal -->
-    <div class="modal fade" id="editModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Edit Vehicle</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <!-- Workflow Counts -->
+        <div class="row mb-4" id="workflow-counts">
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Overdue Tasks</h5>
+                        <p class="card-text"><span id="overdue-count">0</span> vehicles</p>
+                    </div>
                 </div>
-                <div class="modal-body">
-                    <form id="editForm"></form>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Due Today</h5>
+                        <p class="card-text"><span id="due-today-count">0</span> vehicles</p>
+                    </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="saveEditBtn">Save Changes</button>
+            </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Ready for Action</h5>
+                        <p class="card-text"><span id="ready-count">0</span> vehicles</p>
+                    </div>
                 </div>
             </div>
         </div>
+
+        <!-- Vehicle Table -->
+        <table class="table table-striped vehicle-table">
+            <thead>
+                <tr>
+                    <th data-sort="towbook_call_number">Call Number</th>
+                    <th data-sort="complaint_number">Complaint #</th>
+                    <th data-sort="vin">VIN</th>
+                    <th data-sort="make">Make</th>
+                    <th data-sort="model">Model</th>
+                    <th data-sort="year">Year</th>
+                    <th data-sort="color">Color</th>
+                    <th data-sort="tow_date">Tow Date</th>
+                    <th data-sort="jurisdiction">Jurisdiction</th>
+                    <th data-sort="status">Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="vehicle-table-body"></tbody>
+        </table>
     </div>
 
     <!-- Add Vehicle Modal -->
-    <div class="modal fade" id="addModal" tabindex="-1">
-        <div class="modal-dialog">
+    <div class="modal fade" id="addVehicleModal" tabindex="-1" aria-labelledby="addVehicleModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Add New Vehicle</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title" id="addVehicleModalLabel">Add New Vehicle</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="addForm">
-                        <div class="mb-3">
-                            <label for="newCallNumber">Call Number</label>
-                            <input type="text" id="newCallNumber" class="form-control" placeholder="Optional - system will generate if blank">
-                        </div>
-                        <div class="mb-3">
-                            <label for="newJurisdiction">Jurisdiction</label>
-                            <input type="text" id="newJurisdiction" class="form-control">
-                        </div>
-                        <div class="mb-3">
-                            <label for="newTowDate">Tow Date</label>
-                            <input type="date" id="newTowDate" class="form-control" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="newTowTime">Tow Time</label>
-                            <input type="time" id="newTowTime" class="form-control">
-                        </div>
-                        <div class="mb-3">
-                            <label for="newLocation">Location</label>
-                            <input type="text" id="newLocation" class="form-control" required>
-                        </div>
-                        <div class="mb-3">
-                            <label for="newVin">VIN</label>
-                            <input type="text" id="newVin" class="form-control">
-                        </div>
+                    <form id="add-vehicle-form">
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label for="newYear">Year</label>
-                                <input type="text" id="newYear" class="form-control">
+                                <label for="towbook_call_number" class="form-label">Call Number</label>
+                                <input type="text" class="form-control" id="towbook_call_number" name="towbook_call_number" required>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label for="newMake">Make</label>
-                                <input type="text" id="newMake" class="form-control">
+                                <label for="complaint_number" class="form-label">Complaint Number</label>
+                                <input type="text" class="form-control" id="complaint_number" name="complaint_number">
                             </div>
                         </div>
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label for="newModel">Model</label>
-                                <input type="text" id="newModel" class="form-control">
+                                <label for="vin" class="form-label">VIN</label>
+                                <input type="text" class="form-control" id="vin" name="vin" required>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label for="newColor">Color</label>
-                                <input type="text" id="newColor" class="form-control">
+                                <label for="make" class="form-label">Make</label>
+                                <input type="text" class="form-control" id="make" name="make" required>
                             </div>
                         </div>
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label for="newPlate">License Plate</label>
-                                <input type="text" id="newPlate" class="form-control">
+                                <label for="model" class="form-label">Model</label>
+                                <input type="text" class="form-control" id="model" name="model" required>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label for="newState">State</label>
-                                <input type="text" id="newState" class="form-control">
+                                <label for="year" class="form-label">Year</label>
+                                <input type="text" class="form-control" id="year" name="year">
                             </div>
                         </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="color" class="form-label">Color</label>
+                                <input type="text" class="form-control" id="color" name="color">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="plate" class="form-label">Plate</label>
+                                <input type="text" class="form-control" id="plate" name="plate">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="state" class="form-label">State</label>
+                                <input type="text" class="form-control" id="state" name="state">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="tow_date" class="form-label">Tow Date</label>
+                                <input type="date" class="form-control" id="tow_date" name="tow_date" required>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="tow_time" class="form-label">Tow Time</label>
+                                <input type="time" class="form-control" id="tow_time" name="tow_time">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="location" class="form-label">Location</label>
+                                <input type="text" class="form-control" id="location" name="location">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="jurisdiction" class="form-label">Jurisdiction</label>
+                                <input type="text" class="form-control" id="jurisdiction" name="jurisdiction" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="requested_by" class="form-label">Requested By</label>
+                                <input type="text" class="form-control" id="requested_by" name="requested_by">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="officer_name" class="form-label">Officer Name</label>
+                                <input type="text" class="form-control" id="officer_name" name="officer_name">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="case_number" class="form-label">Case Number</label>
+                                <input type="text" class="form-control" id="case_number" name="case_number">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Add Vehicle</button>
                     </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="saveAddBtn">Save Vehicle</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Status Update Modal -->
-    <div class="modal fade" id="statusModal" tabindex="-1">
+    <!-- Edit Vehicle Modal -->
+    <div class="modal fade" id="editVehicleModal" tabindex="-1" aria-labelledby="editVehicleModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editVehicleModalLabel">Edit Vehicle</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="edit-vehicle-form">
+                        <input type="hidden" id="edit-call-number" name="towbook_call_number">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="edit-complaint_number" class="form-label">Complaint Number</label>
+                                <input type="text" class="form-control" id="edit-complaint_number" name="complaint_number">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="edit-vin" class="form-label">VIN</label>
+                                <input type="text" class="form-control" id="edit-vin" name="vin">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="edit-make" class="form-label">Make</label>
+                                <input type="text" class="form-control" id="edit-make" name="make">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="edit-model" class="form-label">Model</label>
+                                <input type="text" class="form-control" id="edit-model" name="model">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="edit-year" class="form-label">Year</label>
+                                <input type="text" class="form-control" id="edit-year" name="year">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="edit-color" class="form-label">Color</label>
+                                <input type="text" class="form-control" id="edit-color" name="color">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="edit-plate" class="form-label">Plate</label>
+                                <input type="text" class="form-control" id="edit-plate" name="plate">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="edit-state" class="form-label">State</label>
+                                <input type="text" class="form-control" id="edit-state" name="state">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="edit-tow_date" class="form-label">Tow Date</label>
+                                <input type="date" class="form-control" id="edit-tow_date" name="tow_date">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="edit-tow_time" class="form-label">Tow Time</label>
+                                <input type="time" class="form-control" id="edit-tow_time" name="tow_time">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="edit-location" class="form-label">Location</label>
+                                <input type="text" class="form-control" id="edit-location" name="location">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="edit-jurisdiction" class="form-label">Jurisdiction</label>
+                                <input type="text" class="form-control" id="edit-jurisdiction" name="jurisdiction">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="edit-requested_by" class="form-label">Requested By</label>
+                                <input type="text" class="form-control" id="edit-requested_by" name="requested_by">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="edit-officer_name" class="form-label">Officer Name</label>
+                                <input type="text" class="form-control" id="edit-officer_name" name="officer_name">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="edit-case_number" class="form-label">Case Number</label>
+                                <input type="text" class="form-control" id="edit-case_number" name="case_number">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="edit-status" class="form-label">Status</label>
+                                <select class="form-control" id="edit-status" name="status">
+                                    <option value="New">New</option>
+                                    <option value="TOP Generated">TOP Generated</option>
+                                    <option value="TR52 Ready">TR52 Ready</option>
+                                    <option value="Ready for Auction">Ready for Auction</option>
+                                    <option value="Ready for Scrap">Ready for Scrap</option>
+                                    <option value="Released">Released</option>
+                                    <option value="Auctioned">Auctioned</option>
+                                    <option value="Scrapped">Scrapped</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Update Vehicle</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Release Vehicle Modal -->
+    <div class="modal fade" id="releaseVehicleModal" tabindex="-1" aria-labelledby="releaseVehicleModalLabel" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Update Status</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title" id="releaseVehicleModalLabel">Release Vehicle</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="statusForm">
+                    <form id="release-vehicle-form">
+                        <input type="hidden" id="release-call-number" name="call_number">
                         <div class="mb-3">
-                            <label for="newStatus">Select New Status</label>
-                            <select id="newStatus" class="form-select">
-                                <option value="New">New</option>
-                                <option value="TOP Generated">TOP Generated</option>
-                                <option value="TR52 Ready">TR52 Ready</option>
-                                <option value="Ready for Auction">Ready for Auction</option>
-                                <option value="Ready for Scrap">Ready for Scrap</option>
-                                <option value="Released">Released to Owner</option>
-                                <option value="Scrapped">Scrapped (Completed)</option>
-                                <option value="Auctioned">Auctioned (Completed)</option>
+                            <label for="release-reason" class="form-label">Release Reason</label>
+                            <select class="form-control" id="release-reason" name="release_reason" required>
+                                <option value="Owner Redeemed">Owner Redeemed</option>
+                                <option value="Auctioned">Auctioned</option>
+                                <option value="Scrapped">Scrapped</option>
+                                <option value="Title Transfer">Title Transfer</option>
                             </select>
                         </div>
-                        <div id="statusVehicleInfo"></div>
+                        <div class="mb-3">
+                            <label for="release-recipient" class="form-label">Recipient</label>
+                            <input type="text" class="form-control" id="release-recipient" name="recipient" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="release-date" class="form-label">Release Date</label>
+                            <input type="date" class="form-control" id="release-date" name="release_date" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="release-time" class="form-label">Release Time</label>
+                            <input type="time" class="form-control" id="release-time" name="release_time" required>
+                        </div>
+                        <div class="mb-3" id="auction-fields" style="display: none;">
+                            <label for="sale-amount" class="form-label">Sale Amount</label>
+                            <input type="number" class="form-control" id="sale-amount" name="sale_amount" step="0.01">
+                            <label for="fees" class="form-label">Fees</label>
+                            <input type="number" class="form-control" id="fees" name="fees" step="0.01">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Generate Release Notice</button>
                     </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" id="updateStatusBtn">Update Status</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Chart.js for Status Chart -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.6.0/dist/chart.min.js"></script>
+    <!-- JavaScript -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/popper.js@2.9.3/dist/umd/popper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        let currentVehicle = null;
-        let statusChart = null;
-        let currentSortColumn = 'tow_date';
-        let currentSortDirection = 'desc'; // Default to newest first
-
-        // Format countdown display
-        function formatCountdown(days, type) {
-            let className = 'countdown-normal';
-            
-            if (days <= 0) {
-                className = 'countdown-urgent';
-            } else if (days <= 3) {
-                className = 'countdown-warning';
-            }
-            
-            return `<span class="countdown-display ${className}">${days} days until ${type}</span>`;
-        }
-
-        // Show status notifications
-        function showNotification(message, type = 'success') {
-            const notification = document.getElementById('statusNotification');
-            notification.textContent = message;
-            notification.style.backgroundColor = type === 'success' ? '#28a745' : '#dc3545';
-            notification.style.display = 'block';
-            
-            // Hide after 3 seconds
-            setTimeout(() => {
-                notification.style.display = 'none';
-            }, 3000);
-        }
-
-        // Update the status dashboard
-        function updateStatusCounts() {
-            $.get('/api/vehicles?count_by_status=true', function(data) {
-                if (data.status === 'success') {
-                    const counts = data.counts;
-                    
-                    // Update the dashboard counts
-                    $('#newCount').text(counts.new || 0);
-                    $('#topCount').text(counts.topGenerated || 0);
-                    $('#tr52ReadyCount').text(counts.tr52Ready || 0);
-                    $('#readyAuctionCount').text(counts.readyAuction || 0);
-                    $('#readyScrapCount').text(counts.readyScrap || 0);
-                    $('#completedCount').text(counts.completed || 0);
-                    
-                    // If we have detailed breakdown, create a tooltip
-                    if (data.statusBreakdown) {
-                        let breakdownHTML = '<div class="status-breakdown-tooltip">';
-                        for (const [status, count] of Object.entries(data.statusBreakdown)) {
-                            if (status && count > 0) {
-                                breakdownHTML += `<div><span class="status-name">${status}:</span> <span class="status-count">${count}</span></div>`;
-                            }
-                        }
-                        breakdownHTML += '</div>';
-                        
-                        // Add the breakdown as a popover to the dashboard header
-                        $('#statusBreakdownBtn').attr('data-content', breakdownHTML);
-                        
-                        // Initialize or update popovers
-                        $('[data-toggle="popover"]').popover({
-                            html: true,
-                            trigger: 'click',
-                            placement: 'bottom'
-                        });
-                    }
-                    
-                    // Setup status chart if not already initialized
-                    if (!statusChart && document.getElementById('statusChart')) {
-                        const ctx = document.getElementById('statusChart').getContext('2d');
-                        statusChart = new Chart(ctx, {
-                            type: 'pie',
-                            data: {
-                                labels: ['New', 'TOP Generated', 'TR52 Ready', 'Ready for Auction', 'Ready for Scrap', 'Completed'],
-                                datasets: [{
-                                    data: [
-                                        counts.new || 0,
-                                        counts.topGenerated || 0,
-                                        counts.tr52Ready || 0,
-                                        counts.readyAuction || 0,
-                                        counts.readyScrap || 0,
-                                        counts.completed || 0
-                                    ],
-                                    backgroundColor: [
-                                        'rgba(134, 226, 119, 0.7)',  // New
-                                        'rgba(255, 189, 89, 0.7)',   // TOP Generated
-                                        'rgba(209, 107, 165, 0.7)',  // TR52 Ready
-                                        'rgba(255, 107, 107, 0.7)',  // Ready for Auction
-                                        'rgba(184, 169, 198, 0.7)',  // Ready for Scrap
-                                        'rgba(255, 141, 77, 0.7)'    // Completed
-                                    ]
-                                }]
-                            },
-                            options: {
-                                responsive: true,
-                                maintainAspectRatio: false,
-                                plugins: {
-                                    legend: {
-                                        position: 'right',
-                                        labels: {
-                                            color: '#333'
-                                        }
-                                    }
-                                }
-                            }
-                        });
-                    } else if (statusChart) {
-                        // Update existing chart
-                        statusChart.data.datasets[0].data = [
-                            counts.new || 0,
-                            counts.topGenerated || 0,
-                            counts.tr52Ready || 0,
-                            counts.readyAuction || 0,
-                            counts.readyScrap || 0,
-                            counts.completed || 0
-                        ];
-                        statusChart.update();
-                    }
-                }
-            });
-        }
-
-        // Function to format the table headers with sort indicators
-        function formatSortableHeader(headerText, columnKey, defaultSort = false) {
-            let className = 'sortable';
-            if (currentSortColumn === columnKey) {
-                className += currentSortDirection === 'asc' ? ' asc' : ' desc';
-            } else if (defaultSort) {
-                // Mark the default sort column
-                className += ' desc'; 
-                currentSortColumn = columnKey;
-            }
-            
-            return `<th class="${className}" data-sort="${columnKey}">${headerText}</th>`;
-        }
-
-        // Load vehicles for the current tab
-        function loadVehicles() {
-            const status = new URLSearchParams(window.location.search).get('status') || 'New';
-            
-            // Update status counts
-            updateStatusCounts();
-            
-            // Add sort parameter if set
-            let apiUrl = `/api/vehicles?status_type=${status}`;
-            if (currentSortColumn) {
-                apiUrl += `&sort=${currentSortColumn}&direction=${currentSortDirection}`;
-            }
-            
-            console.log(`Loading vehicles from API: ${apiUrl}`);
-            
-            $.get(apiUrl)
-                .done(function(data) {
-                    const thead = $('#vehicleTableHead').empty();
-                    const tbody = $('#vehicleTableBody').empty();
-                    
-                    // Define headers based on status
-                    const headerRow = $('<tr>');
-                    
-                    // Define sortable headers
-                    headerRow.append(formatSortableHeader('Call #', 'towbook_call_number'));
-                    headerRow.append(formatSortableHeader('Complaint #', 'complaint_number'));
-                    headerRow.append(formatSortableHeader('Tow Date', 'tow_date', true)); // Default sort
-                    headerRow.append(`<th>Vehicle Info</th>`); // Not sortable
-                    headerRow.append(formatSortableHeader('Jurisdiction', 'jurisdiction'));
-                    
-                    // Add status-specific column
-                    let statusColumnHeader = 'Action';
-                    if (status === 'TOP_Generated') {
-                        statusColumnHeader = 'TR52 Countdown';
-                    } else if (status === 'TR52_Ready') {
-                        statusColumnHeader = 'Decision';
-                    } else if (status === 'Ready_Auction') {
-                        statusColumnHeader = 'Auction Date';
-                    } else if (status === 'Ready_Scrap') {
-                        statusColumnHeader = 'Scrap Countdown';
-                    } else if (status === 'Auction') {
-                        statusColumnHeader = 'Auction Date';
-                    } else if (status === 'Completed') {
-                        statusColumnHeader = 'Release Info';
-                    }
-                    
-                    headerRow.append(`<th>${statusColumnHeader}</th>`);
-                    
-                    // Always add controls column
-                    headerRow.append('<th>Controls</th>');
-                    
-                    thead.append(headerRow);
-                    
-                    if (!data || !data.length) {
-                        console.log('No vehicles found or empty response:', data);
-                        tbody.append(`<tr><td colspan="${headerRow.children().length}">No vehicles found</td></tr>`);
-                        return;
-                    }
-                    
-                    console.log(`Loaded ${data.length} vehicles`);
-                    
-                    // Create data rows
-                    data.forEach(vehicle => {
-                        const row = $('<tr>');
-                        row.attr('data-call-number', vehicle.towbook_call_number);
-                        row.attr('data-status', vehicle.status);
-                        
-                        row.append(`<td>${vehicle.towbook_call_number || 'N/A'}</td>`);
-                        row.append(`<td>${vehicle.complaint_number || 'N/A'}</td>`);
-                        row.append(`<td>${vehicle.tow_date || 'N/A'}</td>`);
-                        
-                        // Vehicle info column
-                        const vehicleInfo = [vehicle.year, vehicle.make, vehicle.model, vehicle.color]
-                            .filter(Boolean)
-                            .join(' ');
-                        
-                        // Add status badge to vehicle info
-                        let statusBadgeClass = 'status-new';
-                        if (vehicle.status === 'TOP Generated') statusBadgeClass = 'status-top';
-                        else if (vehicle.status === 'TR52 Ready') statusBadgeClass = 'status-tr52';
-                        else if (vehicle.status === 'Ready for Auction' || vehicle.status === 'Ready for Scrap') 
-                            statusBadgeClass = 'status-ready';
-                        else if (vehicle.status === 'Auction') statusBadgeClass = 'status-auction';
-                        else if (['Released', 'Auctioned', 'Scrapped'].includes(vehicle.status)) 
-                            statusBadgeClass = 'status-completed';
-                        
-                        const statusBadge = `<span class="status-badge ${statusBadgeClass}">${vehicle.status}</span>`;
-                        
-                        row.append(`<td>
-                            ${statusBadge}<br>
-                            ${vehicleInfo || 'N/A'}<br>
-                            VIN: ${vehicle.vin || 'N/A'}
-                        </td>`);
-                        
-                        row.append(`<td>${vehicle.jurisdiction || 'N/A'}</td>`);
-                        
-                        // Status-specific column
-                        if (status === 'New') {
-                            row.append(`<td><button class="btn btn-primary btn-sm generate-top-btn" data-call="${vehicle.towbook_call_number}">Generate TOP</button></td>`);
-                        } else if (status === 'TOP_Generated') {
-                            // Show countdown to TR52 (Ready)
-                            const daysUntilReady = vehicle.days_until_next_step || 20;
-                            const tr52Date = vehicle.tr52_date || vehicle.tr52_available_date || 'Unknown';
-                            
-                            row.append(`<td>
-                                ${formatCountdown(daysUntilReady, 'TR52 Ready')}<br>
-                                <small>TR52 date: ${tr52Date}</small>
-                                ${daysUntilReady <= 0 ? 
-                                    `<br><button class="btn btn-success btn-sm mark-tr52-ready-btn" data-call="${vehicle.towbook_call_number}">Mark TR52 Ready</button>` : ''}
-                            </td>`);
-                        } else if (status === 'TR52_Ready') {
-                            row.append(`<td>
-                                <button class="btn btn-primary btn-sm ready-auction-btn" data-call="${vehicle.towbook_call_number}">Ready for Auction</button>
-                                <button class="btn btn-warning btn-sm ready-scrap-btn" data-call="${vehicle.towbook_call_number}">Ready for Scrap</button>
-                            </td>`);
-                        } else if (status === 'Ready_Auction') {
-                            const auctionDate = vehicle.auction_date || 'Not set';
-                            const daysUntilAuction = vehicle.days_until_auction || 0;
-                            
-                            row.append(`<td>
-                                ${auctionDate}<br>
-                                ${formatCountdown(daysUntilAuction, 'auction')}
-                                ${daysUntilAuction <= 0 ? 
-                                    `<br><button class="btn btn-success btn-sm complete-auction-btn" data-call="${vehicle.towbook_call_number}">Mark Auctioned</button>` : ''}
-                            </td>`);
-                        } else if (status === 'Ready_Scrap') {
-                            const daysUntilScrap = vehicle.days_until_next_step || 0;
-                            const scrapDate = vehicle.estimated_date || 'Not set';
-                            
-                            row.append(`<td>
-                                ${formatCountdown(daysUntilScrap, 'legal scrap date')}<br>
-                                <small>Can scrap on: ${scrapDate}</small>
-                                ${daysUntilScrap <= 0 ? 
-                                    `<br><button class="btn btn-success btn-sm complete-scrap-btn" data-call="${vehicle.towbook_call_number}">Mark Scrapped</button>` : ''}
-                            </td>`);
-                        } else if (status === 'Auction') {
-                            const auctionDate = vehicle.auction_date || 'Not set';
-                            const daysUntilAuction = vehicle.days_until_auction || 0;
-                            
-                            row.append(`<td>
-                                ${auctionDate}<br>
-                                ${formatCountdown(daysUntilAuction, 'auction')}
-                            </td>`);
-                        } else if (status === 'Completed') {
-                            const releaseDate = vehicle.release_date || 'N/A';
-                            const releaseReason = vehicle.release_reason || 'N/A';
-                            
-                            row.append(`<td>
-                                ${releaseDate}<br>
-                                <small>Reason: ${releaseReason}</small>
-                            </td>`);
-                        } else {
-                            row.append('<td>N/A</td>');
-                        }
-                        
-                        // Controls column with tooltips
-                        row.append(`<td>
-                            <div class="tooltip-wrapper">
-                                <button class="btn btn-secondary btn-sm edit-btn" data-call="${vehicle.towbook_call_number}">
-                                    <i class="fas fa-edit"></i>
-                                </button>
-                                <span class="tooltip-text">Edit</span>
-                            </div>
-                            <div class="tooltip-wrapper">
-                                <button class="btn btn-info btn-sm status-btn" data-call="${vehicle.towbook_call_number}">
-                                    <i class="fas fa-exchange-alt"></i>
-                                </button>
-                                <span class="tooltip-text">Change Status</span>
-                            </div>
-                            <div class="tooltip-wrapper">
-                                <button class="btn btn-danger btn-sm release-btn" data-call="${vehicle.towbook_call_number}">
-                                    <i class="fas fa-sign-out-alt"></i>
-                                </button>
-                                <span class="tooltip-text">Release</span>
-                            </div>
-                            <div class="tooltip-wrapper">
-                                <button class="btn btn-danger btn-sm delete-btn" data-call="${vehicle.towbook_call_number}">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                                <span class="tooltip-text">Delete</span>
-                            </div>
-                        </td>`);
-                        
-                        tbody.append(row);
-                    });
-                    
-                    // Attach event handlers for sortable columns
-                    $('.sortable').click(function() {
-                        const column = $(this).data('sort');
-                        
-                        // Update sort direction
-                        if (currentSortColumn === column) {
-                            currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
-                        } else {
-                            currentSortColumn = column;
-                            currentSortDirection = 'asc';
-                        }
-                        
-                        // Reload with new sort
-                        loadVehicles();
-                    });
-                    
-                    // Generate TOP form
-                    $('.generate-top-btn').click(function() {
-                        const callNumber = $(this).data('call');
-                        
-                        $.ajax({
-                            url: `/api/generate-top/${callNumber}`,
-                            type: 'POST',
-                            xhrFields: { responseType: 'blob' },
-                            success: function(blob) {
-                                // Create download link
-                                const url = window.URL.createObjectURL(blob);
-                                const a = document.createElement('a');
-                                a.style.display = 'none';
-                                a.href = url;
-                                a.download = `TOP_${callNumber}.pdf`;
-                                document.body.appendChild(a);
-                                a.click();
-                                
-                                // Cleanup
-                                window.URL.revokeObjectURL(url);
-                                showNotification('TOP form generated successfully!');
-                                loadVehicles();
-                            },
-                            error: function(xhr) {
-                                showNotification('Error generating TOP form: ' + (xhr.responseJSON?.message || 'Unknown error'), 'error');
-                            }
-                        });
-                    });
-                    
-                    // Mark as TR52 Ready button
-                    $('.mark-tr52-ready-btn').click(function() {
-                        const callNumber = $(this).data('call');
-                        
-                        if (confirm('Mark this vehicle as TR52 Ready?')) {
-                            $.ajax({
-                                url: `/api/update-status/${callNumber}`,
-                                type: 'POST',
-                                contentType: 'application/json',
-                                data: JSON.stringify({ status: 'TR52 Ready' }),
-                                success: function() {
-                                    showNotification('Vehicle marked as TR52 Ready');
-                                    // Navigate to the TR52 Ready tab
-                                    window.location.href = '/?status=TR52_Ready';
-                                },
-                                error: function(xhr) {
-                                    showNotification('Error: ' + (xhr.responseJSON?.message || 'Failed to update status'), 'error');
-                                }
-                            });
-                        }
-                    });
-                    
-                    // Mark as Ready for Auction
-                    $('.ready-auction-btn').click(function() {
-                        const callNumber = $(this).data('call');
-                        
-                        if (confirm('Mark this vehicle as Ready for Auction?')) {
-                            $.ajax({
-                                url: `/api/update-status/${callNumber}`,
-                                type: 'POST',
-                                contentType: 'application/json',
-                                data: JSON.stringify({ status: 'Ready for Auction' }),
-                                success: function() {
-                                    showNotification('Vehicle marked as Ready for Auction');
-                                    // Navigate to the Ready for Auction tab
-                                    window.location.href = '/?status=Ready_Auction';
-                                },
-                                error: function(xhr) {
-                                    showNotification('Error: ' + (xhr.responseJSON?.message || 'Failed to update status'), 'error');
-                                }
-                            });
-                        }
-                    });
-                    
-                    // Mark as Ready for Scrap
-                    $('.ready-scrap-btn').click(function() {
-                        const callNumber = $(this).data('call');
-                        
-                        if (confirm('Mark this vehicle as Ready for Scrap?')) {
-                            $.ajax({
-                                url: `/api/update-status/${callNumber}`,
-                                type: 'POST',
-                                contentType: 'application/json',
-                                data: JSON.stringify({ status: 'Ready for Scrap' }),
-                                success: function() {
-                                    showNotification('Vehicle marked as Ready for Scrap');
-                                    // Navigate to the Ready for Scrap tab
-                                    window.location.href = '/?status=Ready_Scrap';
-                                },
-                                error: function(xhr) {
-                                    showNotification('Error: ' + (xhr.responseJSON?.message || 'Failed to update status'), 'error');
-                                }
-                            });
-                        }
-                    });
-                    
-                    // Mark as Auctioned
-                    $('.complete-auction-btn').click(function() {
-                        const callNumber = $(this).data('call');
-                        
-                        if (confirm('Mark this vehicle as Auctioned (completed)?')) {
-                            $.ajax({
-                                url: `/api/update-status/${callNumber}`,
-                                type: 'POST',
-                                contentType: 'application/json',
-                                data: JSON.stringify({ status: 'Auctioned' }),
-                                success: function() {
-                                    showNotification('Vehicle marked as Auctioned');
-                                    // Navigate to the Completed tab
-                                    window.location.href = '/?status=Completed';
-                                },
-                                error: function(xhr) {
-                                    showNotification('Error: ' + (xhr.responseJSON?.message || 'Failed to update status'), 'error');
-                                }
-                            });
-                        }
-                    });
-                    
-                    // Mark as Scrapped
-                    $('.complete-scrap-btn').click(function() {
-                        const callNumber = $(this).data('call');
-                        
-                        if (confirm('Mark this vehicle as Scrapped (completed)?')) {
-                            $.ajax({
-                                url: `/api/update-status/${callNumber}`,
-                                type: 'POST',
-                                contentType: 'application/json',
-                                data: JSON.stringify({ status: 'Scrapped' }),
-                                success: function() {
-                                    showNotification('Vehicle marked as Scrapped');
-                                    // Navigate to the Completed tab
-                                    window.location.href = '/?status=Completed';
-                                },
-                                error: function(xhr) {
-                                    showNotification('Error: ' + (xhr.responseJSON?.message || 'Failed to update status'), 'error');
-                                }
-                            });
-                        }
-                    });
-                    
-                    // Delete button
-                    $('.delete-btn').click(function() {
-                        const callNumber = $(this).data('call');
-                        
-                        if (confirm(`Are you sure you want to permanently delete vehicle ${callNumber}? This cannot be undone.`)) {
-                            deleteVehicle(callNumber);
-                        }
-                    });
-                    
-                    // Edit button
-                    $('.edit-btn').click(function() {
-                        const callNumber = $(this).data('call');
-                        currentVehicle = callNumber;
-                        
-                        $.get(`/api/vehicles?call_number=${callNumber}`, function(data) {
-                            if (data && data.length > 0) {
-                                const vehicle = data[0];
-                                
-                                let formHtml = '';
-                                
-                                // Create form fields
-                                const fields = [
-                                    { name: 'towbook_call_number', label: 'Call Number', type: 'text' },
-                                    { name: 'complaint_number', label: 'Complaint Number', type: 'text' },
-                                    { name: 'jurisdiction', label: 'Jurisdiction', type: 'text' },
-                                    { name: 'tow_date', label: 'Tow Date', type: 'date' },
-                                    { name: 'tow_time', label: 'Tow Time', type: 'time' },
-                                    { name: 'location', label: 'Location', type: 'text' },
-                                    { name: 'vin', label: 'VIN', type: 'text' },
-                                    { name: 'year', label: 'Year', type: 'text' },
-                                    { name: 'make', label: 'Make', type: 'text' },
-                                    { name: 'model', label: 'Model', type: 'text' },
-                                    { name: 'color', label: 'Color', type: 'text' },
-                                    { name: 'plate', label: 'License Plate', type: 'text' },
-                                    { name: 'state', label: 'State', type: 'text' }
-                                ];
-                                
-                                fields.forEach(field => {
-                                    // Format time field correctly - ensure it's in HH:MM format
-                                    let value = vehicle[field.name] || '';
-                                    
-                                    if (field.name === 'tow_time' && value) {
-                                        // Try to format time to HH:MM if it's not already
-                                        try {
-                                            // Handle different time formats
-                                            if (value.includes(':')) {
-                                                // Already has a colon, make sure it's just HH:MM
-                                                const timeParts = value.split(':');
-                                                if (timeParts.length >= 2) {
-                                                    value = `${timeParts[0].padStart(2, '0')}:${timeParts[1].padStart(2, '0')}`;
-                                                }
-                                            } else if (value.length === 4) {
-                                                // Military time without colon (e.g. 1430)
-                                                value = `${value.substring(0, 2)}:${value.substring(2, 4)}`;
-                                            }
-                                        } catch (e) {
-                                            console.error('Error formatting time:', e);
-                                        }
-                                    }
-                                    
-                                    formHtml += `
-                                        <div class="mb-3">
-                                            <label for="edit_${field.name}">${field.label}</label>
-                                            <input type="${field.type}" class="form-control" id="edit_${field.name}" 
-                                                name="${field.name}" value="${value}">
-                                        </div>
-                                    `;
-                                });
-                                
-                                $('#editForm').html(formHtml);
-                                new bootstrap.Modal(document.getElementById('editModal')).show();
-                            } else {
-                                showNotification('Vehicle not found', 'error');
-                            }
-                        });
-                    });
-                    
-                    // Status change button
-                    $('.status-btn').click(function() {
-                        const callNumber = $(this).data('call');
-                        currentVehicle = callNumber;
-                        
-                        $.get(`/api/vehicles?call_number=${callNumber}`, function(data) {
-                            if (data && data.length > 0) {
-                                const vehicle = data[0];
-                                $('#newStatus').val(vehicle.status || 'New');
-                                
-                                // Show vehicle summary
-                                const vehicleInfo = [vehicle.year, vehicle.make, vehicle.model, vehicle.color]
-                                    .filter(Boolean)
-                                    .join(' ');
-                                    
-                                $('#statusVehicleInfo').html(`
-                                    <div class="mt-3 mb-3 card">
-                                        <div class="card-body">
-                                            <h6>Vehicle Info</h6>
-                                            <p><strong>Call Number:</strong> ${vehicle.towbook_call_number}</p>
-                                            <p><strong>Current Status:</strong> ${vehicle.status || 'New'}</p>
-                                            <p><strong>Vehicle:</strong> ${vehicleInfo}</p>
-                                            <p><strong>VIN:</strong> ${vehicle.vin || 'N/A'}</p>
-                                        </div>
-                                    </div>
-                                `);
-                                
-                                new bootstrap.Modal(document.getElementById('statusModal')).show();
-                            } else {
-                                showNotification('Vehicle not found', 'error');
-                            }
-                        });
-                    });
-                    
-                    // Release button
-                    $('.release-btn').click(function() {
-                        const callNumber = $(this).data('call');
-                        
-                        if (confirm('Mark this vehicle as released?')) {
-                            $.ajax({
-                                url: `/api/mark-released/${callNumber}`,
-                                type: 'POST',
-                                contentType: 'application/json',
-                                data: JSON.stringify({
-                                    release_reason: 'Released to Owner',
-                                    recipient: 'Owner',
-                                    release_date: new Date().toISOString().split('T')[0],
-                                    release_time: new Date().toTimeString().slice(0, 5)
-                                }),
-                                success: function() {
-                                    showNotification('Vehicle marked as released');
-                                    // Navigate to the Completed tab
-                                    window.location.href = '/?status=Completed';
-                                },
-                                error: function(xhr) {
-                                    showNotification('Error: ' + (xhr.responseJSON?.message || 'Failed to release vehicle'), 'error');
-                                }
-                            });
-                        }
-                    });
-                })
-                .fail(function(xhr) {
-                    console.error('API Error:', xhr);
-                    let errorMsg = 'Unknown error';
-                    if (xhr.responseJSON && xhr.responseJSON.error) {
-                        errorMsg = xhr.responseJSON.error;
-                    } else if (xhr.status) {
-                        errorMsg = `HTTP ${xhr.status}: ${xhr.statusText}`;
-                    }
-                    $('#vehicleTableBody').html(`<tr><td colspan="7">Error loading vehicles: ${errorMsg}</td></tr>`);
-                });
-        }
-
-        // Function to delete a vehicle
-        function deleteVehicle(callNumber) {
-            $.ajax({
-                url: `/api/vehicles/delete/${callNumber}`,
-                type: 'DELETE',
-                success: function() {
-                    showNotification('Vehicle deleted successfully');
-                    loadVehicles();
-                },
-                error: function(xhr) {
-                    showNotification('Error: ' + (xhr.responseJSON?.message || 'Failed to delete vehicle'), 'error');
-                }
-            });
-        }
-
-        // Set the active tab based on URL parameter
-        function setActiveTab() {
-            const status = new URLSearchParams(window.location.search).get('status') || 'New';
-            // No need to set tab active class - we've removed tabs
-        }
-        
         $(document).ready(function() {
-            // Set today's date in date inputs by default
-            const today = new Date().toISOString().split('T')[0];
-            $('#startDate, #endDate, #newTowDate').val(today);
-            $('#newTowTime').val(new Date().toTimeString().slice(0, 5));
+            loadWorkflowCounts();
+            loadVehicles('active');
 
-            // Set active tab based on URL parameter
-            setActiveTab();
-            
-            // Load vehicles for the active tab
-            loadVehicles();
-
-            // Initialize popovers
-            $('[data-toggle="popover"]').popover({
-                html: true,
-                trigger: 'click',
-                placement: 'bottom'
-            });
-
-            // Start scraping button
-            $('#startScrapingBtn').click(function() {
-                const startDate = $('#startDate').val();
-                const endDate = $('#endDate').val();
-                const headless = $('#headlessMode').prop('checked');
-                
-                if (!startDate || !endDate) {
-                    showNotification('Please enter start and end dates', 'error');
-                    return;
+            $('.sidebar a').click(function(e) {
+                e.preventDefault();
+                const tab = $(this).data('tab');
+                $('.sidebar a').removeClass('active');
+                $(this).addClass('active');
+                if (tab === 'compliance') {
+                    showCompliancePage();
+                } else if (tab === 'statistics') {
+                    showStatisticsPage();
+                } else {
+                    loadVehicles(tab);
                 }
-                
-                $(this).prop('disabled', true).text('Starting...');
-                
-                $.ajax({
-                    url: '/api/start-scraping',
-                    type: 'POST',
-                    contentType: 'application/json',
-                    data: JSON.stringify({ 
-                        start_date: startDate, 
-                        end_date: endDate,
-                        headless: headless 
-                    }),
-                    success: function() {
-                        $('#statusBar').show();
-                        $('#startScrapingBtn').prop('disabled', false).text('Start Scraping');
-                        
-                        // Poll for progress
-                        const interval = setInterval(() => {
-                            $.get('/scraping-progress', function(data) {
-                                const prog = data.progress;
-                                const percentage = prog.percentage;
-                                $('#progressBar').css('width', percentage + '%').text(percentage + '%');
-                                
-                                let statusText = prog.status || 'Processing...';
-                                statusText += `<br>Processed: ${prog.processed}/${prog.total}`;
-                                
-                                if (prog.error) {
-                                    statusText += `<br><span class="text-danger">Error: ${prog.error}</span>`;
-                                }
-                                
-                                $('#statusText').html(statusText);
-                                
-                                if (!prog.is_running) {
-                                    clearInterval(interval);
-                                    setTimeout(() => {
-                                        loadVehicles();
-                                        setTimeout(() => $('#statusBar').hide(), 2000);
-                                    }, 1000);
-                                }
-                            });
-                        }, 1000);
-                    },
-                    error: function(xhr) {
-                        $('#startScrapingBtn').prop('disabled', false).text('Start Scraping');
-                        showNotification('Error: ' + (xhr.responseJSON?.message || 'Failed to start scraping'), 'error');
-                    }
-                });
             });
 
-                                // Setup event handlers for the update status modal
-            $('#updateStatusBtn').click(function() {
-                const newStatus = $('#newStatus').val();
-                
-                console.log(`Updating status for ${currentVehicle} to ${newStatus}`);
-                
-                $.ajax({
-                    url: `/api/update-status/${currentVehicle}`,
-                    type: 'POST',
-                    contentType: 'application/json',
-                    data: JSON.stringify({ status: newStatus }),
-                    success: function(response) {
-                        console.log('Status update response:', response);
-                        bootstrap.Modal.getInstance(document.getElementById('statusModal')).hide();
-                        showNotification(`Status updated to ${newStatus}`);
-                        
-                        // Determine which tab to show based on the new status
-                        let newTab = 'New';
-                        if (newStatus === 'TOP Generated') newTab = 'TOP_Generated';
-                        else if (newStatus === 'TR52 Ready') newTab = 'TR52_Ready';
-                        else if (newStatus === 'Ready for Auction') newTab = 'Ready_Auction';
-                        else if (newStatus === 'Ready for Scrap') newTab = 'Ready_Scrap';
-                        else if (newStatus === 'Auction') newTab = 'Auction';
-                        else if (['Released', 'Auctioned', 'Scrapped'].includes(newStatus)) newTab = 'Completed';
-                        
-                        // Wait a moment for the database update to complete
-                        setTimeout(() => {
-                            // Navigate to the correct tab and reload
-                            window.location.href = `/?status=${newTab}`;
-                        }, 500);
-                    },
-                    error: function(xhr) {
-                        console.error('Status update error:', xhr);
-                        showNotification('Error: ' + (xhr.responseJSON?.message || 'Failed to update status'), 'error');
-                    }
-                });
-            });
-
-            // Add Vehicle button
-            $('#addVehicleBtn').click(function() {
-                $('#addForm')[0].reset();
-                $('#newTowDate').val(today);
-                $('#newTowTime').val(new Date().toTimeString().slice(0, 5));
-                new bootstrap.Modal(document.getElementById('addModal')).show();
-            });
-
-            // Save Add Vehicle
-            $('#saveAddBtn').click(function() {
-                const data = {
-                    towbook_call_number: $('#newCallNumber').val() || ('MANUAL-' + Date.now()),
-                    jurisdiction: $('#newJurisdiction').val(),
-                    tow_date: $('#newTowDate').val(),
-                    tow_time: $('#newTowTime').val(),
-                    location: $('#newLocation').val(),
-                    vin: $('#newVin').val(),
-                    year: $('#newYear').val(),
-                    make: $('#newMake').val(),
-                    model: $('#newModel').val(),
-                    color: $('#newColor').val(),
-                    plate: $('#newPlate').val(),
-                    state: $('#newState').val(),
-                    status: 'New',
-                    requestor: 'PROPERTY OWNER'
-                };
-                
-                if (!data.location || !data.tow_date) {
-                    showNotification('Please enter location and tow date', 'error');
-                    return;
-                }
-                
+            $('#add-vehicle-form').submit(function(e) {
+                e.preventDefault();
+                const formData = $(this).serializeArray().reduce((obj, item) => {
+                    obj[item.name] = item.value || 'N/A';
+                    return obj;
+                }, {});
                 $.ajax({
                     url: '/api/vehicles/add',
-                    type: 'POST',
+                    method: 'POST',
                     contentType: 'application/json',
-                    data: JSON.stringify(data),
+                    data: JSON.stringify(formData),
                     success: function() {
-                        bootstrap.Modal.getInstance(document.getElementById('addModal')).hide();
-                        showNotification('Vehicle added successfully');
-                        loadVehicles();
+                        $('#addVehicleModal').modal('hide');
+                        loadVehicles($('.sidebar a.active').data('tab'));
                     },
                     error: function(xhr) {
-                        showNotification('Error: ' + (xhr.responseJSON?.message || 'Failed to add vehicle'), 'error');
+                        alert('Error adding vehicle: ' + xhr.responseJSON.message);
                     }
                 });
             });
 
-            // Save Edit Vehicle
-            $('#saveEditBtn').click(function() {
-                const updatedData = {};
-                
-                $('#editForm input, #editForm select').each(function() {
-                    const field = $(this).attr('name');
-                    const value = $(this).val();
-                    if (field && value !== '') {
-                        updatedData[field] = value;
-                    }
-                });
-                
+            $('#edit-vehicle-form').submit(function(e) {
+                e.preventDefault();
+                const callNumber = $('#edit-call-number').val();
+                const formData = $(this).serializeArray().reduce((obj, item) => {
+                    obj[item.name] = item.value || 'N/A';
+                    return obj;
+                }, {});
                 $.ajax({
-                    url: `/api/vehicles/${currentVehicle}`,
-                    type: 'PUT',
+                    url: `/api/vehicles/${callNumber}`,
+                    method: 'PUT',
                     contentType: 'application/json',
-                    data: JSON.stringify(updatedData),
-                    success: function() {
-                        bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
-                        showNotification('Vehicle updated successfully');
-                        loadVehicles();
-                    },
-                    error: function(xhr) {
-                        showNotification('Error: ' + (xhr.responseJSON?.message || 'Failed to update vehicle'), 'error');
-                    }
-                });
-            });
-
-            // Auto-refresh vehicles every 5 minutes
-            setInterval(loadVehicles, 300000);
-        });
-    </script>
-</body>
-</html>
+                    data

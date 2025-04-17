@@ -1,11 +1,10 @@
 from flask import Flask, render_template, send_file, request, jsonify
 from database import (init_db, get_vehicles_by_status, update_vehicle_status, 
                       update_vehicle, insert_vehicle, get_db_connection, check_and_update_statuses, 
-                      get_logs, toggle_archive_status, create_auction, batch_update_status)
+                      get_logs, toggle_archive_status, create_auction)
 from generator import PDFGenerator
-from scraper import TowBookScraper
 from utils import (generate_complaint_number, release_vehicle, log_action, 
-                   ensure_logs_table_exists, setup_logging, get_status_filter)
+                   ensure_logs_table_exists, setup_logging, get_status_filter, calculate_newspaper_ad_date)
 from datetime import datetime, timedelta
 import threading
 import os
@@ -13,6 +12,9 @@ import logging
 import time
 import socket
 import json
+from werkzeug.utils import secure_filename
+from io import StringIO
+import csv
 
 # Configure logging
 setup_logging()
@@ -23,7 +25,20 @@ app = Flask(__name__)
 init_db()
 ensure_logs_table_exists()
 pdf_gen = PDFGenerator()
-scraper = None  # Initialized on first scrape
+
+# Configure upload folders
+UPLOAD_FOLDER = 'static/uploads/vehicle_photos'
+DOCUMENT_FOLDER = 'static/uploads/documents'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['DOCUMENT_FOLDER'] = DOCUMENT_FOLDER
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+ALLOWED_DOCUMENT_EXTENSIONS = {'pdf'}
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def allowed_document(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_DOCUMENT_EXTENSIONS
 
 # Check if port is available
 def is_port_in_use(port):
@@ -39,10 +54,10 @@ def run_status_checks():
         try:
             check_and_update_statuses()
             log_action("SYSTEM", "AUTO", "Ran automated status checks")
-            time.sleep(3600)  # Hourly check (1 hour)
+            time.sleep(3600)
         except Exception as e:
             logging.error(f"Status check error: {e}")
-            time.sleep(60)  # Brief sleep on error
+            time.sleep(60)
 
 @app.route('/')
 def index():
@@ -57,19 +72,15 @@ def api_get_vehicles():
         auction_only = request.args.get('auction_only') == 'true'
         call_number = request.args.get('call_number')
         sort_column = request.args.get('sort')
-        sort_direction = request.args.get('direction', 'desc')  # Default to newest first
+        sort_direction = request.args.get('direction', 'desc')
         
         logging.info(f"API request: status_type={status_type}, sort={sort_column}, direction={sort_direction}")
         
         if count_by_status:
             conn = get_db_connection()
             cursor = conn.cursor()
-            
-            # Get exact counts for each status
             cursor.execute("SELECT status, COUNT(*) as count FROM vehicles GROUP BY status")
             status_breakdown = {row[0] or 'undefined': row[1] for row in cursor.fetchall()}
-            
-            # Calculate counts for UI categories
             counts = {
                 'new': status_breakdown.get('New', 0),
                 'topGenerated': status_breakdown.get('TOP Generated', 0),
@@ -87,7 +98,6 @@ def api_get_vehicles():
                 'active': cursor.execute("SELECT COUNT(*) FROM vehicles WHERE archived = 0").fetchone()[0],
                 'total': cursor.execute("SELECT COUNT(*) FROM vehicles").fetchone()[0]
             }
-            
             conn.close()
             return jsonify({'status': 'success', 'counts': counts, 'statusBreakdown': status_breakdown})
         
@@ -96,6 +106,8 @@ def api_get_vehicles():
             vehicle = conn.execute("SELECT * FROM vehicles WHERE towbook_call_number = ? AND archived = 0", (call_number,)).fetchone()
             conn.close()
             vehicle_data = dict(vehicle) if vehicle else {}
+            for key in vehicle_data:
+                vehicle_data[key] = vehicle_data[key] if vehicle_data[key] else 'N/A'
             return jsonify([vehicle_data] if vehicle else [])
         
         if auction_only:
@@ -104,6 +116,9 @@ def api_get_vehicles():
             cursor.execute("SELECT * FROM vehicles WHERE status = 'Auction' AND archived = 0 ORDER BY tow_date DESC")
             vehicles = [dict(v) for v in cursor.fetchall()]
             conn.close()
+            for vehicle in vehicles:
+                for key in vehicle:
+                    vehicle[key] = vehicle[key] if vehicle[key] else 'N/A'
             return jsonify(vehicles)
         
         if status_type:
@@ -112,11 +127,8 @@ def api_get_vehicles():
         else:
             conn = get_db_connection()
             cursor = conn.cursor()
-            
-            # Add sorting if specified
-            sort_by = "tow_date DESC"  # Default sort
+            sort_by = "tow_date DESC"
             if sort_column:
-                # Sanitize sort column
                 valid_columns = [
                     'towbook_call_number', 'complaint_number', 'vin', 'make', 'model', 
                     'year', 'color', 'tow_date', 'jurisdiction', 'status', 'last_updated'
@@ -124,32 +136,29 @@ def api_get_vehicles():
                 if sort_column in valid_columns:
                     sort_dir = "ASC" if sort_direction.lower() == 'asc' else "DESC"
                     sort_by = f"{sort_column} {sort_dir}"
-                    
             cursor.execute(f"SELECT * FROM vehicles WHERE archived = 0 ORDER BY {sort_by}")
             vehicles = [dict(row) for row in cursor.fetchall()]
             conn.close()
     
         for vehicle in vehicles:
-            if 'tow_date' in vehicle and vehicle['tow_date']:
+            for key in vehicle:
+                vehicle[key] = vehicle[key] if vehicle[key] else 'N/A'
+            if 'tow_date' in vehicle and vehicle['tow_date'] != 'N/A':
                 try:
                     tow_date = datetime.strptime(vehicle['tow_date'], '%Y-%m-%d')
                     vehicle['days_since_tow'] = (datetime.now() - tow_date).days
-                    
-                    if vehicle['status'] == 'TOP Generated' and vehicle.get('tr52_available_date'):
+                    if vehicle['status'] == 'TOP Generated' and vehicle.get('tr52_available_date') != 'N/A':
                         tr52_date = datetime.strptime(vehicle['tr52_available_date'], '%Y-%m-%d')
                         vehicle['days_until_next_step'] = max(0, (tr52_date - datetime.now()).days)
                         vehicle['next_step_label'] = 'days until TR52 Ready'
-                    
                     elif vehicle['status'] == 'TR52 Ready':
                         vehicle['next_step_label'] = 'days since TR52 Ready'
                         vehicle['days_until_next_step'] = vehicle.get('days_until_next_step', 0)
-                    
-                    elif vehicle['status'] == 'Ready for Scrap' and vehicle.get('estimated_date'):
+                    elif vehicle['status'] == 'Ready for Scrap' and vehicle.get('estimated_date') != 'N/A':
                         estimated_date = datetime.strptime(vehicle['estimated_date'], '%Y-%m-%d')
                         vehicle['days_until_next_step'] = max(0, (estimated_date - datetime.now()).days)
                         vehicle['next_step_label'] = 'days until legal scrap date'
-                        
-                    elif vehicle['status'] == 'Ready for Auction' and vehicle.get('auction_date'):
+                    elif vehicle['status'] == 'Ready for Auction' and vehicle.get('auction_date') != 'N/A':
                         auction_date = datetime.strptime(vehicle['auction_date'], '%Y-%m-%d')
                         vehicle['days_until_auction'] = max(0, (auction_date - datetime.now()).days)
                         vehicle['next_step_label'] = 'days until auction'
@@ -165,6 +174,8 @@ def api_get_vehicles():
 def update_vehicle_api(call_number):
     try:
         data = request.json
+        for key in data:
+            data[key] = data[key] if data[key] else 'N/A'
         success, message = update_vehicle(call_number, data)
         if success:
             log_action("UPDATE", call_number, f"Vehicle details updated: {json.dumps(data)}")
@@ -176,26 +187,19 @@ def update_vehicle_api(call_number):
 
 @app.route('/api/vehicles/delete/<call_number>', methods=['DELETE'])
 def delete_vehicle(call_number):
-    """Delete a vehicle completely from the database"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        # Check if vehicle exists
         cursor.execute("SELECT COUNT(*) FROM vehicles WHERE towbook_call_number = ?", (call_number,))
         if cursor.fetchone()[0] == 0:
             conn.close()
             return jsonify({'status': 'error', 'message': 'Vehicle not found'}), 404
-        
-        # Delete logs first (foreign key constraint)
         cursor.execute("DELETE FROM logs WHERE vehicle_id = ?", (call_number,))
-        
-        # Then delete the vehicle
+        cursor.execute("DELETE FROM police_logs WHERE vehicle_id = ?", (call_number,))
+        cursor.execute("DELETE FROM documents WHERE vehicle_id = ?", (call_number,))
         cursor.execute("DELETE FROM vehicles WHERE towbook_call_number = ?", (call_number,))
-        
         conn.commit()
         conn.close()
-        
         log_action("SYSTEM", "ADMIN", f"Vehicle {call_number} permanently deleted")
         return jsonify({'status': 'success', 'message': f'Vehicle {call_number} deleted'})
     except Exception as e:
@@ -215,6 +219,8 @@ def add_vehicle():
             data['complaint_number'] = complaint_number
             data['complaint_sequence'] = sequence
             data['complaint_year'] = year
+        for key in data:
+            data[key] = data[key] if data[key] else 'N/A'
         success, message = insert_vehicle(data)
         if success:
             log_action("INSERT", data['towbook_call_number'], f"New vehicle added: {json.dumps(data)}")
@@ -229,23 +235,12 @@ def api_update_status(call_number):
     try:
         data = request.get_json()
         new_status = data.get('status')
-        
         if not new_status:
             return jsonify({"error": "No status provided"}), 400
-            
-        # Use the update_vehicle_status function from utils
-        from utils import update_vehicle_status, convert_frontend_status
-        
-        # Convert status if needed (frontend to database format)
-        if new_status:
-            new_status = convert_frontend_status(new_status)
-            
-        # Log the status change attempt
+        from utils import convert_frontend_status
+        new_status = convert_frontend_status(new_status)
         logging.info(f"Attempting status update for {call_number} to {new_status}")
-        
-        # Update the status
-        success = update_vehicle_status(call_number, new_status)
-        
+        success = update_vehicle_status(call_number, new_status, data)
         if success:
             logging.info(f"Status updated: {call_number} => {new_status}")
             log_action("USER", call_number, f"Status updated to {new_status}")
@@ -259,57 +254,203 @@ def api_update_status(call_number):
     
 @app.route('/api/check-statuses', methods=['POST'])
 def check_statuses():
-    """Check for and fix incorrect statuses"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        # Check for vehicles with 'Auction' status (should be 'Ready for Auction')
         cursor.execute("SELECT towbook_call_number FROM vehicles WHERE status = 'Auction'")
         auction_vehicles = cursor.fetchall()
-        
-        # Update incorrect 'Auction' statuses to 'Ready for Auction'
         fixed_count = 0
         if auction_vehicles:
             logging.info(f"Found {len(auction_vehicles)} vehicles with incorrect 'Auction' status")
             for vehicle in auction_vehicles:
                 call_number = vehicle['towbook_call_number']
-                
-                # Update to correct status
                 cursor.execute("""
                     UPDATE vehicles 
-                    SET status = 'Ready for Auction', 
+                    SET status = ?, 
                         last_updated = ?
                     WHERE towbook_call_number = ?
-                """, (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), call_number))
-                
-                # Calculate next auction date (next Monday)
+                """, ('Ready for Auction', datetime.now().strftime('%Y-%m-%d %H:%M:%S'), call_number))
                 today = datetime.now().date()
                 days_to_monday = (7 - today.weekday()) % 7
-                if days_to_monday < 3:  # If Monday is less than 3 days away, use the following Monday
+                if days_to_monday < 3:
                     days_to_monday += 7
                 auction_date = today + timedelta(days=days_to_monday)
-                
-                # Update auction date
                 cursor.execute("""
                     UPDATE vehicles
                     SET auction_date = ?,
                         days_until_auction = ?
                     WHERE towbook_call_number = ?
                 """, (auction_date.strftime('%Y-%m-%d'), days_to_monday, call_number))
-                
-                # Log the status correction
                 log_action("STATUS_CORRECTION", call_number, f"Changed incorrect status 'Auction' to 'Ready for Auction'")
                 logging.info(f"Fixed status for vehicle {call_number}")
                 fixed_count += 1
-        
         conn.commit()
         conn.close()
-        
         return jsonify({'status': 'success', 'fixed': fixed_count})
     except Exception as e:
         logging.error(f"Error checking statuses: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/upload-photo/<call_number>', methods=['POST'])
+def upload_photo(call_number):
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        ext = filename.rsplit('.', 1)[1].lower()
+        new_filename = f"{call_number}_{timestamp}.{ext}"
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], new_filename)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        file.save(file_path)
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT photo_paths FROM vehicles WHERE towbook_call_number = ?", (call_number,))
+        result = cursor.fetchone()
+        photo_paths = json.loads(result['photo_paths']) if result and result['photo_paths'] else []
+        photo_paths.append(new_filename)
+        cursor.execute("UPDATE vehicles SET photo_paths = ? WHERE towbook_call_number = ?",
+                       (json.dumps(photo_paths), call_number))
+        conn.commit()
+        conn.close()
+        log_action("PHOTO_UPLOAD", call_number, f"Uploaded photo: {new_filename}")
+        return jsonify({'status': 'success', 'filename': new_filename})
+    return jsonify({'error': 'File type not allowed'}), 400
+
+@app.route('/api/police-logs/<call_number>', methods=['GET'])
+def get_police_logs(call_number):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM police_logs WHERE vehicle_id = ? ORDER BY communication_date DESC", (call_number,))
+    logs = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return jsonify(logs)
+
+@app.route('/api/police-logs/<call_number>', methods=['POST'])
+def add_police_log(call_number):
+    data = request.json
+    communication_date = data.get('communication_date', datetime.now().strftime('%Y-%m-%d'))
+    communication_type = data.get('communication_type')
+    notes = data.get('notes')
+    if not communication_type or not notes:
+        return jsonify({'error': 'Missing required fields'}), 400
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO police_logs (vehicle_id, communication_date, communication_type, notes) VALUES (?, ?, ?, ?)",
+                   (call_number, communication_date, communication_type, notes))
+    conn.commit()
+    conn.close()
+    log_action("POLICE_LOG", call_number, f"Added police communication log: {communication_type}")
+    return jsonify({'status': 'success'})
+
+@app.route('/api/compliance-report', methods=['GET'])
+def compliance_report():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT towbook_call_number, tow_date, top_form_sent_date, tr52_available_date, 
+               status, auction_date, release_date, photo_paths, sale_amount, fees, net_proceeds
+        FROM vehicles WHERE archived = 0
+    """)
+    vehicles = cursor.fetchall()
+    conn.close()
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Call Number', 'Tow Date', 'Notice Sent Date', 'Redemption End Date', 'Status', 
+                     'Auction Date', 'Release Date', 'Photo Count', 'Sale Amount', 'Fees', 'Net Proceeds'])
+    for vehicle in vehicles:
+        photo_count = len(json.loads(vehicle['photo_paths'])) if vehicle['photo_paths'] else 0
+        writer.writerow([
+            vehicle['towbook_call_number'] or 'N/A', 
+            vehicle['tow_date'] or 'N/A', 
+            vehicle['top_form_sent_date'] or 'N/A', 
+            vehicle['tr52_available_date'] or 'N/A', 
+            vehicle['status'] or 'N/A', 
+            vehicle['auction_date'] or 'N/A', 
+            vehicle['release_date'] or 'N/A', 
+            photo_count, 
+            vehicle['sale_amount'] or 0, 
+            vehicle['fees'] or 0, 
+            vehicle['net_proceeds'] or 0
+        ])
+    output.seek(0)
+    return send_file(output, mimetype='text/csv', as_attachment=True, download_name='compliance_report.csv')
+
+@app.route('/api/upload-tr52/<call_number>', methods=['POST'])
+def upload_tr52(call_number):
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    if file and allowed_document(file.filename):
+        filename = secure_filename(file.filename)
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        ext = filename.rsplit('.', 1)[1].lower()
+        new_filename = f"TR52_{call_number}_{timestamp}.{ext}"
+        file_path = os.path.join(app.config['DOCUMENT_FOLDER'], new_filename)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        file.save(file_path)
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO documents (vehicle_id, type, filename, upload_date) VALUES (?, ?, ?, ?)",
+                       (call_number, 'TR52', new_filename, datetime.now().strftime('%Y-%m-%d')))
+        cursor.execute("INSERT INTO police_logs (vehicle_id, communication_date, communication_type, notes) VALUES (?, ?, ?, ?)",
+                       (call_number, datetime.now().strftime('%Y-%m-%d'), 'TR52 Amended', 'Amended TR52 uploaded'))
+        conn.commit()
+        conn.close()
+        log_action("TR52_UPLOAD", call_number, f"Uploaded amended TR52: {new_filename}")
+        return jsonify({'status': 'success', 'filename': new_filename})
+    return jsonify({'error': 'File type not allowed'}), 400
+
+@app.route('/api/documents/<call_number>', methods=['GET'])
+def get_documents(call_number):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT type, filename, upload_date FROM documents WHERE vehicle_id = ? ORDER BY upload_date DESC",
+                   (call_number,))
+    documents = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return jsonify(documents)
+
+@app.route('/api/pending-notifications', methods=['GET'])
+def pending_notifications():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    notifications = []
+    cursor.execute("SELECT towbook_call_number, tow_date, top_notification_sent, auction_ad_sent, release_notification_sent, status, ad_placement_date, release_date, jurisdiction FROM vehicles WHERE archived = 0")
+    vehicles = cursor.fetchall()
+    today = datetime.now().date()
+    for vehicle in vehicles:
+        tow_date = datetime.strptime(vehicle['tow_date'], '%Y-%m-%d').date() if vehicle['tow_date'] != 'N/A' else today
+        if not vehicle['top_notification_sent'] and (today - tow_date).days <= 1:
+            notifications.append({
+                'vehicle_id': vehicle['towbook_call_number'],
+                'action': 'Send TOP Notification',
+                'due_date': tow_date.strftime('%Y-%m-%d'),
+                'jurisdiction': vehicle['jurisdiction']
+            })
+        if vehicle['status'] == 'Ready for Auction' and not vehicle['auction_ad_sent'] and vehicle['ad_placement_date'] != 'N/A':
+            ad_date = datetime.strptime(vehicle['ad_placement_date'], '%Y-%m-%d').date()
+            if (today - ad_date).days >= 0:
+                notifications.append({
+                    'vehicle_id': vehicle['towbook_call_number'],
+                    'action': 'Send Auction Ad Receipt',
+                    'due_date': ad_date.strftime('%Y-%m-%d'),
+                    'jurisdiction': vehicle['jurisdiction']
+                })
+        if vehicle['status'] in ['Released', 'Auctioned', 'Scrapped'] and not vehicle['release_notification_sent'] and vehicle['release_date'] != 'N/A':
+            notifications.append({
+                'vehicle_id': vehicle['towbook_call_number'],
+                'action': 'Send Release Notification',
+                'due_date': vehicle['release_date'],
+                'jurisdiction': vehicle['jurisdiction']
+            })
+    conn.close()
+    return jsonify(notifications)
 
 @app.route('/api/generate-top/<call_number>', methods=['POST'])
 def generate_top(call_number):
@@ -320,21 +461,30 @@ def generate_top(call_number):
         if not vehicle:
             return jsonify({'error': 'Vehicle not found'}), 404
         data = dict(vehicle)
+        for key in data:
+            data[key] = data[key] if data[key] else 'N/A'
         pdf_path = f"static/generated_pdfs/TOP_{call_number}.pdf"
         os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
         success, error = pdf_gen.generate_top(data, pdf_path)
         if success:
-            # Update the status to TOP Generated
-            update_fields = {'top_form_sent_date': datetime.now().strftime('%Y-%m-%d')}
-            
-            # Calculate the TR52 available date (20 days from now)
-            tr52_date = datetime.now() + timedelta(days=20)
+            update_fields = {
+                'top_form_sent_date': datetime.now().strftime('%Y-%m-%d'),
+                'top_notification_sent': 1
+            }
+            tr52_date = datetime.now() + timedelta(days=30)
             update_fields['tr52_available_date'] = tr52_date.strftime('%Y-%m-%d')
-            update_fields['days_until_next_step'] = 20
-            
-            # Update the status
+            update_fields['days_until_next_step'] = 30
+            update_fields['redemption_end_date'] = tr52_date.strftime('%Y-%m-%d')
             update_vehicle_status(call_number, 'TOP Generated', update_fields)
-            log_action("GENERATE_TOP", call_number, "TOP form generated")
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO police_logs (vehicle_id, communication_date, communication_type, notes) VALUES (?, ?, ?, ?)",
+                           (call_number, datetime.now().strftime('%Y-%m-%d'), 'TOP Notification', 
+                            f"TOP form sent to LEIN processor for jurisdiction: {data['jurisdiction']}"))
+            conn.commit()
+            conn.close()
+            log_action("GENERATE_TOP", call_number, "TOP form generated and notified")
+            # Placeholder for email/SMS/fax notification
             return send_file(pdf_path, as_attachment=True)
         logging.error(f"Failed to generate TOP: {error}")
         return jsonify({'error': error}), 500
@@ -344,7 +494,6 @@ def generate_top(call_number):
 
 @app.route('/api/mark-tr52-ready/<call_number>', methods=['POST'])
 def mark_tr52_ready(call_number):
-    """Mark a vehicle as TR52 Ready, indicating the TR52 form has been received"""
     try:
         update_fields = {'tr52_received_date': datetime.now().strftime('%Y-%m-%d')}
         success = update_vehicle_status(call_number, 'TR52 Ready', update_fields)
@@ -378,11 +527,19 @@ def api_decision(call_number):
     cursor = conn.cursor()
     cursor.execute("SELECT ad_placement_date FROM vehicles WHERE towbook_call_number = ?", (call_number,))
     result = cursor.fetchone()
-    ad_placement_date = result['ad_placement_date'] if result and result['ad_placement_date'] else None
+    ad_placement_date = result['ad_placement_date'] if result and result['ad_placement_date'] != 'N/A' else None
 
     if decision == 'auction':
         auction_date = calculate_next_auction_date(ad_placement_date)
-        update_vehicle_status(call_number, 'Ready for Auction', {'auction_date': auction_date.strftime('%Y-%m-%d')})
+        ad_date = calculate_newspaper_ad_date(auction_date)
+        update_vehicle_status(call_number, 'Ready for Auction', {
+            'auction_date': auction_date.strftime('%Y-%m-%d'),
+            'ad_placement_date': ad_date.strftime('%Y-%m-%d')
+        })
+        cursor.execute("INSERT INTO police_logs (vehicle_id, communication_date, communication_type, notes) VALUES (?, ?, ?, ?)",
+                       (call_number, datetime.now().strftime('%Y-%m-%d'), 'Auction Ad Receipt',
+                        f"Auction ad placed for {auction_date.strftime('%Y-%m-%d')}"))
+        cursor.execute("UPDATE vehicles SET auction_ad_sent = 1 WHERE towbook_call_number = ?", (call_number,))
         log_action("USER", call_number, f"Decision: Auction, scheduled for {auction_date}")
     elif decision == 'scrap':
         update_vehicle_status(call_number, 'Ready for Scrap')
@@ -422,17 +579,54 @@ def generate_release(call_number):
         if not vehicle:
             return jsonify({'error': 'Vehicle not found'}), 404
         vehicle_data = dict(vehicle)
+        for key in vehicle_data:
+            vehicle_data[key] = vehicle_data[key] if vehicle_data[key] else 'N/A'
         vehicle_data.update(data)
         vehicle_data['release_date'] = data.get('release_date', datetime.now().strftime('%Y-%m-%d'))
         vehicle_data['release_time'] = data.get('release_time', datetime.now().strftime('%H:%M'))
+        release_reason = data.get('release_reason', 'Not specified')
+        
+        compliance_text = {
+            'Owner Redeemed': "Vehicle released to owner per MCL 257.252. All fees paid.",
+            'Auctioned': "Vehicle sold at public auction per MCL 257.252g. Sale amount recorded.",
+            'Scrapped': "Vehicle scrapped per MCL 257.252b. No value retained.",
+            'Title Transfer': "Title transferred to tow company in lieu of fees per MCL 257.252."
+        }.get(release_reason, "Vehicle released per MCL 257.252.")
+        vehicle_data['compliance_text'] = compliance_text
+        
         pdf_path = f"static/generated_pdfs/Release_{call_number}.pdf"
         os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
         success, error = pdf_gen.generate_release_notice(vehicle_data, pdf_path)
         if success:
-            release_vehicle(call_number, data.get('release_reason', 'Not specified'),
-                           data.get('recipient', 'Not specified'), vehicle_data['release_date'],
-                           vehicle_data['release_time'])
-            log_action("RELEASE", call_number, f"Vehicle released: {data.get('release_reason')}")
+            update_fields = {
+                'release_reason': release_reason,
+                'recipient': data.get('recipient', 'Not specified'),
+                'release_date': vehicle_data['release_date'],
+                'release_time': vehicle_data['release_time'],
+                'release_notification_sent': 1
+            }
+            if release_reason == 'Auctioned':
+                update_fields['sale_amount'] = float(data.get('sale_amount', 0))
+                update_fields['fees'] = float(data.get('fees', 0))
+                update_fields['net_proceeds'] = update_fields['sale_amount'] - update_fields['fees']
+            status = {
+                'Owner Redeemed': 'Released',
+                'Auctioned': 'Auctioned',
+                'Scrapped': 'Scrapped',
+                'Title Transfer': 'Released'
+            }.get(release_reason, 'Released')
+            release_vehicle(call_number, release_reason, data.get('recipient', 'Not specified'),
+                           vehicle_data['release_date'], vehicle_data['release_time'])
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO police_logs (vehicle_id, communication_date, communication_type, notes) VALUES (?, ?, ?, ?)",
+                           (call_number, datetime.now().strftime('%Y-%m-%d'), 'Release Notification',
+                            f"Vehicle released: {release_reason} to {data.get('recipient', 'Not specified')}"))
+            cursor.execute("INSERT INTO documents (vehicle_id, type, filename, upload_date) VALUES (?, ?, ?, ?)",
+                           (call_number, 'Release Notice', os.path.basename(pdf_path), datetime.now().strftime('%Y-%m-%d')))
+            conn.commit()
+            conn.close()
+            log_action("RELEASE", call_number, f"Vehicle released: {release_reason}")
             return send_file(pdf_path, as_attachment=True)
         return jsonify({'error': error}), 500
     except Exception as e:
@@ -465,76 +659,30 @@ def get_action_logs():
         logging.error(f"Error retrieving logs: {e}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/start-scraping', methods=['POST'])
-def start_scraping():
-    global scraper
-    try:
-        data = request.json
-        start_date = data.get('start_date')
-        end_date = data.get('end_date')
-        headless = data.get('headless', True)  # Default to headless mode
-        
-        if not start_date or not end_date:
-            return jsonify({'status': 'error', 'message': 'Dates required'}), 400
-        
-        if scraper is None:
-            scraper = TowBookScraper("iTow05", "iTow2023", database='vehicles.db')
-        
-        app.scraping_thread = threading.Thread(
-            target=lambda: scraper.start_scraping_with_date_range(start_date, end_date, headless)
-        )
-        app.scraping_thread.daemon = True
-        app.scraping_thread.start()
-        
-        return jsonify({'status': 'started'})
-    except Exception as e:
-        logging.error(f"Error starting scraping: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@app.route('/scraping-progress')
-def scraping_progress():
-    global scraper
-    try:
-        if scraper:
-            return jsonify({'status': 'success', 'progress': scraper.get_progress()})
-        return jsonify({'status': 'success', 'progress': {'percentage': 0, 'is_running': False, 'processed': 0, 'total': 0}})
-    except Exception as e:
-        logging.error(f"Error getting progress: {e}")
-        return jsonify({'status': 'error', 'message': str(e), 'progress': {'percentage': 0, 'is_running': False}})
-
 @app.route('/api/workflow-counts')
 def workflow_counts():
-    """Get workflow counts for dashboard"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         today = datetime.now().strftime('%Y-%m-%d')
-        
-        # Overdue actions
         cursor.execute("""
             SELECT COUNT(*) FROM vehicles
             WHERE status = 'New' AND last_updated < DATE('now', '-2 day')
-            OR (status = 'TOP Generated' AND last_updated < DATE('now', '-20 day'))
+            OR (status = 'TOP Generated' AND last_updated < DATE('now', '-30 day'))
         """)
         overdue = cursor.fetchone()[0]
-        
-        # Actions due today
         cursor.execute("""
             SELECT COUNT(*) FROM vehicles
             WHERE status = 'New' AND last_updated = DATE('now', '-2 day')
-            OR (status = 'TOP Generated' AND last_updated = DATE('now', '-20 day'))
+            OR (status = 'TOP Generated' AND last_updated = DATE('now', '-30 day'))
         """)
         due_today = cursor.fetchone()[0]
-        
-        # Ready for disposition
         cursor.execute("""
             SELECT COUNT(*) FROM vehicles
             WHERE status = 'TR52 Ready'
         """)
         ready = cursor.fetchone()[0]
-        
         conn.close()
-        
         return jsonify({
             'overdue': overdue,
             'dueToday': due_today,
@@ -546,54 +694,41 @@ def workflow_counts():
 
 @app.route('/api/statistics')
 def get_statistics():
-    """Get overall statistics for dashboard"""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
-        # Total vehicles
         cursor.execute("SELECT COUNT(*) FROM vehicles")
         total_vehicles = cursor.fetchone()[0]
-        
-        # Vehicles by status
         cursor.execute("""
             SELECT status, COUNT(*) as count
             FROM vehicles
             GROUP BY status
         """)
-        status_counts = {row[0]: row[1] for row in cursor.fetchall()}
-        
-        # Vehicles by jurisdiction
+        status_counts = {row[0] or 'N/A': row[1] for row in cursor.fetchall()}
         cursor.execute("""
             SELECT jurisdiction, COUNT(*) as count
             FROM vehicles
-            WHERE jurisdiction IS NOT NULL AND jurisdiction != ''
+            WHERE jurisdiction IS NOT NULL AND jurisdiction != 'N/A'
             GROUP BY jurisdiction
             ORDER BY count DESC
             LIMIT 5
         """)
         jurisdiction_counts = {row[0]: row[1] for row in cursor.fetchall()}
-        
-        # Vehicle processing time
         cursor.execute("""
             SELECT 
                 AVG(JULIANDAY(COALESCE(release_date, DATE('now'))) - JULIANDAY(tow_date)) as avg_days
             FROM vehicles
-            WHERE tow_date IS NOT NULL
+            WHERE tow_date IS NOT NULL AND tow_date != 'N/A'
         """)
         avg_processing_days = cursor.fetchone()[0]
-        
-        # Recent activity
         cursor.execute("""
-            SELECT action_type, vehicle_id, details, timestamp
+            SELECT action, vehicle_id, details, timestamp
             FROM logs
             ORDER BY timestamp DESC
             LIMIT 5
         """)
         recent_activity = [dict(row) for row in cursor.fetchall()]
-        
         conn.close()
-        
         return jsonify({
             'totalVehicles': total_vehicles,
             'statusCounts': status_counts,

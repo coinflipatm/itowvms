@@ -73,7 +73,20 @@ def init_db():
             distribution_details TEXT,
             top_notification_sent INTEGER DEFAULT 0,  -- Track TOP notification
             auction_ad_sent INTEGER DEFAULT 0,        -- Track auction ad notification
-            release_notification_sent INTEGER DEFAULT 0 -- Track release notification
+            release_notification_sent INTEGER DEFAULT 0, -- Track release notification
+            requested_by TEXT,
+            hearing_date TEXT,
+            hearing_requested INTEGER DEFAULT 0,
+            certified_mail_number TEXT,
+            certified_mail_sent_date TEXT,
+            certified_mail_received_date TEXT,
+            newspaper_name TEXT,
+            newspaper_contact TEXT,
+            salvage_value REAL,
+            lien_amount REAL,
+            storage_fee_per_day REAL,
+            storage_days INTEGER,
+            additional_fees TEXT
         )
     ''')
     cursor.execute('''
@@ -83,6 +96,9 @@ def init_db():
             communication_date TEXT,
             communication_type TEXT,
             notes TEXT,
+            recipient TEXT,
+            contact_method TEXT, -- 'email', 'fax', 'phone', 'mail'
+            attachment_path TEXT,
             FOREIGN KEY (vehicle_id) REFERENCES vehicles (towbook_call_number)
         )
     ''')
@@ -102,9 +118,83 @@ def init_db():
             type TEXT,  -- e.g., 'TR52', 'Release Notice', 'Auction Ad'
             filename TEXT,
             upload_date TEXT,
+            generated_date TEXT,
+            sent_date TEXT,
+            sent_to TEXT,
+            sent_method TEXT, -- 'email', 'fax', 'mail'
+            delivery_status TEXT, -- 'sent', 'delivered', 'failed'
+            tracking_number TEXT,
             FOREIGN KEY (vehicle_id) REFERENCES vehicles (towbook_call_number)
         )
     ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS auctions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            auction_date TEXT,
+            status TEXT,  -- 'Scheduled', 'Completed', 'Cancelled'
+            location TEXT,
+            auctioneer TEXT,
+            advertisement_date TEXT,
+            newspaper_name TEXT,
+            vin_list TEXT,
+            created_date TEXT,
+            completed_date TEXT,
+            notes TEXT
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS contacts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            jurisdiction TEXT UNIQUE,
+            contact_name TEXT,
+            phone TEXT,
+            email TEXT,
+            fax TEXT,
+            address TEXT,
+            preferred_method TEXT,  -- 'email', 'fax', 'mail'
+            notes TEXT
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_id TEXT,
+            notification_type TEXT, -- 'TOP', 'TR52', 'Auction', 'Release'
+            due_date TEXT,
+            sent_date TEXT,
+            sent_method TEXT,
+            recipient TEXT,
+            status TEXT, -- 'pending', 'sent', 'failed'
+            reminder_sent INTEGER DEFAULT 0,
+            document_path TEXT,
+            FOREIGN KEY (vehicle_id) REFERENCES vehicles (towbook_call_number)
+        )
+    ''')
+    # Add indices for performance
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vehicles_status ON vehicles(status)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vehicles_tow_date ON vehicles(tow_date)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vehicles_jurisdiction ON vehicles(jurisdiction)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_police_logs_vehicle_id ON police_logs(vehicle_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_documents_vehicle_id ON documents(vehicle_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_notifications_vehicle_id ON notifications(vehicle_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_notifications_due_date ON notifications(due_date)')
+    
+    # Insert default contacts for common jurisdictions if table is empty
+    cursor.execute("SELECT COUNT(*) FROM contacts")
+    if cursor.fetchone()[0] == 0:
+        default_jurisdictions = [
+            ('Flint', 'Flint Police Department', '810-555-0100', 'flint-pd@example.com', '810-555-0101', '123 Main St, Flint, MI', 'email'),
+            ('Burton', 'Burton Police Department', '810-555-0200', 'burton-pd@example.com', '810-555-0201', '456 Oak St, Burton, MI', 'fax'),
+            ('Grand Blanc', 'Grand Blanc Police', '810-555-0300', 'grandblanc-pd@example.com', '810-555-0301', '789 Maple St, Grand Blanc, MI', 'email'),
+            ('Flushing', 'Flushing Police Department', '810-555-0400', 'flushing-pd@example.com', '810-555-0401', '101 Pine St, Flushing, MI', 'fax'),
+            ('Clio', 'Clio Police Department', '810-555-0500', 'clio-pd@example.com', '810-555-0501', '202 Elm St, Clio, MI', 'email')
+        ]
+        for jurisdiction in default_jurisdictions:
+            cursor.execute('''
+                INSERT INTO contacts (jurisdiction, contact_name, phone, email, fax, address, preferred_method)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', jurisdiction)
+    
     conn.commit()
     conn.close()
     logging.info("Database initialized")
@@ -117,39 +207,70 @@ def insert_vehicle(vehicle_data):
         towbook_call_number = vehicle_data.get('towbook_call_number')
         cursor.execute("SELECT COUNT(*) FROM vehicles WHERE towbook_call_number = ?", (towbook_call_number,))
         exists = cursor.fetchone()[0] > 0
+        
+        # Clean data to prevent NULL values
+        for key in vehicle_data:
+            if vehicle_data[key] is None or vehicle_data[key] == '':
+                vehicle_data[key] = 'N/A'
+        
+        # Handle complaints
+        if 'complaint_number' not in vehicle_data or not vehicle_data['complaint_number'] or vehicle_data['complaint_number'] == 'N/A':
+            complaint_number, sequence, year = generate_complaint_number()
+            vehicle_data['complaint_number'] = complaint_number
+            vehicle_data['complaint_sequence'] = sequence
+            vehicle_data['complaint_year'] = year
+        
         if exists:
-            cursor.execute("""
+            # Build update query dynamically based on provided fields
+            fields = []
+            values = []
+            for key, value in vehicle_data.items():
+                if key != 'towbook_call_number':  # Skip primary key
+                    fields.append(f"{key} = ?")
+                    values.append(value)
+            
+            # Add the WHERE condition value
+            values.append(towbook_call_number)
+            
+            # Execute the update query
+            cursor.execute(f"""
                 UPDATE vehicles SET 
-                    complaint_number = ?, jurisdiction = ?, tow_date = ?, tow_time = ?, location = ?, 
-                    vin = ?, year = ?, make = ?, model = ?, color = ?, plate = ?, status = ?, 
+                    {", ".join(fields)},
                     last_updated = ?
                 WHERE towbook_call_number = ?
-            """, (
-                vehicle_data.get('complaint_number'), vehicle_data.get('jurisdiction'), 
-                vehicle_data.get('tow_date'), vehicle_data.get('tow_time'), vehicle_data.get('location'),
-                vehicle_data.get('vin'), vehicle_data.get('year'), vehicle_data.get('make'), 
-                vehicle_data.get('model'), vehicle_data.get('color'), vehicle_data.get('plate'), 
-                vehicle_data.get('status', 'New'), datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 
-                towbook_call_number
-            ))
+            """, values + [datetime.now().strftime('%Y-%m-%d %H:%M:%S'), towbook_call_number])
+            
             logging.info(f"Updated existing vehicle {towbook_call_number}")
         else:
-            cursor.execute("""
+            # For INSERT, we need field names and placeholders
+            field_names = list(vehicle_data.keys())
+            field_names.append('last_updated')  # Add timestamp
+            
+            placeholders = ["?"] * (len(field_names))
+            values = list(vehicle_data.values())
+            values.append(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))  # Add timestamp value
+            
+            cursor.execute(f"""
                 INSERT INTO vehicles (
-                    towbook_call_number, complaint_number, jurisdiction, tow_date, tow_time, location, 
-                    vin, year, make, model, color, plate, status, last_updated
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                towbook_call_number, vehicle_data.get('complaint_number'), vehicle_data.get('jurisdiction'),
-                vehicle_data.get('tow_date'), vehicle_data.get('tow_time'), vehicle_data.get('location'),
-                vehicle_data.get('vin'), vehicle_data.get('year'), vehicle_data.get('make'), 
-                vehicle_data.get('model'), vehicle_data.get('color'), vehicle_data.get('plate'), 
-                'New', datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            ))
+                    {", ".join(field_names)}
+                ) VALUES ({", ".join(placeholders)})
+            """, values)
+            
             logging.info(f"Inserted new vehicle {towbook_call_number}")
+            
+            # Create initial notification records
+            if 'tow_date' in vehicle_data and vehicle_data['tow_date'] != 'N/A':
+                tow_date = datetime.strptime(vehicle_data['tow_date'], '%Y-%m-%d')
+                top_due_date = tow_date + timedelta(days=1)
+                cursor.execute("""
+                    INSERT INTO notifications 
+                    (vehicle_id, notification_type, due_date, status)
+                    VALUES (?, ?, ?, ?)
+                """, (towbook_call_number, 'TOP', top_due_date.strftime('%Y-%m-%d'), 'pending'))
+        
         conn.commit()
         conn.close()
-        log_action("INSERT", towbook_call_number, f"Added vehicle: {vehicle_data.get('make', '')} {vehicle_data.get('model', '')}")
+        log_action("INSERT", towbook_call_number, f"Added vehicle: {vehicle_data.get('make', 'N/A')} {vehicle_data.get('model', 'N/A')}")
         return True, "Vehicle added"
     except Exception as e:
         logging.error(f"Insert error: {e}")
@@ -163,6 +284,23 @@ def check_and_update_statuses():
         cursor.execute("SELECT * FROM vehicles WHERE archived = 0")
         vehicles = cursor.fetchall()
         today = datetime.now().date()
+        
+        # Create notifications table if needed
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                vehicle_id TEXT,
+                notification_type TEXT,
+                due_date TEXT,
+                sent_date TEXT,
+                sent_method TEXT,
+                recipient TEXT,
+                status TEXT,
+                reminder_sent INTEGER DEFAULT 0,
+                document_path TEXT,
+                FOREIGN KEY (vehicle_id) REFERENCES vehicles (towbook_call_number)
+            )
+        """)
         
         for vehicle in vehicles:
             tow_date = vehicle['tow_date']
@@ -184,6 +322,15 @@ def check_and_update_statuses():
                                 WHERE towbook_call_number = ?
                             """, ('TR52 Ready', datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 
                                  vehicle['towbook_call_number']))
+                            
+                            # Create notification for TR52 ready
+                            cursor.execute("""
+                                INSERT INTO notifications 
+                                (vehicle_id, notification_type, due_date, status)
+                                VALUES (?, ?, ?, ?)
+                            """, (vehicle['towbook_call_number'], 'TR52_Ready', 
+                                 today.strftime('%Y-%m-%d'), 'pending'))
+                                 
                             log_action("AUTO_STATUS", vehicle['towbook_call_number'], 
                                      "Automatically moved to TR52 Ready status after 20 days")
                         else:
@@ -192,6 +339,15 @@ def check_and_update_statuses():
                                 UPDATE vehicles SET days_until_next_step = ? 
                                 WHERE towbook_call_number = ?
                             """, (days_left, vehicle['towbook_call_number']))
+                            
+                            # Check if we should send a reminder at 15 days
+                            if days_since_top == 15:
+                                cursor.execute("""
+                                    INSERT INTO notifications 
+                                    (vehicle_id, notification_type, due_date, status)
+                                    VALUES (?, ?, ?, ?)
+                                """, (vehicle['towbook_call_number'], 'TOP_Reminder', 
+                                     today.strftime('%Y-%m-%d'), 'pending'))
                     except Exception as e:
                         logging.warning(f"TOP date processing error for {vehicle['towbook_call_number']}: {e}")
                 
@@ -203,6 +359,25 @@ def check_and_update_statuses():
                             UPDATE vehicles SET days_until_auction = ? 
                             WHERE towbook_call_number = ?
                         """, (max(0, days_until_auction), vehicle['towbook_call_number']))
+                        
+                        # Create notification for auction ad 10 days before auction
+                        if days_until_auction == 10 and not vehicle['auction_ad_sent']:
+                            cursor.execute("""
+                                INSERT INTO notifications 
+                                (vehicle_id, notification_type, due_date, status)
+                                VALUES (?, ?, ?, ?)
+                            """, (vehicle['towbook_call_number'], 'Auction_Ad', 
+                                 today.strftime('%Y-%m-%d'), 'pending'))
+                        
+                        # Create notification for auction report day after auction
+                        if days_until_auction == -1:
+                            cursor.execute("""
+                                INSERT INTO notifications 
+                                (vehicle_id, notification_type, due_date, status)
+                                VALUES (?, ?, ?, ?)
+                            """, (vehicle['towbook_call_number'], 'Auction_Report', 
+                                 today.strftime('%Y-%m-%d'), 'pending'))
+                                 
                         if days_until_auction < -1:
                             cursor.execute("""
                                 UPDATE vehicles SET status = ?, archived = 1, release_reason = ?,
@@ -226,6 +401,15 @@ def check_and_update_statuses():
                                 UPDATE vehicles SET days_until_next_step = ? 
                                 WHERE towbook_call_number = ?
                             """, (days_left, vehicle['towbook_call_number']))
+                            
+                            # Create notification for scrap photos 1 day before legal scrap date
+                            if days_left == 1:
+                                cursor.execute("""
+                                    INSERT INTO notifications 
+                                    (vehicle_id, notification_type, due_date, status)
+                                    VALUES (?, ?, ?, ?)
+                                """, (vehicle['towbook_call_number'], 'Scrap_Photos', 
+                                     today.strftime('%Y-%m-%d'), 'pending'))
                         else:
                             cursor.execute("""
                                 UPDATE vehicles SET days_until_next_step = 0 
@@ -233,7 +417,36 @@ def check_and_update_statuses():
                             """, (vehicle['towbook_call_number'],))
                     except Exception as e:
                         logging.warning(f"Scrap date processing error for {vehicle['towbook_call_number']}: {e}")
-                            
+                        
+        # Check for any pending notifications
+        cursor.execute("""
+            SELECT n.*, v.jurisdiction
+            FROM notifications n
+            JOIN vehicles v ON n.vehicle_id = v.towbook_call_number
+            WHERE n.status = 'pending' AND n.due_date <= ?
+        """, (today.strftime('%Y-%m-%d'),))
+        
+        pending_notifications = cursor.fetchall()
+        for notification in pending_notifications:
+            # Get jurisdiction contact info
+            cursor.execute("""
+                SELECT * FROM contacts
+                WHERE jurisdiction = ?
+            """, (notification['jurisdiction'],))
+            contact = cursor.fetchone()
+            
+            if contact:
+                # Update notification with contact info
+                cursor.execute("""
+                    UPDATE notifications
+                    SET recipient = ?, sent_method = ?
+                    WHERE id = ?
+                """, (contact['contact_name'], contact['preferred_method'], notification['id']))
+            
+            # Log the pending notification
+            log_action("NOTIFICATION", notification['vehicle_id'], 
+                     f"Pending {notification['notification_type']} notification due {notification['due_date']}")
+            
         conn.commit()
         conn.close()
         return True
@@ -264,8 +477,16 @@ def update_vehicle_status(towbook_call_number, new_status, update_fields=None):
             update_fields['tr52_available_date'] = tr52_date.strftime('%Y-%m-%d')
             update_fields['days_until_next_step'] = 20
             update_fields['redemption_end_date'] = tr52_date.strftime('%Y-%m-%d')
+            
+            # Create notification record for TR52 document
+            cursor.execute("""
+                INSERT INTO notifications 
+                (vehicle_id, notification_type, due_date, status)
+                VALUES (?, ?, ?, ?)
+            """, (towbook_call_number, 'TR52', tr52_date.strftime('%Y-%m-%d'), 'pending'))
         
         elif new_status == 'TR52 Ready':
+            # No specific fields to update, handled by update_fields parameter
             pass
         
         elif new_status == 'Ready for Auction':
@@ -275,6 +496,18 @@ def update_vehicle_status(towbook_call_number, new_status, update_fields=None):
             update_fields['decision_date'] = datetime.now().strftime('%Y-%m-%d')
             days_until_auction = (auction_date.date() - datetime.now().date()).days
             update_fields['days_until_auction'] = max(0, days_until_auction)
+            
+            # Set ad placement date if not already set
+            if 'ad_placement_date' not in update_fields or not update_fields['ad_placement_date']:
+                ad_date = calculate_newspaper_ad_date(auction_date)
+                update_fields['ad_placement_date'] = ad_date.strftime('%Y-%m-%d')
+                
+            # Create notification record for auction advertisement
+            cursor.execute("""
+                INSERT INTO notifications 
+                (vehicle_id, notification_type, due_date, status)
+                VALUES (?, ?, ?, ?)
+            """, (towbook_call_number, 'Auction_Ad', update_fields['ad_placement_date'], 'pending'))
         
         elif new_status == 'Ready for Scrap':
             scrap_date = datetime.now() + timedelta(days=7)
@@ -282,6 +515,13 @@ def update_vehicle_status(towbook_call_number, new_status, update_fields=None):
             update_fields['decision'] = 'Scrap'
             update_fields['decision_date'] = datetime.now().strftime('%Y-%m-%d')
             update_fields['days_until_next_step'] = 7
+            
+            # Create notification record for scrap photos
+            cursor.execute("""
+                INSERT INTO notifications 
+                (vehicle_id, notification_type, due_date, status)
+                VALUES (?, ?, ?, ?)
+            """, (towbook_call_number, 'Scrap_Photos', scrap_date.strftime('%Y-%m-%d'), 'pending'))
         
         elif new_status in ['Released', 'Auctioned', 'Scrapped']:
             update_fields['archived'] = 1
@@ -291,6 +531,20 @@ def update_vehicle_status(towbook_call_number, new_status, update_fields=None):
                 update_fields['release_time'] = datetime.now().strftime('%H:%M')
             if 'release_reason' not in update_fields:
                 update_fields['release_reason'] = new_status
+            if new_status == 'Auctioned' and 'sale_amount' in update_fields and 'fees' in update_fields:
+                try:
+                    sale_amount = float(update_fields['sale_amount'])
+                    fees = float(update_fields['fees'])
+                    update_fields['net_proceeds'] = sale_amount - fees
+                except (ValueError, TypeError):
+                    update_fields['net_proceeds'] = 0
+                    
+            # Create notification record for release notification
+            cursor.execute("""
+                INSERT INTO notifications 
+                (vehicle_id, notification_type, due_date, status)
+                VALUES (?, ?, ?, ?)
+            """, (towbook_call_number, 'Release_Notice', update_fields['release_date'], 'pending'))
         
         set_clause = ', '.join([f"{k} = ?" for k in update_fields.keys()])
         values = list(update_fields.values()) + [towbook_call_number]
@@ -360,13 +614,13 @@ def get_vehicles_by_status(status_type, sort_column=None, sort_direction='asc'):
         vehicles = [dict(row) for row in cursor.fetchall()]
         today = datetime.now().date()
         for vehicle in vehicles:
-            if vehicle.get('tow_date'):
+            if vehicle.get('tow_date') and vehicle['tow_date'] != 'N/A':
                 try:
                     tow_date = datetime.strptime(vehicle['tow_date'], '%Y-%m-%d').date()
                     vehicle['days_since_tow'] = (today - tow_date).days
                 except Exception as e:
                     logging.warning(f"Tow date processing error: {e}")
-            if vehicle.get('status') == 'TOP Generated' and vehicle.get('top_form_sent_date'):
+            if vehicle.get('status') == 'TOP Generated' and vehicle.get('top_form_sent_date') and vehicle['top_form_sent_date'] != 'N/A':
                 try:
                     top_date = datetime.strptime(vehicle['top_form_sent_date'], '%Y-%m-%d').date()
                     tr52_date = top_date + timedelta(days=20)
@@ -374,7 +628,7 @@ def get_vehicles_by_status(status_type, sort_column=None, sort_direction='asc'):
                     vehicle['tr52_date'] = tr52_date.strftime('%Y-%m-%d')
                 except Exception as e:
                     logging.warning(f"TOP date processing error: {e}")
-            if vehicle.get('status') == 'Ready for Auction' and vehicle.get('auction_date'):
+            if vehicle.get('status') == 'Ready for Auction' and vehicle.get('auction_date') and vehicle['auction_date'] != 'N/A':
                 try:
                     auction_date = datetime.strptime(vehicle['auction_date'], '%Y-%m-%d').date()
                     vehicle['days_until_auction'] = max(0, (auction_date - today).days)
@@ -393,6 +647,12 @@ def update_vehicle(old_call_number, data):
         cursor = conn.cursor()
         new_call_number = data.get('towbook_call_number', old_call_number)
         data['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Clean data to prevent NULL values
+        for key in data:
+            if data[key] is None or data[key] == '':
+                data[key] = 'N/A'
+                
         if new_call_number != old_call_number:
             cursor.execute("SELECT * FROM vehicles WHERE towbook_call_number = ?", (old_call_number,))
             old_vehicle = cursor.fetchone()
@@ -409,6 +669,8 @@ def update_vehicle(old_call_number, data):
                 cursor.execute("DELETE FROM vehicles WHERE towbook_call_number = ?", (old_call_number,))
                 cursor.execute("UPDATE logs SET vehicle_id = ? WHERE vehicle_id = ?", (new_call_number, old_call_number))
                 cursor.execute("UPDATE police_logs SET vehicle_id = ? WHERE vehicle_id = ?", (new_call_number, old_call_number))
+                cursor.execute("UPDATE documents SET vehicle_id = ? WHERE vehicle_id = ?", (new_call_number, old_call_number))
+                cursor.execute("UPDATE notifications SET vehicle_id = ? WHERE vehicle_id = ?", (new_call_number, old_call_number))
         else:
             set_clause = ', '.join([f"{k} = ?" for k in data.keys()])
             values = list(data.values()) + [old_call_number]
@@ -465,12 +727,26 @@ def create_auction(auction_date, vehicle_ids):
         cursor = conn.cursor()
         cursor.execute(f"SELECT vin FROM vehicles WHERE towbook_call_number IN ({','.join(['?' for _ in vehicle_ids])})", vehicle_ids)
         vin_list = ', '.join([row['vin'] for row in cursor.fetchall() if row['vin']])
-        cursor.execute("INSERT INTO auctions (auction_date, status, vin_list, created_date) VALUES (?, 'Scheduled', ?, ?)",
-                       (auction_date, vin_list, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+        
+        # Calculate ad placement date
+        auction_date_obj = datetime.strptime(auction_date, '%Y-%m-%d')
+        ad_date = calculate_newspaper_ad_date(auction_date_obj)
+        
+        cursor.execute("INSERT INTO auctions (auction_date, status, vin_list, created_date, advertisement_date) VALUES (?, 'Scheduled', ?, ?, ?)",
+                       (auction_date, vin_list, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), ad_date.strftime('%Y-%m-%d')))
         auction_id = cursor.lastrowid
+        
         for vehicle_id in vehicle_ids:
-            cursor.execute("UPDATE vehicles SET status = 'Auction', auction_date = ?, last_updated = ? WHERE towbook_call_number = ?",
-                           (auction_date, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), vehicle_id))
+            cursor.execute("UPDATE vehicles SET status = 'Auction', auction_date = ?, ad_placement_date = ?, last_updated = ? WHERE towbook_call_number = ?",
+                           (auction_date, ad_date.strftime('%Y-%m-%d'), datetime.now().strftime('%Y-%m-%d %H:%M:%S'), vehicle_id))
+                           
+            # Create notification for auction ad
+            cursor.execute("""
+                INSERT INTO notifications 
+                (vehicle_id, notification_type, due_date, status)
+                VALUES (?, ?, ?, ?)
+            """, (vehicle_id, 'Auction_Ad', ad_date.strftime('%Y-%m-%d'), 'pending'))
+        
         conn.commit()
         conn.close()
         log_action("AUCTION", "BATCH", f"Auction #{auction_id} created with {len(vehicle_ids)} vehicles")
@@ -478,6 +754,76 @@ def create_auction(auction_date, vehicle_ids):
     except Exception as e:
         logging.error(f"Auction error: {e}")
         return False, str(e)
+
+def get_pending_notifications():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        today = datetime.now().date().strftime('%Y-%m-%d')
+        
+        cursor.execute("""
+            SELECT n.*, v.jurisdiction, v.make, v.model, v.year, v.color, v.towbook_call_number, v.vin
+            FROM notifications n
+            JOIN vehicles v ON n.vehicle_id = v.towbook_call_number
+            WHERE n.status = 'pending' AND n.due_date <= ?
+            ORDER BY n.due_date
+        """, (today,))
+        
+        notifications = [dict(row) for row in cursor.fetchall()]
+        
+        # Get contact information for each jurisdiction
+        for notification in notifications:
+            cursor.execute("SELECT * FROM contacts WHERE jurisdiction = ?", (notification['jurisdiction'],))
+            contact = cursor.fetchone()
+            if contact:
+                notification['contact'] = dict(contact)
+        
+        conn.close()
+        return notifications
+    except Exception as e:
+        logging.error(f"Get pending notifications error: {e}")
+        return []
+
+def mark_notification_sent(notification_id, method, recipient):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            UPDATE notifications 
+            SET status = 'sent', sent_date = ?, sent_method = ?, recipient = ?
+            WHERE id = ?
+        """, (datetime.now().strftime('%Y-%m-%d'), method, recipient, notification_id))
+        
+        # Get notification details for logging
+        cursor.execute("SELECT * FROM notifications WHERE id = ?", (notification_id,))
+        notification = cursor.fetchone()
+        
+        if notification:
+            # Update vehicle record based on notification type
+            if notification['notification_type'] == 'TOP':
+                cursor.execute("UPDATE vehicles SET top_notification_sent = 1 WHERE towbook_call_number = ?", 
+                              (notification['vehicle_id'],))
+                
+            elif notification['notification_type'] == 'Auction_Ad':
+                cursor.execute("UPDATE vehicles SET auction_ad_sent = 1 WHERE towbook_call_number = ?", 
+                              (notification['vehicle_id'],))
+                
+            elif notification['notification_type'] == 'Release_Notice':
+                cursor.execute("UPDATE vehicles SET release_notification_sent = 1 WHERE towbook_call_number = ?", 
+                              (notification['vehicle_id'],))
+                
+            # Log the action
+            from utils import log_action
+            log_action("NOTIFICATION_SENT", notification['vehicle_id'], 
+                      f"{notification['notification_type']} sent to {recipient} via {method}")
+        
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        logging.error(f"Mark notification sent error: {e}")
+        return False
 
 def batch_update_status(vehicle_ids, new_status):
     from utils import log_action
@@ -497,3 +843,70 @@ def batch_update_status(vehicle_ids, new_status):
     except Exception as e:
         logging.error(f"Batch update error: {e}")
         return False, 0, str(e)
+
+def get_contact_by_jurisdiction(jurisdiction):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contacts WHERE jurisdiction = ?", (jurisdiction,))
+        contact = cursor.fetchone()
+        conn.close()
+        return dict(contact) if contact else None
+    except Exception as e:
+        logging.error(f"Get contact error: {e}")
+        return None
+
+def save_contact(contact_data):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check if contact exists
+        cursor.execute("SELECT id FROM contacts WHERE jurisdiction = ?", (contact_data['jurisdiction'],))
+        existing = cursor.fetchone()
+        
+        if existing:
+            # Update existing contact
+            fields = []
+            values = []
+            for key, value in contact_data.items():
+                if key != 'id' and key != 'jurisdiction':  # Skip primary key and jurisdiction
+                    fields.append(f"{key} = ?")
+                    values.append(value)
+            
+            # Add jurisdiction for WHERE clause
+            values.append(contact_data['jurisdiction'])
+            
+            cursor.execute(f"""
+                UPDATE contacts SET {", ".join(fields)}
+                WHERE jurisdiction = ?
+            """, values)
+        else:
+            # Insert new contact
+            fields = list(contact_data.keys())
+            placeholders = ["?"] * len(fields)
+            values = list(contact_data.values())
+            
+            cursor.execute(f"""
+                INSERT INTO contacts ({", ".join(fields)})
+                VALUES ({", ".join(placeholders)})
+            """, values)
+        
+        conn.commit()
+        conn.close()
+        return True, "Contact saved successfully"
+    except Exception as e:
+        logging.error(f"Save contact error: {e}")
+        return False, str(e)
+
+def get_contacts():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM contacts ORDER BY jurisdiction")
+        contacts = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return contacts
+    except Exception as e:
+        logging.error(f"Get contacts error: {e}")
+        return []

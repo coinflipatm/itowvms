@@ -1,10 +1,14 @@
-from flask import Flask, render_template, send_file, request, jsonify
+from flask import Flask, render_template, send_file, request, jsonify, redirect, url_for
 from database import (init_db, get_vehicles_by_status, update_vehicle_status, 
                       update_vehicle, insert_vehicle, get_db_connection, check_and_update_statuses, 
-                      get_logs, toggle_archive_status, create_auction)
+                      get_logs, toggle_archive_status, create_auction, get_pending_notifications,
+                      mark_notification_sent, get_contact_by_jurisdiction, save_contact, get_contacts)
 from generator import PDFGenerator
 from utils import (generate_complaint_number, release_vehicle, log_action, 
-                   ensure_logs_table_exists, setup_logging, get_status_filter, calculate_newspaper_ad_date)
+                   ensure_logs_table_exists, setup_logging, get_status_filter, calculate_newspaper_ad_date,
+                   calculate_storage_fees, determine_jurisdiction, send_email_notification, 
+                   send_sms_notification, send_fax_notification, is_valid_email, is_valid_phone,
+                   generate_certified_mail_number)
 from datetime import datetime, timedelta
 import threading
 import os
@@ -13,8 +17,9 @@ import time
 import socket
 import json
 from werkzeug.utils import secure_filename
-from io import StringIO
+from io import StringIO, BytesIO
 import csv
+import re
 
 # Configure logging
 setup_logging()
@@ -29,10 +34,17 @@ pdf_gen = PDFGenerator()
 # Configure upload folders
 UPLOAD_FOLDER = 'static/uploads/vehicle_photos'
 DOCUMENT_FOLDER = 'static/uploads/documents'
+GENERATED_FOLDER = 'static/generated_pdfs'
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['DOCUMENT_FOLDER'] = DOCUMENT_FOLDER
+app.config['GENERATED_FOLDER'] = GENERATED_FOLDER
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
-ALLOWED_DOCUMENT_EXTENSIONS = {'pdf'}
+ALLOWED_DOCUMENT_EXTENSIONS = {'pdf', 'doc', 'docx', 'txt'}
+
+# Ensure folders exist
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(DOCUMENT_FOLDER, exist_ok=True)
+os.makedirs(GENERATED_FOLDER, exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -54,10 +66,10 @@ def run_status_checks():
         try:
             check_and_update_statuses()
             log_action("SYSTEM", "AUTO", "Ran automated status checks")
-            time.sleep(3600)
+            time.sleep(3600)  # Check every hour
         except Exception as e:
             logging.error(f"Status check error: {e}")
-            time.sleep(60)
+            time.sleep(60)  # Retry after a minute if there's an error
 
 @app.route('/')
 def index():
@@ -147,6 +159,12 @@ def api_get_vehicles():
                 try:
                     tow_date = datetime.strptime(vehicle['tow_date'], '%Y-%m-%d')
                     vehicle['days_since_tow'] = (datetime.now() - tow_date).days
+                    
+                    # Calculate storage fees
+                    storage_fee, storage_days = calculate_storage_fees(vehicle['tow_date'])
+                    vehicle['storage_fee'] = storage_fee
+                    vehicle['storage_days'] = storage_days
+                    
                     if vehicle['status'] == 'TOP Generated' and vehicle.get('tr52_available_date') != 'N/A':
                         tr52_date = datetime.strptime(vehicle['tr52_available_date'], '%Y-%m-%d')
                         vehicle['days_until_next_step'] = max(0, (tr52_date - datetime.now()).days)
@@ -175,7 +193,16 @@ def update_vehicle_api(call_number):
     try:
         data = request.json
         for key in data:
-            data[key] = data[key] if data[key] else 'N/A'
+            if data[key] is None or data[key] == '':
+                data[key] = 'N/A'
+                
+        # If we're updating jurisdiction, check if it's set to detect and update
+        if 'location' in data and data.get('jurisdiction') == 'detect':
+            location = data.get('location')
+            if location and location != 'N/A':
+                data['jurisdiction'] = determine_jurisdiction(location)
+                logging.info(f"Detected jurisdiction: {data['jurisdiction']} from location: {location}")
+                
         success, message = update_vehicle(call_number, data)
         if success:
             log_action("UPDATE", call_number, f"Vehicle details updated: {json.dumps(data)}")
@@ -197,6 +224,7 @@ def delete_vehicle(call_number):
         cursor.execute("DELETE FROM logs WHERE vehicle_id = ?", (call_number,))
         cursor.execute("DELETE FROM police_logs WHERE vehicle_id = ?", (call_number,))
         cursor.execute("DELETE FROM documents WHERE vehicle_id = ?", (call_number,))
+        cursor.execute("DELETE FROM notifications WHERE vehicle_id = ?", (call_number,))
         cursor.execute("DELETE FROM vehicles WHERE towbook_call_number = ?", (call_number,))
         conn.commit()
         conn.close()
@@ -214,13 +242,26 @@ def add_vehicle():
             data['towbook_call_number'] = f"MANUAL-{int(time.time())}"
         if not data.get('status'):
             data['status'] = 'New'
-        if 'complaint_number' not in data or not data['complaint_number']:
+        if 'complaint_number' not in data or not data['complaint_number'] or data['complaint_number'] == 'N/A':
             complaint_number, sequence, year = generate_complaint_number()
             data['complaint_number'] = complaint_number
             data['complaint_sequence'] = sequence
             data['complaint_year'] = year
+            
+        # Auto-detect jurisdiction if location provided
+        if data.get('location') and (not data.get('jurisdiction') or data['jurisdiction'] == 'detect'):
+            data['jurisdiction'] = determine_jurisdiction(data['location'])
+            logging.info(f"Auto-detected jurisdiction: {data['jurisdiction']} from location: {data['location']}")
+            
+        # Initialize photo_paths if not provided
+        if 'photo_paths' not in data or not data['photo_paths']:
+            data['photo_paths'] = json.dumps([])
+            
+        # Clean data - ensure no empty values
         for key in data:
-            data[key] = data[key] if data[key] else 'N/A'
+            if data[key] is None or data[key] == '':
+                data[key] = 'N/A'
+                
         success, message = insert_vehicle(data)
         if success:
             log_action("INSERT", data['towbook_call_number'], f"New vehicle added: {json.dumps(data)}")
@@ -310,7 +351,12 @@ def upload_photo(call_number):
         cursor = conn.cursor()
         cursor.execute("SELECT photo_paths FROM vehicles WHERE towbook_call_number = ?", (call_number,))
         result = cursor.fetchone()
-        photo_paths = json.loads(result['photo_paths']) if result and result['photo_paths'] else []
+        photo_paths = []
+        if result and result['photo_paths']:
+            try:
+                photo_paths = json.loads(result['photo_paths'])
+            except json.JSONDecodeError:
+                photo_paths = []
         photo_paths.append(new_filename)
         cursor.execute("UPDATE vehicles SET photo_paths = ? WHERE towbook_call_number = ?",
                        (json.dumps(photo_paths), call_number))
@@ -335,12 +381,19 @@ def add_police_log(call_number):
     communication_date = data.get('communication_date', datetime.now().strftime('%Y-%m-%d'))
     communication_type = data.get('communication_type')
     notes = data.get('notes')
+    recipient = data.get('recipient', 'N/A')
+    contact_method = data.get('contact_method', 'N/A')
+    
     if not communication_type or not notes:
         return jsonify({'error': 'Missing required fields'}), 400
+    
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO police_logs (vehicle_id, communication_date, communication_type, notes) VALUES (?, ?, ?, ?)",
-                   (call_number, communication_date, communication_type, notes))
+    cursor.execute("""
+        INSERT INTO police_logs 
+        (vehicle_id, communication_date, communication_type, notes, recipient, contact_method) 
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (call_number, communication_date, communication_type, notes, recipient, contact_method))
     conn.commit()
     conn.close()
     log_action("POLICE_LOG", call_number, f"Added police communication log: {communication_type}")
@@ -352,32 +405,119 @@ def compliance_report():
     cursor = conn.cursor()
     cursor.execute("""
         SELECT towbook_call_number, tow_date, top_form_sent_date, tr52_available_date, 
-               status, auction_date, release_date, photo_paths, sale_amount, fees, net_proceeds
+               status, auction_date, release_date, photo_paths, sale_amount, fees, net_proceeds,
+               jurisdiction, complaint_number, release_reason
         FROM vehicles WHERE archived = 0
     """)
     vehicles = cursor.fetchall()
     conn.close()
+    
     output = StringIO()
     writer = csv.writer(output)
-    writer.writerow(['Call Number', 'Tow Date', 'Notice Sent Date', 'Redemption End Date', 'Status', 
-                     'Auction Date', 'Release Date', 'Photo Count', 'Sale Amount', 'Fees', 'Net Proceeds'])
+    writer.writerow(['Call Number', 'Complaint #', 'Jurisdiction', 'Tow Date', 'Notice Sent Date', 
+                    'Redemption End Date', 'Status', 'Auction Date', 'Release Date', 'Release Reason',
+                    'Photo Count', 'Sale Amount', 'Fees', 'Net Proceeds'])
     for vehicle in vehicles:
-        photo_count = len(json.loads(vehicle['photo_paths'])) if vehicle['photo_paths'] else 0
+        photo_count = 0
+        if vehicle['photo_paths']:
+            try:
+                photo_count = len(json.loads(vehicle['photo_paths']))
+            except:
+                photo_count = 0
+                
         writer.writerow([
             vehicle['towbook_call_number'] or 'N/A', 
+            vehicle['complaint_number'] or 'N/A',
+            vehicle['jurisdiction'] or 'N/A',
             vehicle['tow_date'] or 'N/A', 
             vehicle['top_form_sent_date'] or 'N/A', 
             vehicle['tr52_available_date'] or 'N/A', 
             vehicle['status'] or 'N/A', 
             vehicle['auction_date'] or 'N/A', 
             vehicle['release_date'] or 'N/A', 
+            vehicle['release_reason'] or 'N/A',
             photo_count, 
             vehicle['sale_amount'] or 0, 
             vehicle['fees'] or 0, 
             vehicle['net_proceeds'] or 0
         ])
     output.seek(0)
-    return send_file(output, mimetype='text/csv', as_attachment=True, download_name='compliance_report.csv')
+    return send_file(
+        BytesIO(output.getvalue().encode('utf-8')),
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name='compliance_report.csv'
+    )
+
+@app.route('/api/compliance-report/pdf', methods=['GET'])
+def compliance_report_pdf():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT towbook_call_number, complaint_number, tow_date, top_form_sent_date, tr52_available_date, 
+               status, auction_date, release_date, photo_paths, sale_amount, fees, net_proceeds,
+               jurisdiction
+        FROM vehicles
+    """)
+    vehicles = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    
+    # Generate PDF report
+    pdf_path = os.path.join(app.config['GENERATED_FOLDER'], f"compliance_report_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf")
+    success, error = pdf_gen.generate_compliance_report(vehicles, pdf_path)
+    
+    if success:
+        return send_file(pdf_path, as_attachment=True)
+    else:
+        return jsonify({'error': error}), 500
+
+@app.route('/api/upload-document/<call_number>', methods=['POST'])
+def upload_document(call_number):
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    
+    file = request.files['file']
+    document_type = request.form.get('type', 'Other')
+    
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+        
+    if file and allowed_document(file.filename):
+        filename = secure_filename(file.filename)
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        ext = filename.rsplit('.', 1)[1].lower()
+        new_filename = f"{document_type}_{call_number}_{timestamp}.{ext}"
+        file_path = os.path.join(app.config['DOCUMENT_FOLDER'], new_filename)
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        file.save(file_path)
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO documents 
+            (vehicle_id, type, filename, upload_date) 
+            VALUES (?, ?, ?, ?)
+        """, (call_number, document_type, new_filename, datetime.now().strftime('%Y-%m-%d')))
+        
+        # Add a police log entry for the document
+        cursor.execute("""
+            INSERT INTO police_logs 
+            (vehicle_id, communication_date, communication_type, notes) 
+            VALUES (?, ?, ?, ?)
+        """, (
+            call_number,
+            datetime.now().strftime('%Y-%m-%d'),
+            f"{document_type} Document",
+            f"{document_type} document uploaded: {new_filename}"
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        log_action("DOCUMENT_UPLOAD", call_number, f"Uploaded {document_type} document: {new_filename}")
+        return jsonify({'status': 'success', 'filename': new_filename})
+    
+    return jsonify({'error': 'File type not allowed'}), 400
 
 @app.route('/api/upload-tr52/<call_number>', methods=['POST'])
 def upload_tr52(call_number):
@@ -418,39 +558,171 @@ def get_documents(call_number):
 
 @app.route('/api/pending-notifications', methods=['GET'])
 def pending_notifications():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    notifications = []
-    cursor.execute("SELECT towbook_call_number, tow_date, top_notification_sent, auction_ad_sent, release_notification_sent, status, ad_placement_date, release_date, jurisdiction FROM vehicles WHERE archived = 0")
-    vehicles = cursor.fetchall()
-    today = datetime.now().date()
-    for vehicle in vehicles:
-        tow_date = datetime.strptime(vehicle['tow_date'], '%Y-%m-%d').date() if vehicle['tow_date'] != 'N/A' else today
-        if not vehicle['top_notification_sent'] and (today - tow_date).days <= 1:
-            notifications.append({
-                'vehicle_id': vehicle['towbook_call_number'],
-                'action': 'Send TOP Notification',
-                'due_date': tow_date.strftime('%Y-%m-%d'),
-                'jurisdiction': vehicle['jurisdiction']
-            })
-        if vehicle['status'] == 'Ready for Auction' and not vehicle['auction_ad_sent'] and vehicle['ad_placement_date'] != 'N/A':
-            ad_date = datetime.strptime(vehicle['ad_placement_date'], '%Y-%m-%d').date()
-            if (today - ad_date).days >= 0:
-                notifications.append({
-                    'vehicle_id': vehicle['towbook_call_number'],
-                    'action': 'Send Auction Ad Receipt',
-                    'due_date': ad_date.strftime('%Y-%m-%d'),
-                    'jurisdiction': vehicle['jurisdiction']
-                })
-        if vehicle['status'] in ['Released', 'Auctioned', 'Scrapped'] and not vehicle['release_notification_sent'] and vehicle['release_date'] != 'N/A':
-            notifications.append({
-                'vehicle_id': vehicle['towbook_call_number'],
-                'action': 'Send Release Notification',
-                'due_date': vehicle['release_date'],
-                'jurisdiction': vehicle['jurisdiction']
-            })
-    conn.close()
+    notifications = get_pending_notifications()
     return jsonify(notifications)
+
+@app.route('/api/notification/<notification_id>/send', methods=['POST'])
+def send_notification(notification_id):
+    try:
+        data = request.json
+        method = data.get('method', 'email')
+        recipient = data.get('recipient', 'N/A')
+        
+        if not notification_id:
+            return jsonify({'error': 'No notification ID provided'}), 400
+            
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get notification details
+        cursor.execute("""
+            SELECT n.*, v.* 
+            FROM notifications n
+            JOIN vehicles v ON n.vehicle_id = v.towbook_call_number
+            WHERE n.id = ?
+        """, (notification_id,))
+        notification = cursor.fetchone()
+        
+        if not notification:
+            conn.close()
+            return jsonify({'error': 'Notification not found'}), 404
+            
+        # Get contact details based on jurisdiction
+        jurisdiction = notification['jurisdiction']
+        contact = get_contact_by_jurisdiction(jurisdiction)
+        
+        if not contact and method != 'manual':
+            conn.close()
+            return jsonify({'error': f'No contact found for jurisdiction: {jurisdiction}'}), 400
+            
+        # Prepare notification content
+        vehicle_id = notification['vehicle_id']
+        notification_type = notification['notification_type']
+        
+        # Generate document if needed
+        document_path = None
+        if notification_type == 'TOP':
+            pdf_path = os.path.join(app.config['GENERATED_FOLDER'], f"TOP_{vehicle_id}.pdf")
+            success, error = pdf_gen.generate_top(dict(notification), pdf_path)
+            if success:
+                document_path = pdf_path
+                
+        elif notification_type == 'TR52':
+            pdf_path = os.path.join(app.config['GENERATED_FOLDER'], f"TR52_{vehicle_id}.pdf")
+            success, error = pdf_gen.generate_tr52_form(dict(notification), pdf_path)
+            if success:
+                document_path = pdf_path
+                
+        elif notification_type == 'Auction_Ad':
+            pdf_path = os.path.join(app.config['GENERATED_FOLDER'], f"Auction_{vehicle_id}.pdf")
+            success, error = pdf_gen.generate_auction_notice(dict(notification), pdf_path)
+            if success:
+                document_path = pdf_path
+                
+        elif notification_type == 'Release_Notice':
+            pdf_path = os.path.join(app.config['GENERATED_FOLDER'], f"Release_{vehicle_id}.pdf")
+            success, error = pdf_gen.generate_release_notice(dict(notification), pdf_path)
+            if success:
+                document_path = pdf_path
+        
+        # Send notification based on method
+        success = False
+        error_message = ""
+        
+        if method == 'email' and is_valid_email(recipient):
+            # Get template
+            from utils import get_notification_templates
+            templates = get_notification_templates()
+            template = templates.get(notification_type.split('_')[0], {})
+            
+            # Format subject and body
+            subject = template.get('subject', f"Vehicle Notification: {notification_type}")
+            body = template.get('body', f"Notification for vehicle {vehicle_id}")
+            
+            # Replace placeholders
+            vehicle_data = dict(notification)
+            subject = subject.format(**vehicle_data)
+            body = body.format(**vehicle_data)
+            
+            # Send email
+            success, error_message = send_email_notification(recipient, subject, body, document_path)
+            
+        elif method == 'sms' and is_valid_phone(recipient):
+            message = f"iTow Notification: {notification_type} for {vehicle_id}. Please check your email for full details."
+            success, error_message = send_sms_notification(recipient, message)
+            
+        elif method == 'fax' and recipient:
+            message = f"iTow Notification: {notification_type} for {vehicle_id}. Please see attached document."
+            success, error_message = send_fax_notification(recipient, message, document_path)
+            
+        elif method == 'manual':
+            # Just mark as sent manually
+            success = True
+            
+        # Update notification status
+        if success:
+            mark_notification_sent(notification_id, method, recipient)
+            
+            # Add document record if generated
+            if document_path:
+                cursor.execute("""
+                    INSERT INTO documents 
+                    (vehicle_id, type, filename, upload_date, sent_date, sent_to, sent_method) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    vehicle_id,
+                    notification_type,
+                    os.path.basename(document_path),
+                    datetime.now().strftime('%Y-%m-%d'),
+                    datetime.now().strftime('%Y-%m-%d'),
+                    recipient,
+                    method
+                ))
+            
+            # Add police log entry
+            cursor.execute("""
+                INSERT INTO police_logs 
+                (vehicle_id, communication_date, communication_type, notes, recipient, contact_method) 
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                vehicle_id,
+                datetime.now().strftime('%Y-%m-%d'),
+                notification_type,
+                f"Sent {notification_type} notification",
+                recipient,
+                method
+            ))
+            
+            conn.commit()
+            
+            # Update vehicle flags based on notification type
+            if notification_type == 'TOP':
+                cursor.execute("UPDATE vehicles SET top_notification_sent = 1 WHERE towbook_call_number = ?", (vehicle_id,))
+            elif notification_type == 'Auction_Ad':
+                cursor.execute("UPDATE vehicles SET auction_ad_sent = 1 WHERE towbook_call_number = ?", (vehicle_id,))
+            elif notification_type == 'Release_Notice':
+                cursor.execute("UPDATE vehicles SET release_notification_sent = 1 WHERE towbook_call_number = ?", (vehicle_id,))
+            
+            conn.commit()
+            conn.close()
+            
+            log_action("NOTIFICATION", vehicle_id, f"Sent {notification_type} notification via {method} to {recipient}")
+            
+            if document_path:
+                return jsonify({
+                    'status': 'success', 
+                    'message': f"Notification sent via {method}",
+                    'document': os.path.basename(document_path)
+                })
+            else:
+                return jsonify({'status': 'success', 'message': f"Notification marked as sent via {method}"})
+        else:
+            conn.close()
+            return jsonify({'status': 'error', 'message': error_message}), 500
+            
+    except Exception as e:
+        logging.error(f"Error sending notification: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/generate-top/<call_number>', methods=['POST'])
 def generate_top(call_number):
@@ -462,7 +734,8 @@ def generate_top(call_number):
             return jsonify({'error': 'Vehicle not found'}), 404
         data = dict(vehicle)
         for key in data:
-            data[key] = data[key] if data[key] else 'N/A'
+            if data[key] is None or data[key] == '':
+                data[key] = 'N/A'
         pdf_path = f"static/generated_pdfs/TOP_{call_number}.pdf"
         os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
         success, error = pdf_gen.generate_top(data, pdf_path)
@@ -481,15 +754,71 @@ def generate_top(call_number):
             cursor.execute("INSERT INTO police_logs (vehicle_id, communication_date, communication_type, notes) VALUES (?, ?, ?, ?)",
                            (call_number, datetime.now().strftime('%Y-%m-%d'), 'TOP Notification', 
                             f"TOP form sent to LEIN processor for jurisdiction: {data['jurisdiction']}"))
+            cursor.execute("INSERT INTO documents (vehicle_id, type, filename, upload_date) VALUES (?, ?, ?, ?)",
+                          (call_number, 'TOP Form', os.path.basename(pdf_path), datetime.now().strftime('%Y-%m-%d')))
             conn.commit()
             conn.close()
             log_action("GENERATE_TOP", call_number, "TOP form generated and notified")
-            # Placeholder for email/SMS/fax notification
+            
+            # Create notification record
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO notifications 
+                (vehicle_id, notification_type, due_date, status, document_path) 
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                call_number, 
+                'TOP', 
+                datetime.now().strftime('%Y-%m-%d'),
+                'pending',
+                pdf_path
+            ))
+            conn.commit()
+            conn.close()
+            
             return send_file(pdf_path, as_attachment=True)
         logging.error(f"Failed to generate TOP: {error}")
         return jsonify({'error': error}), 500
     except Exception as e:
         logging.error(f"Error generating TOP: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/generate-tr52/<call_number>', methods=['POST'])
+def generate_tr52(call_number):
+    try:
+        conn = get_db_connection()
+        vehicle = conn.execute("SELECT * FROM vehicles WHERE towbook_call_number = ?", (call_number,)).fetchone()
+        conn.close()
+        if not vehicle:
+            return jsonify({'error': 'Vehicle not found'}), 404
+        data = dict(vehicle)
+        for key in data:
+            if data[key] is None or data[key] == '':
+                data[key] = 'N/A'
+        pdf_path = f"static/generated_pdfs/TR52_{call_number}.pdf"
+        os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+        success, error = pdf_gen.generate_tr52_form(data, pdf_path)
+        if success:
+            update_fields = {'tr52_received_date': datetime.now().strftime('%Y-%m-%d')}
+            update_vehicle_status(call_number, 'TR52 Ready', update_fields)
+            
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO documents (vehicle_id, type, filename, upload_date) VALUES (?, ?, ?, ?)",
+                          (call_number, 'TR52 Form', os.path.basename(pdf_path), datetime.now().strftime('%Y-%m-%d')))
+            cursor.execute("INSERT INTO police_logs (vehicle_id, communication_date, communication_type, notes) VALUES (?, ?, ?, ?)",
+                           (call_number, datetime.now().strftime('%Y-%m-%d'), 'TR52 Form', 
+                            f"TR52 form generated for jurisdiction: {data['jurisdiction']}"))
+            conn.commit()
+            conn.close()
+            
+            log_action("GENERATE_TR52", call_number, "TR52 form generated")
+            return send_file(pdf_path, as_attachment=True)
+        logging.error(f"Failed to generate TR52: {error}")
+        return jsonify({'error': error}), 500
+    except Exception as e:
+        logging.error(f"Error generating TR52: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/mark-tr52-ready/<call_number>', methods=['POST'])
@@ -540,9 +869,38 @@ def api_decision(call_number):
                        (call_number, datetime.now().strftime('%Y-%m-%d'), 'Auction Ad Receipt',
                         f"Auction ad placed for {auction_date.strftime('%Y-%m-%d')}"))
         cursor.execute("UPDATE vehicles SET auction_ad_sent = 1 WHERE towbook_call_number = ?", (call_number,))
+        
+        # Create notification record
+        cursor.execute("""
+            INSERT INTO notifications 
+            (vehicle_id, notification_type, due_date, status) 
+            VALUES (?, ?, ?, ?)
+        """, (
+            call_number, 
+            'Auction_Ad', 
+            ad_date.strftime('%Y-%m-%d'),
+            'pending'
+        ))
+        
         log_action("USER", call_number, f"Decision: Auction, scheduled for {auction_date}")
     elif decision == 'scrap':
-        update_vehicle_status(call_number, 'Ready for Scrap')
+        scrap_date = datetime.now() + timedelta(days=7)
+        update_vehicle_status(call_number, 'Ready for Scrap', {
+            'estimated_date': scrap_date.strftime('%Y-%m-%d')
+        })
+        
+        # Create notification record
+        cursor.execute("""
+            INSERT INTO notifications 
+            (vehicle_id, notification_type, due_date, status) 
+            VALUES (?, ?, ?, ?)
+        """, (
+            call_number, 
+            'Scrap_Photos', 
+            scrap_date.strftime('%Y-%m-%d'),
+            'pending'
+        ))
+        
         log_action("USER", call_number, "Decision: Scrap")
     else:
         conn.close()
@@ -563,6 +921,41 @@ def schedule_auction():
         success, message = create_auction(auction_date, vehicle_ids)
         if success:
             log_action("AUCTION_SCHEDULED", "BATCH", f"Auction scheduled: {message}")
+            
+            # Generate newspaper ad
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute(f"""
+                    SELECT * FROM vehicles 
+                    WHERE towbook_call_number IN ({','.join(['?' for _ in vehicle_ids])})
+                """, vehicle_ids)
+                vehicles = [dict(row) for row in cursor.fetchall()]
+                conn.close()
+                
+                if vehicles:
+                    ad_path = os.path.join(app.config['GENERATED_FOLDER'], f"Auction_Ad_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf")
+                    success, error = pdf_gen.generate_newspaper_ad(vehicles, ad_path)
+                    if success:
+                        # Add document record
+                        conn = get_db_connection()
+                        cursor = conn.cursor()
+                        cursor.execute("""
+                            INSERT INTO documents 
+                            (vehicle_id, type, filename, upload_date) 
+                            VALUES (?, ?, ?, ?)
+                        """, (
+                            "BATCH", 
+                            "Newspaper Ad", 
+                            os.path.basename(ad_path), 
+                            datetime.now().strftime('%Y-%m-%d')
+                        ))
+                        conn.commit()
+                        conn.close()
+                        message += f" Newspaper ad generated."
+            except Exception as e:
+                logging.error(f"Error generating newspaper ad: {e}")
+                
             return jsonify({'status': 'success', 'message': message})
         return jsonify({'status': 'error', 'message': message}), 500
     except Exception as e:
@@ -580,7 +973,8 @@ def generate_release(call_number):
             return jsonify({'error': 'Vehicle not found'}), 404
         vehicle_data = dict(vehicle)
         for key in vehicle_data:
-            vehicle_data[key] = vehicle_data[key] if vehicle_data[key] else 'N/A'
+            if vehicle_data[key] is None or vehicle_data[key] == '':
+                vehicle_data[key] = 'N/A'
         vehicle_data.update(data)
         vehicle_data['release_date'] = data.get('release_date', datetime.now().strftime('%Y-%m-%d'))
         vehicle_data['release_time'] = data.get('release_time', datetime.now().strftime('%H:%M'))
@@ -624,6 +1018,20 @@ def generate_release(call_number):
                             f"Vehicle released: {release_reason} to {data.get('recipient', 'Not specified')}"))
             cursor.execute("INSERT INTO documents (vehicle_id, type, filename, upload_date) VALUES (?, ?, ?, ?)",
                            (call_number, 'Release Notice', os.path.basename(pdf_path), datetime.now().strftime('%Y-%m-%d')))
+            
+            # Create notification record
+            cursor.execute("""
+                INSERT INTO notifications 
+                (vehicle_id, notification_type, due_date, status, document_path) 
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                call_number, 
+                'Release_Notice', 
+                datetime.now().strftime('%Y-%m-%d'),
+                'pending',
+                pdf_path
+            ))
+            
             conn.commit()
             conn.close()
             log_action("RELEASE", call_number, f"Vehicle released: {release_reason}")
@@ -682,11 +1090,20 @@ def workflow_counts():
             WHERE status = 'TR52 Ready'
         """)
         ready = cursor.fetchone()[0]
+        
+        # Count pending notifications
+        cursor.execute("""
+            SELECT COUNT(*) FROM notifications
+            WHERE status = 'pending' AND due_date <= ?
+        """, (today,))
+        pending_notifications = cursor.fetchone()[0]
+        
         conn.close()
         return jsonify({
             'overdue': overdue,
             'dueToday': due_today,
-            'ready': ready
+            'ready': ready,
+            'pendingNotifications': pending_notifications
         })
     except Exception as e:
         logging.error(f"Error getting workflow counts: {e}")
@@ -722,23 +1139,314 @@ def get_statistics():
         """)
         avg_processing_days = cursor.fetchone()[0]
         cursor.execute("""
-            SELECT action, vehicle_id, details, timestamp
+            SELECT action_type, vehicle_id, details, timestamp
             FROM logs
             ORDER BY timestamp DESC
             LIMIT 5
         """)
         recent_activity = [dict(row) for row in cursor.fetchall()]
+        
+        # Get compliance metrics
+        cursor.execute("""
+            SELECT COUNT(*) FROM vehicles 
+            WHERE top_notification_sent = 1
+        """)
+        top_notifications = cursor.fetchone()[0]
+        
+        cursor.execute("""
+            SELECT COUNT(*) FROM vehicles 
+            WHERE tr52_available_date IS NOT NULL AND tr52_available_date != 'N/A'
+        """)
+        tr52_ready = cursor.fetchone()[0]
+        
+        cursor.execute("""
+            SELECT COUNT(*) FROM vehicles 
+            WHERE auction_ad_sent = 1
+        """)
+        auction_ads = cursor.fetchone()[0]
+        
+        cursor.execute("""
+            SELECT COUNT(*) FROM vehicles 
+            WHERE release_notification_sent = 1
+        """)
+        release_notifications = cursor.fetchone()[0]
+        
+        cursor.execute("""
+            SELECT SUM(sale_amount) FROM vehicles 
+            WHERE sale_amount IS NOT NULL AND sale_amount > 0
+        """)
+        total_sales = cursor.fetchone()[0] or 0
+        
+        cursor.execute("""
+            SELECT SUM(net_proceeds) FROM vehicles 
+            WHERE net_proceeds IS NOT NULL AND net_proceeds > 0
+        """)
+        total_proceeds = cursor.fetchone()[0] or 0
+        
         conn.close()
         return jsonify({
             'totalVehicles': total_vehicles,
             'statusCounts': status_counts,
             'jurisdictionCounts': jurisdiction_counts,
             'avgProcessingDays': round(avg_processing_days, 1) if avg_processing_days else 0,
-            'recentActivity': recent_activity
+            'recentActivity': recent_activity,
+            'complianceMetrics': {
+                'topNotifications': top_notifications,
+                'tr52Ready': tr52_ready,
+                'auctionAds': auction_ads,
+                'releaseNotifications': release_notifications,
+                'totalSales': round(float(total_sales), 2),
+                'totalProceeds': round(float(total_proceeds), 2)
+            }
         })
     except Exception as e:
         logging.error(f"Error getting statistics: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/contacts', methods=['GET'])
+def api_get_contacts():
+    try:
+        contacts = get_contacts()
+        return jsonify(contacts)
+    except Exception as e:
+        logging.error(f"Error getting contacts: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/contacts', methods=['POST'])
+def api_save_contact():
+    try:
+        data = request.json
+        success, message = save_contact(data)
+        if success:
+            return jsonify({'status': 'success', 'message': message})
+        return jsonify({'status': 'error', 'message': message}), 400
+    except Exception as e:
+        logging.error(f"Error saving contact: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/generate-certified-mail/<call_number>', methods=['POST'])
+def generate_certified_mail(call_number):
+    try:
+        # Generate a certified mail tracking number
+        certified_mail_number = generate_certified_mail_number()
+        
+        # Update vehicle record
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE vehicles 
+            SET certified_mail_number = ?, 
+                certified_mail_sent_date = ? 
+            WHERE towbook_call_number = ?
+        """, (certified_mail_number, datetime.now().strftime('%Y-%m-%d'), call_number))
+        
+        # Add a police log entry
+        cursor.execute("""
+            INSERT INTO police_logs 
+            (vehicle_id, communication_date, communication_type, notes) 
+            VALUES (?, ?, ?, ?)
+        """, (
+            call_number,
+            datetime.now().strftime('%Y-%m-%d'),
+            'Certified Mail',
+            f"Certified mail sent, tracking #: {certified_mail_number}"
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        log_action("CERTIFIED_MAIL", call_number, f"Certified mail generated: {certified_mail_number}")
+        
+        return jsonify({
+            'status': 'success',
+            'certified_mail_number': certified_mail_number,
+            'sent_date': datetime.now().strftime('%Y-%m-%d')
+        })
+    except Exception as e:
+        logging.error(f"Error generating certified mail: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/auto-detect-jurisdiction/<call_number>', methods=['POST'])
+def auto_detect_jurisdiction(call_number):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT location FROM vehicles WHERE towbook_call_number = ?", (call_number,))
+        result = cursor.fetchone()
+        conn.close()
+        
+        if not result or not result['location'] or result['location'] == 'N/A':
+            return jsonify({'status': 'error', 'message': 'No location found for vehicle'}), 400
+            
+        location = result['location']
+        jurisdiction = determine_jurisdiction(location)
+        
+        if jurisdiction == 'Unknown':
+            return jsonify({
+                'status': 'warning', 
+                'message': 'Could not determine jurisdiction from location',
+                'location': location,
+                'jurisdiction': jurisdiction
+            }), 200
+            
+        # Update vehicle record
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE vehicles 
+            SET jurisdiction = ?
+            WHERE towbook_call_number = ?
+        """, (jurisdiction, call_number))
+        conn.commit()
+        conn.close()
+        
+        log_action("AUTO_DETECT", call_number, f"Auto-detected jurisdiction: {jurisdiction} from location: {location}")
+        
+        return jsonify({
+            'status': 'success',
+            'location': location,
+            'jurisdiction': jurisdiction,
+            'message': f"Jurisdiction detected: {jurisdiction}"
+        })
+    except Exception as e:
+        logging.error(f"Error auto-detecting jurisdiction: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/calculate-storage-fees/<call_number>', methods=['GET'])
+def api_calculate_storage_fees(call_number):
+    try:
+        daily_rate = request.args.get('rate', 25.00, type=float)
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT tow_date FROM vehicles WHERE towbook_call_number = ?", (call_number,))
+        result = cursor.fetchone()
+        conn.close()
+        
+        if not result or not result['tow_date'] or result['tow_date'] == 'N/A':
+            return jsonify({'status': 'error', 'message': 'No tow date found for vehicle'}), 400
+            
+        tow_date = result['tow_date']
+        fee, days = calculate_storage_fees(tow_date, daily_rate)
+        
+        return jsonify({
+            'status': 'success',
+            'tow_date': tow_date,
+            'days': days,
+            'daily_rate': daily_rate,
+            'total_fee': fee,
+            'formatted_fee': f"${fee:.2f}"
+        })
+    except Exception as e:
+        logging.error(f"Error calculating storage fees: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/document-download/<path:filename>', methods=['GET'])
+def download_document(filename):
+    try:
+        file_path = os.path.join(app.config['DOCUMENT_FOLDER'], filename)
+        if not os.path.exists(file_path):
+            # Try generated folder
+            file_path = os.path.join(app.config['GENERATED_FOLDER'], filename)
+            if not os.path.exists(file_path):
+                return jsonify({'error': 'File not found'}), 404
+                
+        return send_file(file_path, as_attachment=True)
+    except Exception as e:
+        logging.error(f"Error downloading document: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/generate-scrap-certification/<call_number>', methods=['POST'])
+def generate_scrap_certification(call_number):
+    try:
+        data = request.json
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM vehicles WHERE towbook_call_number = ?", (call_number,))
+        vehicle = cursor.fetchone()
+        
+        if not vehicle:
+            conn.close()
+            return jsonify({'error': 'Vehicle not found'}), 404
+            
+        vehicle_data = dict(vehicle)
+        for key in vehicle_data:
+            if vehicle_data[key] is None or vehicle_data[key] == '':
+                vehicle_data[key] = 'N/A'
+                
+        # Get photo paths
+        photos = []
+        if vehicle_data['photo_paths'] and vehicle_data['photo_paths'] != 'N/A':
+            try:
+                photos = json.loads(vehicle_data['photo_paths'])
+            except:
+                photos = []
+                
+        if not photos:
+            conn.close()
+            return jsonify({'error': 'No photos found for scrap certification'}), 400
+            
+        # Update with additional data
+        salvage_value = data.get('salvage_value', 0)
+        vehicle_data['salvage_value'] = salvage_value
+        
+        # Generate PDF
+        pdf_path = f"static/generated_pdfs/Scrap_{call_number}.pdf"
+        success, error = pdf_gen.generate_scrap_certification(vehicle_data, photos, pdf_path)
+        
+        if success:
+            # Update vehicle
+            cursor.execute("""
+                UPDATE vehicles 
+                SET salvage_value = ?,
+                    status = 'Scrapped',
+                    archived = 1,
+                    release_reason = 'Scrapped',
+                    release_date = ?
+                WHERE towbook_call_number = ?
+            """, (salvage_value, datetime.now().strftime('%Y-%m-%d'), call_number))
+            
+            # Add document record
+            cursor.execute("""
+                INSERT INTO documents 
+                (vehicle_id, type, filename, upload_date) 
+                VALUES (?, ?, ?, ?)
+            """, (call_number, 'Scrap Certification', os.path.basename(pdf_path), datetime.now().strftime('%Y-%m-%d')))
+            
+            # Add log entry
+            cursor.execute("""
+                INSERT INTO police_logs 
+                (vehicle_id, communication_date, communication_type, notes) 
+                VALUES (?, ?, ?, ?)
+            """, (
+                call_number,
+                datetime.now().strftime('%Y-%m-%d'),
+                'Scrap Certification',
+                f"Vehicle scrapped with salvage value: ${float(salvage_value):.2f}"
+            ))
+            
+            conn.commit()
+            conn.close()
+            
+            log_action("SCRAP", call_number, f"Vehicle scrapped with salvage value: ${float(salvage_value):.2f}")
+            
+            return jsonify({
+                'status': 'success',
+                'message': 'Scrap certification generated',
+                'pdf_path': os.path.basename(pdf_path)
+            })
+        else:
+            conn.close()
+            return jsonify({'error': error}), 500
+    except Exception as e:
+        logging.error(f"Error generating scrap certification: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/scraping-progress')
+def scraping_progress():
+    progress = {'percentage': 0, 'is_running': False, 'processed': 0, 'total': 0, 'status': 'Not running'}
+    return jsonify({'progress': progress})
 
 if __name__ == '__main__':
     port = 5000

@@ -59,6 +59,7 @@
         .status-new { background-color: #007bff; }
         .status-top { background-color: #17a2b8; }
         .status-tr52 { background-color: #28a745; }
+        .status-tr208 { background-color: #28a745; }
         .status-auction { background-color: #ffc107; color: #000; }
         .status-scrap { background-color: #dc3545; }
         .status-released { background-color: #6c757d; }
@@ -231,6 +232,67 @@
             font-size: 30px;
             cursor: pointer;
         }
+
+        /* Timeline visualization styles */
+        .timeline-visual {
+            position: relative;
+            margin: 40px 0;
+            padding: 20px 0;
+            border-top: 2px solid #dee2e6;
+        }
+
+        .timeline-marker {
+            position: absolute;
+            top: -10px;
+            padding: 5px 10px;
+            background-color: #fff;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            transform: translateX(-50%);
+            font-size: 0.8rem;
+            white-space: nowrap;
+        }
+
+        .timeline-marker.past {
+            border-color: #28a745;
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .timeline-marker.current {
+            border-color: #007bff;
+            background-color: #cce5ff;
+            color: #004085;
+            font-weight: bold;
+        }
+
+        .timeline-marker.future {
+            border-color: #6c757d;
+            color: #6c757d;
+        }
+
+        .timeline-marker.critical {
+            border-color: #dc3545;
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .timeline-today {
+            position: absolute;
+            top: -20px;
+            transform: translateX(-50%);
+            border-left: 2px dashed #dc3545;
+            height: 40px;
+        }
+
+        .timeline-today-label {
+            position: absolute;
+            top: -40px;
+            transform: translateX(-50%);
+            color: #dc3545;
+            font-weight: bold;
+            font-size: 0.8rem;
+        }
     </style>
 </head>
 <body>
@@ -298,6 +360,34 @@
             </div>
         </div>
 
+        <!-- Upcoming Actions Dashboard -->
+        <div class="row mb-4" id="upcoming-actions-dashboard">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h5><i class="fas fa-calendar-check"></i> Upcoming Actions Dashboard</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Vehicle</th>
+                                        <th>Current Status</th>
+                                        <th>Next Action</th>
+                                        <th>Due Date</th>
+                                        <th>Days Left</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="upcoming-actions-table"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Vehicle Table -->
         <div id="vehicles-container">
             <div class="table-responsive">
@@ -351,7 +441,320 @@
         <div id="statistics-container" class="d-none"></div>
 
         <!-- Compliance Container -->
-        <div id="compliance-container" class="d-none"></div>
+        <div id="compliance-container" class="d-none">
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header bg-primary text-white">
+                            <h5><i class="fas fa-clipboard-check"></i> Compliance Reports</h5>
+                        </div>
+                        <div class="card-body">
+                            <p>Download compliance reports for documentation and record-keeping.</p>
+                            <div class="d-grid gap-2">
+                                <a href="/api/compliance-report" class="btn btn-primary">
+                                    <i class="fas fa-file-csv"></i> Download CSV Report
+                                </a>
+                                <a href="/api/compliance-report/pdf" class="btn btn-primary">
+                                    <i class="fas fa-file-pdf"></i> Download PDF Report
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header bg-primary text-white">
+                            <h5><i class="fas fa-bell"></i> Pending Notifications</h5>
+                        </div>
+                        <div class="card-body">
+                            <p>View and send required notifications to maintain compliance with MCL 257.252.</p>
+                            <div class="d-grid">
+                                <button class="btn btn-primary" id="view-pending-notifications-btn">
+                                    <i class="fas fa-bell"></i> View Pending Notifications
+                                    <span class="badge bg-danger" id="compliance-notification-count">0</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row mb-4">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header bg-primary text-white">
+                            <h5><i class="fas fa-tasks"></i> Michigan Abandoned Vehicle Compliance Checklist</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-info">
+                                <h6><i class="fas fa-info-circle"></i> MCL 257.252 Compliance Overview:</h6>
+                                <p>This checklist ensures your abandoned vehicle processing complies with Michigan law. Follow these steps for each abandoned vehicle.</p>
+                            </div>
+                            
+                            <h6 class="mt-4 mb-3">Initial Tow & Notification Phase</h6>
+                            <table class="table table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th width="35%">Requirement</th>
+                                        <th width="20%">Timeline</th>
+                                        <th width="25%">Required Documentation</th>
+                                        <th width="20%">Legal Reference</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>
+                                            <strong>Submit TOP Form to Police</strong><br>
+                                            Notify police agency with jurisdiction that vehicle has been towed
+                                        </td>
+                                        <td>Within 24 hours of tow</td>
+                                        <td>
+                                            - TOP Form (Record of Abandoned Vehicle)<br>
+                                            - Proof of delivery
+                                        </td>
+                                        <td>MCL 257.252a(9)</td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            <strong>Police Notification to Owner & SOS</strong><br>
+                                            Police must notify registered owner and secured parties
+                                        </td>
+                                        <td>Within 7 days of receiving TOP form</td>
+                                        <td>None required from towing company (police responsibility)</td>
+                                        <td>MCL 257.252a(5)(b)</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            
+                            <h6 class="mt-4 mb-3">Redemption & Title Processing Phase</h6>
+                            <table class="table table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th width="35%">Requirement</th>
+                                        <th width="20%">Timeline</th>
+                                        <th width="25%">Required Documentation</th>
+                                        <th width="20%">Legal Reference</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>
+                                            <strong>Owner Redemption Period</strong><br>
+                                            Vehicle must be made available for owner redemption
+                                        </td>
+                                        <td>20 days from police notification</td>
+                                        <td>
+                                            - Release records (if redeemed)<br>
+                                            - Receipt for fees collected
+                                        </td>
+                                        <td>MCL 257.252a(5)(g)</td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            <strong>Secured Party Redemption Period</strong><br>
+                                            Vehicle must be made available for secured party redemption
+                                        </td>
+                                        <td>30 days from police notification</td>
+                                        <td>
+                                            - Release records (if redeemed)<br>
+                                            - Receipt for fees collected
+                                        </td>
+                                        <td>MCL 257.252b(7)</td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            <strong>TR52 Form Processing</strong><br>
+                                            For vehicles going to auction
+                                        </td>
+                                        <td>After 20-day redemption period</td>
+                                        <td>
+                                            - TR52 Form<br>
+                                            - Receipt or proof of submission
+                                        </td>
+                                        <td>MCL 257.252a(6)</td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            <strong>TR208 Form Processing</strong><br>
+                                            For scrap vehicles (7+ years old, inoperable, extensively damaged)
+                                        </td>
+                                        <td>After 20-day redemption period (min. 27 days from tow)</td>
+                                        <td>
+                                            - TR208 Form<br>
+                                            - Vehicle condition documentation<br>
+                                            - Photos of vehicle
+                                        </td>
+                                        <td>MCL 257.252b(1)</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            
+                            <h6 class="mt-4 mb-3">Disposition Phase</h6>
+                            <table class="table table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th width="35%">Requirement</th>
+                                        <th width="20%">Timeline</th>
+                                        <th width="25%">Required Documentation</th>
+                                        <th width="20%">Legal Reference</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>
+                                            <strong>Auction Notice Publication</strong><br>
+                                            Public notice of auction in newspaper
+                                        </td>
+                                        <td>At least 5 days before auction</td>
+                                        <td>
+                                            - Copy of newspaper advertisement<br>
+                                            - Publication date documentation
+                                        </td>
+                                        <td>MCL 257.252g(1)</td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            <strong>Auction</strong><br>
+                                            Public auction of vehicle
+                                        </td>
+                                        <td>After TR52 processing (recommended minimum 40 days from tow)</td>
+                                        <td>
+                                            - Auction record<br>
+                                            - Buyer information<br>
+                                            - Sales price documentation<br>
+                                            - Bill of sale
+                                        </td>
+                                        <td>MCL 257.252g</td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            <strong>Scrap Processing</strong><br>
+                                            Disposal of TR208 vehicles
+                                        </td>
+                                        <td>After TR208 approval (minimum 27 days from tow)</td>
+                                        <td>
+                                            - Documentation of scrapping<br>
+                                            - Photos of vehicle prior to scrapping<br>
+                                            - Receipt from scrap processor
+                                        </td>
+                                        <td>MCL 257.252b</td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            <strong>Release Notification</strong><br>
+                                            Notify police of disposition (redemption, auction, scrap, transfer)
+                                        </td>
+                                        <td>Within 24 hours of disposition</td>
+                                        <td>
+                                            - Release notification form<br>
+                                            - Proof of delivery
+                                        </td>
+                                        <td>MCL 257.252a(10)</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            
+                            <h6 class="mt-4 mb-3">Record Keeping Requirements</h6>
+                            <table class="table table-bordered">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th width="35%">Requirement</th>
+                                        <th width="20%">Timeline</th>
+                                        <th width="25%">Required Documentation</th>
+                                        <th width="20%">Legal Reference</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>
+                                            <strong>Record Retention</strong><br>
+                                            Maintain complete records of all abandoned vehicles
+                                        </td>
+                                        <td>At least 2 years from disposition</td>
+                                        <td>
+                                            - All forms and notices<br>
+                                            - Photos of vehicle<br>
+                                            - Disposition records<br>
+                                            - Financial records
+                                        </td>
+                                        <td>MCL 257.252k</td>
+                                    </tr>
+                                    <tr>
+                                        <td>
+                                            <strong>Financial Accounting</strong><br>
+                                            Track fees, sale proceeds, and disposition of funds
+                                        </td>
+                                        <td>Ongoing</td>
+                                        <td>
+                                            - Itemized fee records<br>
+                                            - Sale proceeds documentation<br>
+                                            - Distribution of excess proceeds
+                                        </td>
+                                        <td>MCL 257.252g(3)</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header bg-primary text-white">
+                            <h5><i class="fas fa-cogs"></i> System Status</h5>
+                        </div>
+                        <div class="card-body">
+                            <div id="compliance-status"></div>
+                            <div class="row mt-4">
+                                <div class="col-md-6">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h6>System Diagnostics</h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <ul class="list-group">
+                                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                    Database Status
+                                                    <span class="badge bg-success">Connected</span>
+                                                </li>
+                                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                    PDF Generator
+                                                    <span class="badge bg-success">Operational</span>
+                                                </li>
+                                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                    Automated Checks
+                                                    <span class="badge bg-success">Running</span>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h6>System Actions</h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="d-grid gap-2">
+                                                <button class="btn btn-info" id="run-status-checks-btn">
+                                                    <i class="fas fa-sync"></i> Run Status Checks
+                                                </button>
+                                                <button class="btn btn-warning" id="fix-vehicle-statuses-btn">
+                                                    <i class="fas fa-wrench"></i> Fix Vehicle Statuses
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Add Vehicle Modal -->
@@ -569,11 +972,13 @@
                                     <option value="New">New</option>
                                     <option value="TOP Generated">TOP Generated</option>
                                     <option value="TR52 Ready">TR52 Ready</option>
+                                    <option value="TR208 Ready">TR208 Ready</option>
                                     <option value="Ready for Auction">Ready for Auction</option>
                                     <option value="Ready for Scrap">Ready for Scrap</option>
                                     <option value="Released">Released</option>
                                     <option value="Auctioned">Auctioned</option>
                                     <option value="Scrapped">Scrapped</option>
+                                    <option value="Transferred">Transferred</option>
                                 </select>
                             </div>
                         </div>
@@ -712,6 +1117,8 @@
                                                     <option value="TOP Notification">TOP Notification</option>
                                                     <option value="TR52 Request">TR52 Request</option>
                                                     <option value="TR52 Receipt">TR52 Receipt</option>
+                                                    <option value="TR208 Request">TR208 Request</option>
+                                                    <option value="TR208 Receipt">TR208 Receipt</option>
                                                     <option value="Auction Ad Receipt">Auction Ad Receipt</option>
                                                     <option value="Release Notification">Release Notification</option>
                                                     <option value="Certified Mail">Certified Mail</option>
@@ -767,6 +1174,7 @@
                                                 <label for="document-type" class="form-label">Document Type</label>
                                                 <select class="form-control" id="document-type">
                                                     <option value="TR52">TR52 Form</option>
+                                                    <option value="TR208">TR208 Form</option>
                                                     <option value="Title">Vehicle Title</option>
                                                     <option value="Police Report">Police Report</option>
                                                     <option value="Auction Receipt">Auction Receipt</option>
@@ -788,11 +1196,23 @@
                         
                         <!-- Timeline Tab -->
                         <div class="tab-pane fade" id="timeline-tab-content" role="tabpanel" aria-labelledby="timeline-tab">
-                            <div class="card">
+                            <div class="card mb-3">
                                 <div class="card-header">
-                                    <h5>Vehicle Timeline</h5>
+                                    <h5>Compliance Timeline</h5>
                                 </div>
                                 <div class="card-body">
+                                    <div class="alert alert-info">
+                                        <p><strong>Michigan Vehicle Custody Timeline (MCL 257.252):</strong></p>
+                                        <ul>
+                                            <li><strong>24 hours:</strong> TOP form must be submitted to police</li>
+                                            <li><strong>7 days:</strong> Police agency must notify owner & SOS</li>
+                                            <li><strong>20 days:</strong> Owner redemption period</li>
+                                            <li><strong>30 days:</strong> Secured party redemption period</li>
+                                            <li><strong>27 days:</strong> TR208 scrap timeline (7 days + 20 days)</li>
+                                            <li><strong>40 days:</strong> Safe auction timeline from tow date</li>
+                                        </ul>
+                                    </div>
+                                    <div id="vehicle-timeline-visual" class="mb-4"></div>
                                     <div class="timeline" id="vehicle-timeline"></div>
                                 </div>
                             </div>
@@ -810,6 +1230,7 @@
                                             <div class="d-grid gap-2">
                                                 <button class="btn btn-primary" id="generate-top-btn">Generate TOP Form</button>
                                                 <button class="btn btn-primary" id="generate-tr52-btn">Generate TR52 Form</button>
+                                                <button class="btn btn-primary" id="check-tr208-btn">Check TR208 Eligibility</button>
                                                 <button class="btn btn-primary" id="generate-release-btn">Generate Release Notice</button>
                                                 <button class="btn btn-primary" id="upload-tr52-btn">Upload Amended TR52</button>
                                             </div>
@@ -1157,6 +1578,104 @@
         </div>
     </div>
 
+    <!-- TR208 Eligibility Assessment Modal -->
+    <div class="modal fade" id="tr208EligibilityModal" tabindex="-1" aria-labelledby="tr208EligibilityModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="tr208EligibilityModalLabel">TR208 Eligibility Assessment</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <p><strong>TR208 Eligibility Criteria:</strong> The vehicle must meet ALL of the following:</p>
+                        <ol>
+                            <li>Vehicle is 7+ years old</li>
+                            <li>Vehicle is inoperable</li>
+                            <li>Vehicle has extensive damage</li>
+                        </ol>
+                        <p>Vehicles meeting these criteria can be processed for scrap after 27 days (police notification + 20-day owner redemption period).</p>
+                    </div>
+                    
+                    <div id="tr208-assessment-results" class="mb-4"></div>
+                    
+                    <form id="vehicle-condition-form">
+                        <input type="hidden" id="tr208-call-number">
+                        <div class="row mb-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Vehicle Age:</label>
+                                <div id="vehicle-age-display">Unknown</div>
+                            </div>
+                            <div class="col-md-8">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="vehicle-inoperable">
+                                    <label class="form-check-label" for="vehicle-inoperable">Vehicle is inoperable</label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="damage-extent" class="form-label">Damage Extent:</label>
+                            <select class="form-control" id="damage-extent">
+                                <option value="None">None/Minor Damage</option>
+                                <option value="Moderate">Moderate Damage</option>
+                                <option value="Extensive">Extensive Damage</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="condition-notes" class="form-label">Condition Notes:</label>
+                            <textarea class="form-control" id="condition-notes" rows="3" placeholder="Describe the vehicle condition and damage..."></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Update Vehicle Condition</button>
+                    </form>
+                    
+                    <div id="tr208-action-buttons" class="mt-4 d-none">
+                        <hr>
+                        <div class="d-grid gap-2">
+                            <button id="generate-tr208-btn" class="btn btn-success">Generate TR208 Form</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TR208 Status Update Modal -->
+    <div class="modal fade" id="tr208StatusModal" tabindex="-1" aria-labelledby="tr208StatusModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="tr208StatusModalLabel">TR208 Status Update</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="tr208-status-form">
+                        <input type="hidden" id="tr208-status-call-number">
+                        <div class="mb-3">
+                            <label class="form-label">Update Vehicle Status:</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="tr208Status" id="tr208-ready" value="TR208 Ready" checked>
+                                <label class="form-check-label" for="tr208-ready">
+                                    Mark as TR208 Ready
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="tr208Status" id="ready-for-scrap" value="Ready for Scrap">
+                                <label class="form-check-label" for="ready-for-scrap">
+                                    Mark as Ready for Scrap
+                                </label>
+                            </div>
+                        </div>
+                        <div class="alert alert-info">
+                            <p>Marking as "TR208 Ready" indicates you've received the TR208 form from the police agency.</p>
+                            <p>Marking as "Ready for Scrap" indicates the vehicle is ready for final disposition.</p>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Update Status</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Full-screen Photo Viewer -->
     <div id="fullscreen-photo-container" class="fullscreen-photo d-none">
         <div class="close-btn">&times;</div>
@@ -1181,6 +1700,7 @@
             
             loadVehicles(currentTab);
             loadWorkflowCounts();
+            loadUpcomingActions();
             checkPendingNotifications();
             setupEventListeners();
             checkScrapingProgress();
@@ -1192,6 +1712,7 @@
                     loadVehicles(currentTab);
                 }
                 loadWorkflowCounts();
+                loadUpcomingActions();
                 checkPendingNotifications();
             }, 300000); // 5 minutes in milliseconds
         });
@@ -1208,6 +1729,7 @@
                 // Hide all containers
                 $('#vehicles-container, #notifications-container, #contacts-container, #statistics-container, #compliance-container').addClass('d-none');
                 $('#workflow-counts').show();
+                $('#upcoming-actions-dashboard').show();
                 
                 if (currentTab === 'notifications') {
                     $('#notifications-container').removeClass('d-none');
@@ -1218,11 +1740,14 @@
                 } else if (currentTab === 'statistics') {
                     $('#statistics-container').removeClass('d-none');
                     $('#workflow-counts').hide();
+                    $('#upcoming-actions-dashboard').hide();
                     updateStatistics();
                 } else if (currentTab === 'compliance') {
                     $('#compliance-container').removeClass('d-none');
                     $('#workflow-counts').hide();
-                    showCompliancePage();
+                    $('#upcoming-actions-dashboard').hide();
+                    loadComplianceStatus();
+                    $('#compliance-notification-count').text(pendingNotificationsCount);
                 } else {
                     $('#vehicles-container').removeClass('d-none');
                     loadVehicles(currentTab);
@@ -1274,12 +1799,14 @@
                                     $('#addVehicleModal').modal('hide');
                                     $('#add-vehicle-form')[0].reset();
                                     loadVehicles(currentTab);
+                                    loadUpcomingActions();
                                 },
                                 error: function() {
                                     alert('Vehicle added but TOP form generation failed.');
                                     $('#addVehicleModal').modal('hide');
                                     $('#add-vehicle-form')[0].reset();
                                     loadVehicles(currentTab);
+                                    loadUpcomingActions();
                                 }
                             });
                         } else {
@@ -1287,6 +1814,7 @@
                             $('#addVehicleModal').modal('hide');
                             $('#add-vehicle-form')[0].reset();
                             loadVehicles(currentTab);
+                            loadUpcomingActions();
                         }
                     },
                     error: function(xhr) {
@@ -1313,6 +1841,7 @@
                         alert(response.message);
                         $('#editVehicleModal').modal('hide');
                         loadVehicles(currentTab);
+                        loadUpcomingActions();
                     },
                     error: function(xhr) {
                         alert('Error: ' + xhr.responseJSON.message);
@@ -1391,7 +1920,7 @@
                         $('#communication_recipient').val('');
                     },
                     error: function(xhr) {
-                        alert('Error: ' + xhr.responseJSON.error);
+                        alert('Error: ' + (xhr.responseJSON ? xhr.responseJSON.error : 'Unknown error'));
                     }
                 });
             });
@@ -1434,9 +1963,10 @@
                         
                         $('#releaseNoticeModal').modal('hide');
                         loadVehicles(currentTab);
+                        loadUpcomingActions();
                     },
                     error: function(xhr) {
-                        alert('Error: ' + xhr.responseJSON.error);
+                        alert('Error: ' + (xhr.responseJSON ? xhr.responseJSON.error : 'Unknown error'));
                     }
                 });
             });
@@ -1461,7 +1991,7 @@
                         loadContacts();
                     },
                     error: function(xhr) {
-                        alert('Error: ' + xhr.responseJSON.message);
+                        alert('Error: ' + (xhr.responseJSON ? xhr.responseJSON.message : 'Unknown error'));
                     }
                 });
             });
@@ -1489,9 +2019,10 @@
                         $('#decisionModal').modal('hide');
                         loadVehicles(currentTab);
                         loadVehicleDetails(callNumber);
+                        loadUpcomingActions();
                     },
                     error: function(xhr) {
-                        alert('Error: ' + xhr.responseJSON.error);
+                        alert('Error: ' + (xhr.responseJSON ? xhr.responseJSON.error : 'Unknown error'));
                     }
                 });
             });
@@ -1515,7 +2046,7 @@
                         loadVehicleDetails(callNumber);
                     },
                     error: function(xhr) {
-                        alert('Error: ' + xhr.responseJSON.error);
+                        alert('Error: ' + (xhr.responseJSON ? xhr.responseJSON.error : 'Unknown error'));
                     }
                 });
             });
@@ -1550,7 +2081,7 @@
                         checkPendingNotifications();
                     },
                     error: function(xhr) {
-                        alert('Error: ' + xhr.responseJSON.message);
+                        alert('Error: ' + (xhr.responseJSON ? xhr.responseJSON.message : 'Unknown error'));
                     }
                 });
             });
@@ -1577,7 +2108,7 @@
                         loadVehicleDetails(callNumber);
                     },
                     error: function(xhr) {
-                        alert('Error: ' + xhr.responseJSON.message);
+                        alert('Error: ' + (xhr.responseJSON ? xhr.responseJSON.message : 'Unknown error'));
                     }
                 });
             });
@@ -1609,6 +2140,105 @@
                     $('#fullscreen-photo-container').addClass('d-none');
                 }
             });
+
+            // Setup TR208 assessment form
+            $('#vehicle-condition-form').submit(function(e) {
+                e.preventDefault();
+                const callNumber = $('#tr208-call-number').val();
+                const data = {
+                    inoperable: $('#vehicle-inoperable').is(':checked') ? 1 : 0,
+                    damage_extent: $('#damage-extent').val(),
+                    condition_notes: $('#condition-notes').val()
+                };
+                
+                $.ajax({
+                    url: `/api/update-vehicle-condition/${callNumber}`,
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify(data),
+                    success: function(response) {
+                        alert('Vehicle condition updated successfully');
+                        checkTR208Eligibility(callNumber);
+                    },
+                    error: function(xhr) {
+                        alert('Error: ' + (xhr.responseJSON ? xhr.responseJSON.error : 'Unknown error'));
+                    }
+                });
+            });
+
+            // Generate TR208 form
+            $(document).on('click', '#generate-tr208-btn', function() {
+                const callNumber = $('#tr208-call-number').val();
+                
+                $.ajax({
+                    url: `/api/generate-tr208/${callNumber}`,
+                    method: 'POST',
+                    xhrFields: { responseType: 'blob' },
+                    success: function(data) {
+                        const url = window.URL.createObjectURL(data);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `TR208_${callNumber}.pdf`;
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        alert('TR208 form generated successfully.');
+                        $('#tr208EligibilityModal').modal('hide');
+                        loadVehicleDetails(callNumber);
+                        loadUpcomingActions();
+                    },
+                    error: function(xhr) {
+                        // Try to get error message from JSON response
+                        const reader = new FileReader();
+                        reader.onload = function() {
+                            try {
+                                const errorObj = JSON.parse(reader.result);
+                                alert('Error: ' + (errorObj.error || 'Unknown error'));
+                            } catch (e) {
+                                alert('Error generating TR208 form.');
+                            }
+                        };
+                        reader.readAsText(xhr.response);
+                    }
+                });
+            });
+
+            // TR208 status form submission
+            $('#tr208-status-form').submit(function(e) {
+                e.preventDefault();
+                const callNumber = $('#tr208-status-call-number').val();
+                const status = $('input[name="tr208Status"]:checked').val();
+                
+                $.ajax({
+                    url: `/api/update-status/${callNumber}`,
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({ status: status }),
+                    success: function(response) {
+                        alert(`Vehicle status updated to ${status}`);
+                        $('#tr208StatusModal').modal('hide');
+                        loadVehicles(currentTab);
+                        loadVehicleDetails(callNumber);
+                        loadUpcomingActions();
+                    },
+                    error: function(xhr) {
+                        alert('Error: ' + (xhr.responseJSON ? xhr.responseJSON.error : 'Unknown error'));
+                    }
+                });
+            });
+
+            // System action buttons
+            $('#run-status-checks-btn').click(function() {
+                runStatusChecks();
+            });
+            
+            $('#fix-vehicle-statuses-btn').click(function() {
+                fixVehicleStatuses();
+            });
+            
+            // View pending notifications button
+            $('#view-pending-notifications-btn').click(function() {
+                $('.sidebar a[data-tab="notifications"]').click();
+            });
         }
 
         function loadVehicles(tab) {
@@ -1627,11 +2257,13 @@
                         'New': 'status-new',
                         'TOP Generated': 'status-top',
                         'TR52 Ready': 'status-tr52',
+                        'TR208 Ready': 'status-tr208',
                         'Ready for Auction': 'status-auction',
                         'Ready for Scrap': 'status-scrap',
                         'Released': 'status-released',
                         'Auctioned': 'status-released',
-                        'Scrapped': 'status-released'
+                        'Scrapped': 'status-released',
+                        'Transferred': 'status-released'
                     }[vehicle.status] || '';
                     
                     // Create timeline indicator
@@ -1717,6 +2349,8 @@
                     $('#tr52-call-number').val(callNumber);
                     $('#decision-call-number').val(callNumber);
                     $('#storage-call-number').val(callNumber);
+                    $('#tr208-call-number').val(callNumber);
+                    $('#tr208-status-call-number').val(callNumber);
                     
                     // Set modal title
                     $('#vehicleDetailsModalLabel').text(`Vehicle Details: ${vehicle.make} ${vehicle.model} (${callNumber})`);
@@ -1758,8 +2392,8 @@
                             <dd class="col-sm-8">${vehicle.days_since_tow || 0} days</dd>
                             <dt class="col-sm-4">TOP Sent:</dt>
                             <dd class="col-sm-8">${vehicle.top_form_sent_date || 'Not sent'}</dd>
-                            <dt class="col-sm-4">TR52 Available:</dt>
-                            <dd class="col-sm-8">${vehicle.tr52_available_date || 'N/A'}</dd>
+                            <dt class="col-sm-4">TR52/TR208 Available:</dt>
+                            <dd class="col-sm-8">${vehicle.tr52_available_date || vehicle.tr208_available_date || 'N/A'}</dd>
                             <dt class="col-sm-4">Decision:</dt>
                             <dd class="col-sm-8">${vehicle.decision || 'Pending'}</dd>
                             <dt class="col-sm-4">Auction Date:</dt>
@@ -1775,6 +2409,9 @@
                     loadPhotos(callNumber);
                     loadPoliceLogs(callNumber);
                     loadDocuments(callNumber);
+                    
+                    // Create visual timeline
+                    createVisualTimeline(vehicle);
                     
                     // Set up action buttons
                     setupActionButtons(vehicle);
@@ -1802,6 +2439,7 @@
                         alert('TOP form generated successfully. Vehicle status updated to TOP Generated.');
                         loadVehicles(currentTab);
                         loadVehicleDetails(vehicle.towbook_call_number);
+                        loadUpcomingActions();
                     },
                     error: function(xhr) {
                         alert('Error: ' + (xhr.responseJSON ? xhr.responseJSON.error : 'Unknown error'));
@@ -1824,11 +2462,18 @@
                         window.URL.revokeObjectURL(url);
                         alert('TR52 form generated successfully.');
                         loadVehicleDetails(vehicle.towbook_call_number);
+                        loadUpcomingActions();
                     },
                     error: function(xhr) {
                         alert('Error: ' + (xhr.responseJSON ? xhr.responseJSON.error : 'Unknown error'));
                     }
                 });
+            });
+            
+            // Check TR208 Eligibility
+            $('#check-tr208-btn').off('click').click(function() {
+                setupTR208Assessment(vehicle);
+                $('#tr208EligibilityModal').modal('show');
             });
             
             // Release Notice Generation
@@ -1857,6 +2502,7 @@
                         alert('Vehicle marked as TR52 Ready');
                         loadVehicles(currentTab);
                         loadVehicleDetails(vehicle.towbook_call_number);
+                        loadUpcomingActions();
                     },
                     error: function(xhr) {
                         alert('Error: ' + (xhr.responseJSON ? xhr.responseJSON.error : 'Unknown error'));
@@ -1952,12 +2598,14 @@
                         'STATUS_CHANGE': 'bg-primary',
                         'GENERATE_TOP': 'bg-warning text-dark',
                         'TR52_READY': 'bg-warning text-dark',
+                        'TR208_READY': 'bg-warning text-dark',
                         'RELEASE': 'bg-secondary',
                         'PHOTO_UPLOAD': 'bg-info',
                         'DOCUMENT_UPLOAD': 'bg-info',
                         'NOTIFICATION': 'bg-light text-dark',
                         'CERTIFIED_MAIL': 'bg-light text-dark',
-                        'AUTO_STATUS': 'bg-dark'
+                        'AUTO_STATUS': 'bg-dark',
+                        'UPDATE_CONDITION': 'bg-info'
                     }[log.action_type] || 'bg-secondary';
                     
                     const timelineItem = `
@@ -2047,6 +2695,8 @@
                         'TOP Form': 'fas fa-file-alt',
                         'TR52': 'fas fa-file-contract',
                         'TR52 Form': 'fas fa-file-contract',
+                        'TR208': 'fas fa-file-contract',
+                        'TR208 Form': 'fas fa-file-contract',
                         'Release Notice': 'fas fa-file-invoice',
                         'Title': 'fas fa-file-certificate',
                         'Police Report': 'fas fa-file-shield',
@@ -2250,6 +2900,7 @@
                                 <div class="stat-value">${data.statusCounts['New'] + 
                                                           (data.statusCounts['TOP Generated'] || 0) + 
                                                           (data.statusCounts['TR52 Ready'] || 0) + 
+                                                          (data.statusCounts['TR208 Ready'] || 0) + 
                                                           (data.statusCounts['Ready for Auction'] || 0) + 
                                                           (data.statusCounts['Ready for Scrap'] || 0)}</div>
                             </div>
@@ -2259,7 +2910,8 @@
                                 <h3>Completed</h3>
                                 <div class="stat-value">${(data.statusCounts['Released'] || 0) + 
                                                           (data.statusCounts['Auctioned'] || 0) + 
-                                                          (data.statusCounts['Scrapped'] || 0)}</div>
+                                                          (data.statusCounts['Scrapped'] || 0) +
+                                                          (data.statusCounts['Transferred'] || 0)}</div>
                             </div>
                         </div>
                         <div class="col-md-3">
@@ -2323,7 +2975,7 @@
                                             <span class="badge bg-success rounded-pill">${data.complianceMetrics.topNotifications}</span>
                                         </li>
                                         <li class="list-group-item d-flex justify-content-between align-items-center">
-                                            TR52 Ready Notices
+                                            TR52/TR208 Ready Notices
                                             <span class="badge bg-success rounded-pill">${data.complianceMetrics.tr52Ready}</span>
                                         </li>
                                         <li class="list-group-item d-flex justify-content-between align-items-center">
@@ -2372,131 +3024,541 @@
             });
         }
 
-        function showCompliancePage() {
-            const container = $('#compliance-container');
-            container.empty();
-            
-            const complianceContent = `
-                <div class="row mb-4">
-                    <div class="col-md-6">
-                        <div class="card">
-                            <div class="card-header">
-                                <h5>Compliance Reports</h5>
-                            </div>
-                            <div class="card-body">
-                                <p>Download compliance reports for documentation and record-keeping.</p>
-                                <a href="/api/compliance-report" class="btn btn-primary mb-2">
-                                    <i class="fas fa-download"></i> Download CSV Report
-                                </a>
-                                <a href="/api/compliance-report/pdf" class="btn btn-primary">
-                                    <i class="fas fa-file-pdf"></i> Download PDF Report
-                                </a>
-                            </div>
-                        </div>
+        function loadComplianceStatus() {
+            $.get('/api/statistics', function(data) {
+                const statusContainer = $('#compliance-status');
+                statusContainer.empty();
+                
+                // Compliance metrics from statistics
+                const metrics = data.complianceMetrics;
+                const totalVehicles = data.totalVehicles;
+                const statusCounts = data.statusCounts;
+                
+                // Calculate percentages
+                const activeVehicles = totalVehicles - (statusCounts['Released'] || 0) - (statusCounts['Auctioned'] || 0) - (statusCounts['Scrapped'] || 0) - (statusCounts['Transferred'] || 0);
+                const topPercentage = activeVehicles > 0 ? Math.round((metrics.topNotifications / activeVehicles) * 100) : 0;
+                const tr52Percentage = activeVehicles > 0 ? Math.round((metrics.tr52Ready / activeVehicles) * 100) : 0;
+                const auctionAdsPercentage = activeVehicles > 0 ? Math.round((metrics.auctionAds / activeVehicles) * 100) : 0;
+                const releaseNotificationsPercentage = totalVehicles > 0 ? Math.round((metrics.releaseNotifications / totalVehicles) * 100) : 0;
+                
+                // Determine compliance status
+                const isFullyCompliant = topPercentage >= 95 && tr52Percentage >= 90 && auctionAdsPercentage >= 90 && releaseNotificationsPercentage >= 95;
+                const isPartiallyCompliant = topPercentage >= 80 && tr52Percentage >= 70 && auctionAdsPercentage >= 70 && releaseNotificationsPercentage >= 80;
+                
+                let statusClass = 'alert-danger';
+                let statusMessage = 'Non-Compliant';
+                
+                if (isFullyCompliant) {
+                    statusClass = 'alert-success';
+                    statusMessage = 'Fully Compliant';
+                } else if (isPartiallyCompliant) {
+                    statusClass = 'alert-warning';
+                    statusMessage = 'Partially Compliant';
+                }
+                
+                // Create status alert
+                statusContainer.html(`
+                    <div class="alert ${statusClass}">
+                        <h4 class="alert-heading">System Compliance Status: ${statusMessage}</h4>
+                        <p>Current compliance metrics based on vehicle processing status.</p>
                     </div>
                     
-                    <div class="col-md-6">
-                        <div class="card">
-                            <div class="card-header">
-                                <h5>Pending Notifications</h5>
-                            </div>
-                            <div class="card-body">
-                                <p>View and send required notifications to stay compliant with MCL 257.252.</p>
-                                <a href="#" class="btn btn-primary view-notifications-btn">
-                                    <i class="fas fa-bell"></i> View Pending Notifications <span class="badge bg-danger" id="compliance-notification-count">${pendingNotificationsCount}</span>
-                                </a>
+                    <div class="row">
+                        <div class="col-md-3">
+                            <div class="card mb-3">
+                                <div class="card-body text-center">
+                                    <h5>TOP Forms</h5>
+                                    <div class="display-4">${topPercentage}%</div>
+                                    <p class="mb-0">${metrics.topNotifications} / ${activeVehicles} vehicles</p>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                </div>
-                
-                <div class="row">
-                    <div class="col-12">
-                        <div class="card">
-                            <div class="card-header">
-                                <h5>Compliance Checklist</h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="alert alert-info">
-                                    <h6><i class="fas fa-info-circle"></i> MCL 257.252 Compliance Requirements:</h6>
-                                    <ul>
-                                        <li><strong>TOP Notification:</strong> Send within 24 hours of tow</li>
-                                        <li><strong>TR52 Processing:</strong> After 20 days from TOP notification</li>
-                                        <li><strong>Auction Advertisement:</strong> At least 5 days before auction date</li>
-                                        <li><strong>Photo Documentation:</strong> Required for all scrapped vehicles</li>
-                                        <li><strong>Release Notification:</strong> Within 24 hours of release/auction/scrap</li>
-                                    </ul>
+                        <div class="col-md-3">
+                            <div class="card mb-3">
+                                <div class="card-body text-center">
+                                    <h5>TR52/TR208 Forms</h5>
+                                    <div class="display-4">${tr52Percentage}%</div>
+                                    <p class="mb-0">${metrics.tr52Ready} / ${activeVehicles} eligible vehicles</p>
                                 </div>
-                                
-                                <div class="table-responsive">
-                                    <table class="table table-striped">
-                                        <thead>
-                                            <tr>
-                                                <th>Compliance Step</th>
-                                                <th>Timing Requirement</th>
-                                                <th>Documentation</th>
-                                                <th>Notes</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr>
-                                                <td>TOP Notification</td>
-                                                <td>Within 24 hours of tow</td>
-                                                <td>TOP Form</td>
-                                                <td>Send to jurisdiction's LEIN processor</td>
-                                            </tr>
-                                            <tr>
-                                                <td>Redemption Period</td>
-                                                <td>20 days from TOP notification</td>
-                                                <td>Vehicle held securely</td>
-                                                <td>Owner may redeem with fees during this period</td>
-                                            </tr>
-                                            <tr>
-                                                <td>TR52 Processing</td>
-                                                <td>After 20-day redemption period</td>
-                                                <td>TR52 Form</td>
-                                                <td>Submit to jurisdiction for title processing</td>
-                                            </tr>
-                                            <tr>
-                                                <td>Auction Advertisement</td>
-                                                <td>At least 5 days before auction</td>
-                                                <td>Newspaper Ad</td>
-                                                <td>Must be published in newspaper of general circulation</td>
-                                            </tr>
-                                            <tr>
-                                                <td>Public Auction</td>
-                                                <td>After TR52 and advertisement</td>
-                                                <td>Auction Results, Bill of Sale</td>
-                                                <td>Open to public, highest bidder wins</td>
-                                            </tr>
-                                            <tr>
-                                                <td>Scrap Documentation</td>
-                                                <td>Before scrapping</td>
-                                                <td>Photos of vehicle</td>
-                                                <td>Multiple photos showing condition and VIN</td>
-                                            </tr>
-                                            <tr>
-                                                <td>Release Notification</td>
-                                                <td>Within 24 hours</td>
-                                                <td>Release Form</td>
-                                                <td>Send to jurisdiction upon release/auction/scrap</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card mb-3">
+                                <div class="card-body text-center">
+                                    <h5>Auction Notices</h5>
+                                    <div class="display-4">${auctionAdsPercentage}%</div>
+                                    <p class="mb-0">${metrics.auctionAds} / ${activeVehicles} eligible vehicles</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card mb-3">
+                                <div class="card-body text-center">
+                                    <h5>Release Notifications</h5>
+                                    <div class="display-4">${releaseNotificationsPercentage}%</div>
+                                    <p class="mb-0">${metrics.releaseNotifications} / ${totalVehicles} total vehicles</p>
                                 </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            `;
-            
-            container.html(complianceContent);
-            
-            // Add click handler for view notifications button
-            $('.view-notifications-btn').click(function(e) {
-                e.preventDefault();
-                $('.sidebar a[data-tab="notifications"]').click();
+                `);
             });
+        }
+
+        function loadUpcomingActions() {
+            $.get('/api/vehicles', function(vehicles) {
+                const actionsTable = $('#upcoming-actions-table');
+                actionsTable.empty();
+                
+                if (vehicles.length === 0) {
+                    actionsTable.html('<tr><td colspan="6" class="text-center">No vehicles found</td></tr>');
+                    return;
+                }
+                
+                // Filter for active vehicles with upcoming actions
+                const actionVehicles = vehicles.filter(v => 
+                    !v.archived && 
+                    (v.status === 'New' || 
+                     v.status === 'TOP Generated' || 
+                     v.status === 'TR52 Ready' || 
+                     v.status === 'TR208 Ready' || 
+                     v.status === 'Ready for Auction' || 
+                     v.status === 'Ready for Scrap')
+                );
+                
+                if (actionVehicles.length === 0) {
+                    actionsTable.html('<tr><td colspan="6" class="text-center">No upcoming actions</td></tr>');
+                    return;
+                }
+                
+                // Sort by urgency (days until next step)
+                actionVehicles.sort((a, b) => {
+                    const aDays = a.days_until_next_step || a.days_until_auction || 999;
+                    const bDays = b.days_until_next_step || b.days_until_auction || 999;
+                    return aDays - bDays;
+                });
+                
+                // Only show top 5 most urgent actions
+                const topActions = actionVehicles.slice(0, 5);
+                
+                topActions.forEach(vehicle => {
+                    let nextAction = '';
+                    let dueDate = '';
+                    let daysLeft = 0;
+                    let actionButton = '';
+                    
+                    if (vehicle.status === 'New') {
+                        nextAction = 'Generate TOP Form';
+                        dueDate = vehicle.tow_date; // Should be within 24 hours of tow
+                        
+                        // Calculate days left (negative means overdue)
+                        const towDate = new Date(vehicle.tow_date);
+                        const today = new Date();
+                        const diffTime = Math.abs(today - towDate);
+                        daysLeft = 1 - Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        
+                        actionButton = `<button class="btn btn-sm btn-primary action-btn" data-action="generate-top" data-call-number="${vehicle.towbook_call_number}">Generate TOP</button>`;
+                    }
+                    else if (vehicle.status === 'TOP Generated') {
+                        nextAction = 'Generate TR52/TR208';
+                        dueDate = vehicle.tr52_available_date || vehicle.tr208_available_date;
+                        daysLeft = vehicle.days_until_next_step;
+                        
+                        if (vehicle.tr208_eligible == 1) {
+                            actionButton = `<button class="btn btn-sm btn-primary action-btn" data-action="check-tr208" data-call-number="${vehicle.towbook_call_number}">Check TR208</button>`;
+                        } else {
+                            actionButton = `<button class="btn btn-sm btn-primary action-btn" data-action="generate-tr52" data-call-number="${vehicle.towbook_call_number}">Generate TR52</button>`;
+                        }
+                    }
+                    else if (vehicle.status === 'TR52 Ready' || vehicle.status === 'TR208 Ready') {
+                        nextAction = 'Make Decision (Auction/Scrap)';
+                        dueDate = 'Now';
+                        daysLeft = 0;
+                        
+                        actionButton = `<button class="btn btn-sm btn-success action-btn" data-action="make-decision" data-call-number="${vehicle.towbook_call_number}">Make Decision</button>`;
+                    }
+                    else if (vehicle.status === 'Ready for Auction') {
+                        nextAction = 'Schedule Auction';
+                        dueDate = vehicle.auction_date;
+                        daysLeft = vehicle.days_until_auction;
+                        
+                        actionButton = `<button class="btn btn-sm btn-warning action-btn" data-action="schedule-auction" data-call-number="${vehicle.towbook_call_number}">Schedule Auction</button>`;
+                    }
+                    else if (vehicle.status === 'Ready for Scrap') {
+                        nextAction = 'Process for Scrap';
+                        dueDate = vehicle.estimated_date;
+                        daysLeft = vehicle.days_until_next_step;
+                        
+                        actionButton = `<button class="btn btn-sm btn-danger action-btn" data-action="process-scrap" data-call-number="${vehicle.towbook_call_number}">Process Scrap</button>`;
+                    }
+                    
+                    // Determine urgency class
+                    let urgencyClass = '';
+                    if (daysLeft < 0) {
+                        urgencyClass = 'table-danger';
+                    } else if (daysLeft <= 2) {
+                        urgencyClass = 'table-warning';
+                    }
+                    
+                    const row = `
+                        <tr class="${urgencyClass}">
+                            <td>${vehicle.year} ${vehicle.make} ${vehicle.model} (${vehicle.towbook_call_number})</td>
+                            <td><span class="badge ${getStatusBadgeClass(vehicle.status)}">${vehicle.status}</span></td>
+                            <td>${nextAction}</td>
+                            <td>${dueDate || 'N/A'}</td>
+                            <td>${daysLeft < 0 ? `<span class="text-danger">${daysLeft} (OVERDUE)</span>` : daysLeft}</td>
+                            <td>${actionButton}</td>
+                        </tr>
+                    `;
+                    
+                    actionsTable.append(row);
+                });
+                
+                // Add event handlers for action buttons
+                $('.action-btn').click(function() {
+                    const action = $(this).data('action');
+                    const callNumber = $(this).data('call-number');
+                    
+                    switch(action) {
+                        case 'generate-top':
+                            generateTOPForm(callNumber);
+                            break;
+                        case 'check-tr208':
+                            openTR208Assessment(callNumber);
+                            break;
+                        case 'generate-tr52':
+                            generateTR52Form(callNumber);
+                            break;
+                        case 'make-decision':
+                            openDecisionModal(callNumber);
+                            break;
+                        case 'schedule-auction':
+                            openAuctionModal(callNumber);
+                            break;
+                        case 'process-scrap':
+                            openScrapModal(callNumber);
+                            break;
+                    }
+                });
+            });
+        }
+
+        // Helper function to get status badge class
+        function getStatusBadgeClass(status) {
+            const classes = {
+                'New': 'bg-primary',
+                'TOP Generated': 'bg-info',
+                'TR52 Ready': 'bg-success',
+                'TR208 Ready': 'bg-success',
+                'Ready for Auction': 'bg-warning text-dark',
+                'Ready for Scrap': 'bg-danger',
+                'Released': 'bg-secondary',
+                'Auctioned': 'bg-secondary',
+                'Scrapped': 'bg-secondary',
+                'Transferred': 'bg-secondary'
+            };
+            
+            return classes[status] || 'bg-secondary';
+        }
+
+        // Open TR208 assessment modal
+        function openTR208Assessment(callNumber) {
+            $.get(`/api/vehicles?call_number=${callNumber}`, function(data) {
+                if (data.length > 0) {
+                    setupTR208Assessment(data[0]);
+                    $('#tr208EligibilityModal').modal('show');
+                }
+            });
+        }
+
+        // Setup TR208 assessment
+        function setupTR208Assessment(vehicle) {
+            $('#tr208-call-number').val(vehicle.towbook_call_number);
+            
+            // Calculate vehicle age
+            const currentYear = new Date().getFullYear();
+            let vehicleYear = parseInt(vehicle.year);
+            if (!isNaN(vehicleYear)) {
+                const age = currentYear - vehicleYear;
+                $('#vehicle-age-display').text(`${age} years old (${vehicle.year})`);
+            } else {
+                $('#vehicle-age-display').text('Unknown year');
+            }
+            
+            // Set current values
+            $('#vehicle-inoperable').prop('checked', vehicle.inoperable == 1);
+            $('#damage-extent').val(vehicle.damage_extent || 'None');
+            $('#condition-notes').val(vehicle.condition_notes || '');
+            
+            // Check current TR208 eligibility
+            checkTR208Eligibility(vehicle.towbook_call_number);
+        }
+
+        // Check TR208 eligibility
+        function checkTR208Eligibility(callNumber) {
+            $.ajax({
+                url: `/api/check-tr208-eligibility/${callNumber}`,
+                method: 'GET',
+                success: function(response) {
+                    const resultsContainer = $('#tr208-assessment-results');
+                    
+                    if (response.eligible) {
+                        resultsContainer.html(`
+                            <div class="alert alert-success">
+                                <h5><i class="fas fa-check-circle"></i> Vehicle is eligible for TR208 processing</h5>
+                                <p>This vehicle meets all criteria for scrap vehicle processing:</p>
+                                <ul>
+                                    <li>Age: ${response.reasons.age}</li>
+                                    <li>Operability: ${response.reasons.operable}</li>
+                                    <li>Damage: ${response.reasons.damage}</li>
+                                </ul>
+                                ${response.timeline_date ? 
+                                    `<p><strong>Available for TR208 processing on:</strong> ${response.timeline_date}</p>` : 
+                                    ''}
+                            </div>
+                        `);
+                        $('#tr208-action-buttons').removeClass('d-none');
+                    } else {
+                        resultsContainer.html(`
+                            <div class="alert alert-warning">
+                                <h5><i class="fas fa-exclamation-triangle"></i> Vehicle is NOT eligible for TR208 processing</h5>
+                                <p>This vehicle does not meet all criteria for scrap vehicle processing:</p>
+                                <ul>
+                                    <li>Age: ${response.reasons.age}</li>
+                                    <li>Operability: ${response.reasons.operable}</li>
+                                    <li>Damage: ${response.reasons.damage}</li>
+                                </ul>
+                                <p>Please update the vehicle condition if necessary.</p>
+                            </div>
+                        `);
+                        $('#tr208-action-buttons').addClass('d-none');
+                    }
+                },
+                error: function(xhr) {
+                    $('#tr208-assessment-results').html(`
+                        <div class="alert alert-danger">
+                            <h5><i class="fas fa-times-circle"></i> Error checking eligibility</h5>
+                            <p>${xhr.responseJSON ? xhr.responseJSON.error : 'Unknown error'}</p>
+                        </div>
+                    `);
+                    $('#tr208-action-buttons').addClass('d-none');
+                }
+            });
+        }
+
+        // Generate TOP Form
+        function generateTOPForm(callNumber) {
+            $.ajax({
+                url: `/api/generate-top/${callNumber}`,
+                method: 'POST',
+                xhrFields: { responseType: 'blob' },
+                success: function(data) {
+                    const url = window.URL.createObjectURL(data);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `TOP_${callNumber}.pdf`;
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    alert('TOP form generated successfully. Vehicle status updated to TOP Generated.');
+                    loadVehicles(currentTab);
+                    loadUpcomingActions();
+                },
+                error: function(xhr) {
+                    alert('Error: ' + (xhr.responseJSON ? xhr.responseJSON.error : 'Unknown error'));
+                }
+            });
+        }
+
+        // Generate TR52 Form
+        function generateTR52Form(callNumber) {
+            $.ajax({
+                url: `/api/generate-tr52/${callNumber}`,
+                method: 'POST',
+                xhrFields: { responseType: 'blob' },
+                success: function(data) {
+                    const url = window.URL.createObjectURL(data);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `TR52_${callNumber}.pdf`;
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    alert('TR52 form generated successfully.');
+                    loadVehicles(currentTab);
+                    loadUpcomingActions();
+                },
+                error: function(xhr) {
+                    alert('Error: ' + (xhr.responseJSON ? xhr.responseJSON.error : 'Unknown error'));
+                }
+            });
+        }
+
+        // Open Decision Modal
+        function openDecisionModal(callNumber) {
+            $('#decision-call-number').val(callNumber);
+            $('#decision-auction').prop('checked', true);
+            $('#auction-date-field').show();
+            $('#scrap-value-field').hide();
+            
+            // Set default auction date to next Monday
+            const today = new Date();
+            const nextMonday = new Date();
+            nextMonday.setDate(today.getDate() + ((1 + 7 - today.getDay()) % 7 || 7));
+            $('#auction-date').val(nextMonday.toISOString().split('T')[0]);
+            
+            $('#scrap-value').val('0.00');
+            $('#decisionModal').modal('show');
+        }
+
+        // Open Auction Modal
+        function openAuctionModal(callNumber) {
+            // Assuming you have an auction modal
+            // For now, just redirect to decision modal
+            openDecisionModal(callNumber);
+        }
+
+        // Open Scrap Modal
+        function openScrapModal(callNumber) {
+            // You may want to create a dedicated scrap processing modal
+            // For now, just open the TR208 eligibility modal
+            openTR208Assessment(callNumber);
+        }
+
+        // Run status checks
+        function runStatusChecks() {
+            $.ajax({
+                url: '/api/check-statuses',
+                method: 'POST',
+                success: function(response) {
+                    if (response.fixed > 0) {
+                        alert(`Status check completed. Fixed ${response.fixed} vehicle statuses.`);
+                    } else {
+                        alert('Status check completed. No issues found.');
+                    }
+                    loadComplianceStatus();
+                    loadUpcomingActions();
+                },
+                error: function(xhr) {
+                    alert('Error running status checks: ' + (xhr.responseJSON ? xhr.responseJSON.error : 'Unknown error'));
+                }
+            });
+        }
+
+        // Fix vehicle statuses
+        function fixVehicleStatuses() {
+            if (confirm('This will automatically fix inconsistent vehicle statuses. Proceed?')) {
+                $.ajax({
+                    url: '/api/check-statuses',
+                    method: 'POST',
+                    success: function(response) {
+                        alert(`Status correction completed. Fixed ${response.fixed} vehicle statuses.`);
+                        loadComplianceStatus();
+                        loadVehicles(currentTab);
+                        loadUpcomingActions();
+                    },
+                    error: function(xhr) {
+                        alert('Error fixing statuses: ' + (xhr.responseJSON ? xhr.responseJSON.error : 'Unknown error'));
+                    }
+                });
+            }
+        }
+
+        // Create visual timeline for a vehicle
+        function createVisualTimeline(vehicle) {
+            const container = $('#vehicle-timeline-visual');
+            container.empty();
+            
+            if (!vehicle.tow_date || vehicle.tow_date === 'N/A') {
+                container.html('<div class="alert alert-warning">Timeline not available: Missing tow date</div>');
+                return;
+            }
+            
+            try {
+                // Convert dates to JavaScript Date objects
+                const towDate = new Date(vehicle.tow_date);
+                const topDate = vehicle.top_form_sent_date ? new Date(vehicle.top_form_sent_date) : null;
+                const tr52Date = vehicle.tr52_available_date ? new Date(vehicle.tr52_available_date) : null;
+                const tr208Date = vehicle.tr208_available_date ? new Date(vehicle.tr208_available_date) : null;
+                const auctionDate = vehicle.auction_date ? new Date(vehicle.auction_date) : null;
+                const scrapDate = vehicle.estimated_date ? new Date(vehicle.estimated_date) : null;
+                const releaseDate = vehicle.release_date ? new Date(vehicle.release_date) : null;
+                
+                // Calculate important dates
+                const topDueDate = new Date(towDate);
+                topDueDate.setDate(towDate.getDate() + 1); // 24 hours after tow
+                
+                const policeNotifyDate = new Date(towDate);
+                policeNotifyDate.setDate(towDate.getDate() + 7); // 7 days after tow
+                
+                const ownerRedemptionDate = topDate ? new Date(topDate) : new Date(towDate);
+                ownerRedemptionDate.setDate(ownerRedemptionDate.getDate() + 20); // 20 days after TOP
+                
+                const securedPartyDate = topDate ? new Date(topDate) : new Date(towDate);
+                securedPartyDate.setDate(securedPartyDate.getDate() + 30); // 30 days after TOP
+                
+                const tr208Timeline = new Date(towDate);
+                tr208Timeline.setDate(towDate.getDate() + 27); // 27 days after tow
+                
+                const safeAuctionDate = new Date(towDate);
+                safeAuctionDate.setDate(towDate.getDate() + 40); // 40 days after tow
+                
+                // Create a 40-day timeline (or to release date if longer)
+                const timelineEnd = releaseDate || safeAuctionDate;
+                const totalDays = Math.max(40, Math.ceil((timelineEnd - towDate) / (1000 * 60 * 60 * 24)));
+                
+                // Create the timeline container
+                const timelineHTML = `<div class="timeline-visual" style="height: 100px;"></div>`;
+                container.html(timelineHTML);
+                
+                // Calculate positions (percentage along timeline)
+                const getDayPosition = (date) => {
+                    const diffDays = Math.ceil((date - towDate) / (1000 * 60 * 60 * 24));
+                    return (diffDays / totalDays) * 100;
+                };
+                
+                // Add today marker
+                const today = new Date();
+                if (today >= towDate && today <= timelineEnd) {
+                    const todayPos = getDayPosition(today);
+                    $('.timeline-visual').append(`
+                        <div class="timeline-today" style="left: ${todayPos}%;"></div>
+                        <div class="timeline-today-label" style="left: ${todayPos}%;">TODAY</div>
+                    `);
+                }
+                
+                // Add timeline markers
+                const markers = [
+                    { date: towDate, label: 'Tow Date', status: 'past', pos: 0 },
+                    { date: topDueDate, label: 'TOP Due (24h)', status: topDate ? 'past' : 'critical', pos: getDayPosition(topDueDate) },
+                    { date: policeNotifyDate, label: 'Police Notify (7d)', status: today > policeNotifyDate ? 'past' : 'future', pos: getDayPosition(policeNotifyDate) },
+                    { date: ownerRedemptionDate, label: 'Owner Redemption (20d)', status: today > ownerRedemptionDate ? 'past' : 'future', pos: getDayPosition(ownerRedemptionDate) },
+                    { date: securedPartyDate, label: 'Secured Party (30d)', status: today > securedPartyDate ? 'past' : 'future', pos: getDayPosition(securedPartyDate) },
+                    { date: tr208Timeline, label: 'TR208 Timeline (27d)', status: today > tr208Timeline ? 'past' : 'future', pos: getDayPosition(tr208Timeline) },
+                    { date: safeAuctionDate, label: 'Safe Auction (40d)', status: today > safeAuctionDate ? 'past' : 'future', pos: getDayPosition(safeAuctionDate) }
+                ];
+                
+                // Add actual dates if they exist
+                if (topDate) markers.push({ date: topDate, label: 'TOP Sent', status: 'past', pos: getDayPosition(topDate) });
+                if (tr52Date) markers.push({ date: tr52Date, label: 'TR52 Ready', status: today > tr52Date ? 'past' : 'future', pos: getDayPosition(tr52Date) });
+                if (tr208Date) markers.push({ date: tr208Date, label: 'TR208 Ready', status: today > tr208Date ? 'past' : 'future', pos: getDayPosition(tr208Date) });
+                if (auctionDate) markers.push({ date: auctionDate, label: 'Auction Date', status: today > auctionDate ? 'past' : 'future', pos: getDayPosition(auctionDate) });
+                if (scrapDate) markers.push({ date: scrapDate, label: 'Scrap Date', status: today > scrapDate ? 'past' : 'future', pos: getDayPosition(scrapDate) });
+                if (releaseDate) markers.push({ date: releaseDate, label: 'Released', status: 'past', pos: getDayPosition(releaseDate) });
+                
+                // Add markers to timeline
+                markers.forEach(marker => {
+                    if (marker.pos >= 0 && marker.pos <= 100) {
+                        $('.timeline-visual').append(`
+                            <div class="timeline-marker ${marker.status}" style="left: ${marker.pos}%;">
+                                ${marker.label}<br>
+                                <small>${marker.date.toLocaleDateString()}</small>
+                            </div>
+                        `);
+                    }
+                });
+            } catch (e) {
+                console.error('Timeline creation error:', e);
+                container.html(`<div class="alert alert-danger">Error creating timeline: ${e.message}</div>`);
+            }
         }
 
         function checkScrapingProgress() {

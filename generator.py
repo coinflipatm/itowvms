@@ -322,7 +322,131 @@ class PDFGenerator:
         except Exception as e:
             logging.error(f"Error generating TR52 form: {e}")
             return False, str(e)
-
+        
+def generate_tr208_form(self, vehicle_data, output_path):
+    """
+    Generate a TR208 form for scrappable vehicles
+    
+    Args:
+        vehicle_data (dict): Vehicle information
+        output_path (str): Path to save the PDF
+        
+    Returns:
+        (bool, str): Success status and error message if any
+    """
+    try:
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib import colors
+        from reportlab.platypus import Table, TableStyle
+        import os
+        
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        
+        # Create canvas
+        c = canvas.Canvas(output_path, pagesize=letter)
+        width, height = letter
+        
+        # Add form title
+        c.setFont("Helvetica-Bold", 16)
+        c.drawCentredString(width/2, height - 50, "TR-208 ABANDONED SCRAP VEHICLE CERTIFICATION")
+        
+        # Add subtitle
+        c.setFont("Helvetica", 12)
+        c.drawCentredString(width/2, height - 70, "Michigan Department of State")
+        
+        # Add date
+        c.setFont("Helvetica", 10)
+        c.drawString(width - 150, height - 30, f"Date: {datetime.now().strftime('%m/%d/%Y')}")
+        
+        # Add towing agency info
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, height - 100, "TOWING AGENCY INFORMATION")
+        c.setFont("Helvetica", 10)
+        c.drawString(50, height - 120, "Agency Name: iTow Towing & Recovery")
+        c.drawString(50, height - 135, "Address: 205 W Johnson St, Clio, MI 48420")
+        c.drawString(50, height - 150, "Phone: (810) 553-2800")
+        c.drawString(50, height - 165, f"Complaint #: {vehicle_data.get('complaint_number', 'N/A')}")
+        
+        # Add vehicle information
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, height - 195, "VEHICLE INFORMATION")
+        c.setFont("Helvetica", 10)
+        c.drawString(50, height - 215, f"Year: {vehicle_data.get('year', 'N/A')}")
+        c.drawString(250, height - 215, f"Make: {vehicle_data.get('make', 'N/A')}")
+        c.drawString(400, height - 215, f"Model: {vehicle_data.get('model', 'N/A')}")
+        c.drawString(50, height - 230, f"VIN: {vehicle_data.get('vin', 'N/A')}")
+        c.drawString(250, height - 230, f"License Plate: {vehicle_data.get('plate', 'N/A')}")
+        c.drawString(400, height - 230, f"State: {vehicle_data.get('state', 'N/A')}")
+        c.drawString(50, height - 245, f"Color: {vehicle_data.get('color', 'N/A')}")
+        
+        # Add tow information
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, height - 275, "TOW INFORMATION")
+        c.setFont("Helvetica", 10)
+        c.drawString(50, height - 295, f"Date of Tow: {vehicle_data.get('tow_date', 'N/A')}")
+        c.drawString(250, height - 295, f"Time of Tow: {vehicle_data.get('tow_time', 'N/A')}")
+        c.drawString(50, height - 310, f"Location: {vehicle_data.get('location', 'N/A')}")
+        c.drawString(50, height - 325, f"Police Agency: {vehicle_data.get('jurisdiction', 'N/A')}")
+        c.drawString(250, height - 325, f"Case #: {vehicle_data.get('case_number', 'N/A')}")
+        
+        # Add TR-208 qualification criteria
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, height - 355, "QUALIFICATION CRITERIA")
+        c.setFont("Helvetica", 10)
+        
+        vehicle_year = int(vehicle_data.get('year', 0))
+        current_year = datetime.now().year
+        vehicle_age = current_year - vehicle_year if vehicle_year > 0 else "Unknown"
+        
+        c.drawString(50, height - 375, f"1. Vehicle Age: {vehicle_age} years (must be 7+ years old)")
+        c.drawString(50, height - 390, "2. Vehicle is inoperable")
+        c.drawString(50, height - 405, "3. Vehicle is extensively damaged")
+        
+        # Add checkbox indicators
+        c.drawString(350, height - 375, "✓" if vehicle_age != "Unknown" and vehicle_age >= 7 else "□")
+        c.drawString(350, height - 390, "✓" if vehicle_data.get('inoperable', 0) == 1 else "□")
+        c.drawString(350, height - 405, "✓" if vehicle_data.get('damage_extent') == 'Extensive' else "□")
+        
+        # Add damage description
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, height - 435, "DAMAGE DESCRIPTION")
+        c.setFont("Helvetica", 10)
+        c.drawString(50, height - 455, f"Condition Notes: {vehicle_data.get('condition_notes', 'N/A')}")
+        
+        # Add certification
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(50, height - 485, "CERTIFICATION")
+        c.setFont("Helvetica", 10)
+        c.drawString(50, height - 505, "I certify that this vehicle meets all requirements for disposal as a scrap vehicle:")
+        c.drawString(50, height - 520, "1. It is at least 7 years old")
+        c.drawString(50, height - 535, "2. It is inoperable")
+        c.drawString(50, height - 550, "3. It has extensive damage")
+        c.drawString(50, height - 565, "4. The 20-day owner redemption period has passed")
+        c.drawString(50, height - 580, "5. All applicable notifications have been made to police and the Secretary of State")
+        
+        # Add signature line
+        c.line(50, height - 620, 250, height - 620)
+        c.drawString(50, height - 635, "Authorized Signature")
+        
+        c.line(300, height - 620, 500, height - 620)
+        c.drawString(300, height - 635, "Date")
+        
+        # Add footer
+        c.setFont("Helvetica", 8)
+        c.drawCentredString(width/2, 30, "TR-208 ABANDONED SCRAP VEHICLE CERTIFICATION")
+        c.drawCentredString(width/2, 15, f"Generated on {datetime.now().strftime('%m/%d/%Y %H:%M:%S')}")
+        
+        # Save the PDF
+        c.save()
+        return True, "TR208 form generated successfully"
+    except Exception as e:
+        import traceback
+        error_msg = traceback.format_exc()
+        logging.error(f"Error generating TR208 form: {error_msg}")
+        return False, str(e)
+    
     def generate_auction_notice(self, data, pdf_path):
         try:
             os.makedirs(os.path.dirname(pdf_path), exist_ok=True)

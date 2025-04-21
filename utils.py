@@ -159,7 +159,7 @@ def get_status_filter(status_type):
         'Ready_Auction': ['Ready for Auction'],
         'Ready_Scrap': ['Ready for Scrap'],
         'Auction': ['Auction'],
-        'Completed': ['Released', 'Scrapped', 'Auctioned']
+        'Completed': ['Released', 'Scrapped', 'Auctioned', 'Transferred']
     }
     backward_compat = {
         'Ready': ['TR52 Ready', 'Ready for Auction', 'Ready for Scrap'],
@@ -498,6 +498,108 @@ def get_vehicle_description(vehicle_data):
         return "Unknown Vehicle"
         
     return " ".join(parts)
+
+def map_field_names(data):
+    """Map alternative field names to the actual database column names"""
+    field_mapping = {
+        'requested_by': 'requestor'
+    }
+    
+    result = data.copy()
+    for alt_name, db_name in field_mapping.items():
+        if alt_name in data:
+            result[db_name] = data[alt_name]
+            del result[alt_name]
+    
+    return result
+
+def is_eligible_for_tr208(vehicle_data):
+    """
+    Determine if a vehicle is eligible for TR208 (scrap) processing
+    based on Michigan requirements:
+    1. 7+ years old
+    2. Inoperable
+    3. Extensively damaged
+    
+    Returns: (bool, dict) - eligible status and reasons
+    """
+    eligible = True
+    reasons = {}
+    
+    # Check vehicle age (7+ years old)
+    current_year = datetime.now().year
+    try:
+        if vehicle_data.get('year') and vehicle_data['year'] != 'N/A':
+            vehicle_year = int(vehicle_data['year'])
+            age = current_year - vehicle_year
+            eligible = eligible and age >= 7
+            reasons['age'] = f"{age} years old" if age >= 7 else f"Only {age} years old (must be 7+)"
+        else:
+            eligible = False
+            reasons['age'] = "Unknown year"
+    except (ValueError, TypeError):
+        eligible = False
+        reasons['age'] = f"Invalid year format: {vehicle_data.get('year')}"
+    
+    # Check operability status (assume stored in a field like 'inoperable' or 'condition')
+    if vehicle_data.get('inoperable') == 1 or vehicle_data.get('condition') == 'Inoperable':
+        reasons['operable'] = "Inoperable"
+    else:
+        eligible = False
+        reasons['operable'] = "Vehicle appears operable or status unknown"
+    
+    # Check damage extent (assume stored in a field like 'damage' or 'condition_notes')
+    if vehicle_data.get('damage') == 'Extensive' or 'extensive damage' in str(vehicle_data.get('condition_notes', '')).lower():
+        reasons['damage'] = "Extensively damaged"
+    else:
+        eligible = False
+        reasons['damage'] = "Not extensively damaged or damage status unknown"
+    
+    return eligible, reasons
+
+def generate_tr208_form(vehicle_data, output_path):
+    """
+    Generate a TR208 form for scrapping a vehicle
+    
+    Args:
+        vehicle_data (dict): Vehicle information
+        output_path (str): Path to save the PDF
+        
+    Returns:
+        (bool, str): Success status and error message if any
+    """
+    from generator import PDFGenerator  # Assuming PDFGenerator is your PDF generation class
+    
+    try:
+        pdf_gen = PDFGenerator()
+        # You may need to customize the PDF generation for TR208
+        # This assumes your PDFGenerator class has a method for TR208 forms
+        success, error = pdf_gen.generate_tr208_form(vehicle_data, output_path)
+        
+        if success:
+            # Log the action
+            log_action("GENERATE_TR208", vehicle_data['towbook_call_number'], "TR208 form generated for scrap vehicle")
+            
+        return success, error
+    except Exception as e:
+        logging.error(f"Error generating TR208: {e}")
+        return False, str(e)
+
+def calculate_tr208_timeline(tow_date):
+    """
+    Calculate the TR208 timeline (27 days from tow)
+    
+    Args:
+        tow_date (str): Tow date in YYYY-MM-DD format
+        
+    Returns:
+        (datetime.date): Date when TR208 can be processed
+    """
+    if isinstance(tow_date, str):
+        tow_date = datetime.strptime(tow_date, '%Y-%m-%d').date()
+    
+    # 27 days from tow (7 for police notification + 20 for owner redemption)
+    return tow_date + timedelta(days=27)
 
 def setup_logging():
     """Configure application logging"""

@@ -8,7 +8,7 @@ from utils import (generate_complaint_number, release_vehicle, log_action,
                    ensure_logs_table_exists, setup_logging, get_status_filter, calculate_newspaper_ad_date,
                    calculate_storage_fees, determine_jurisdiction, send_email_notification, 
                    send_sms_notification, send_fax_notification, is_valid_email, is_valid_phone,
-                   generate_certified_mail_number)
+                   generate_certified_mail_number, is_eligible_for_tr208, calculate_tr208_timeline)
 from datetime import datetime, timedelta
 import threading
 import os
@@ -97,6 +97,7 @@ def api_get_vehicles():
                 'new': status_breakdown.get('New', 0),
                 'topGenerated': status_breakdown.get('TOP Generated', 0),
                 'tr52Ready': status_breakdown.get('TR52 Ready', 0),
+                'tr208Ready': status_breakdown.get('TR208 Ready', 0),
                 'readyAuction': status_breakdown.get('Ready for Auction', 0),
                 'readyScrap': status_breakdown.get('Ready for Scrap', 0),
                 'auction': status_breakdown.get('Auction', 0),
@@ -105,7 +106,8 @@ def api_get_vehicles():
                 'completed': sum([
                     status_breakdown.get('Released', 0),
                     status_breakdown.get('Scrapped', 0),
-                    status_breakdown.get('Auctioned', 0)
+                    status_breakdown.get('Auctioned', 0),
+                    status_breakdown.get('Transferred', 0)
                 ]),
                 'active': cursor.execute("SELECT COUNT(*) FROM vehicles WHERE archived = 0").fetchone()[0],
                 'total': cursor.execute("SELECT COUNT(*) FROM vehicles").fetchone()[0]
@@ -165,12 +167,17 @@ def api_get_vehicles():
                     vehicle['storage_fee'] = storage_fee
                     vehicle['storage_days'] = storage_days
                     
-                    if vehicle['status'] == 'TOP Generated' and vehicle.get('tr52_available_date') != 'N/A':
-                        tr52_date = datetime.strptime(vehicle['tr52_available_date'], '%Y-%m-%d')
-                        vehicle['days_until_next_step'] = max(0, (tr52_date - datetime.now()).days)
-                        vehicle['next_step_label'] = 'days until TR52 Ready'
-                    elif vehicle['status'] == 'TR52 Ready':
-                        vehicle['next_step_label'] = 'days since TR52 Ready'
+                    if vehicle['status'] == 'TOP Generated':
+                        if vehicle.get('tr208_eligible') == 1 and vehicle.get('tr208_available_date') != 'N/A':
+                            tr208_date = datetime.strptime(vehicle['tr208_available_date'], '%Y-%m-%d')
+                            vehicle['days_until_next_step'] = max(0, (tr208_date - datetime.now()).days)
+                            vehicle['next_step_label'] = 'days until TR208 Ready'
+                        elif vehicle.get('tr52_available_date') != 'N/A':
+                            tr52_date = datetime.strptime(vehicle['tr52_available_date'], '%Y-%m-%d')
+                            vehicle['days_until_next_step'] = max(0, (tr52_date - datetime.now()).days)
+                            vehicle['next_step_label'] = 'days until TR52 Ready'
+                    elif vehicle['status'] == 'TR52 Ready' or vehicle['status'] == 'TR208 Ready':
+                        vehicle['next_step_label'] = f'days since {vehicle["status"]}'
                         vehicle['days_until_next_step'] = vehicle.get('days_until_next_step', 0)
                     elif vehicle['status'] == 'Ready for Scrap' and vehicle.get('estimated_date') != 'N/A':
                         estimated_date = datetime.strptime(vehicle['estimated_date'], '%Y-%m-%d')
@@ -196,16 +203,20 @@ def update_vehicle_api(call_number):
             if data[key] is None or data[key] == '':
                 data[key] = 'N/A'
                 
+        # Apply field name mapping before updating
+        from utils import map_field_names
+        mapped_data = map_field_names(data)
+        
         # If we're updating jurisdiction, check if it's set to detect and update
-        if 'location' in data and data.get('jurisdiction') == 'detect':
-            location = data.get('location')
+        if 'location' in mapped_data and mapped_data.get('jurisdiction') == 'detect':
+            location = mapped_data.get('location')
             if location and location != 'N/A':
-                data['jurisdiction'] = determine_jurisdiction(location)
-                logging.info(f"Detected jurisdiction: {data['jurisdiction']} from location: {location}")
+                mapped_data['jurisdiction'] = determine_jurisdiction(location)
+                logging.info(f"Detected jurisdiction: {mapped_data['jurisdiction']} from location: {location}")
                 
-        success, message = update_vehicle(call_number, data)
+        success, message = update_vehicle(call_number, mapped_data)
         if success:
-            log_action("UPDATE", call_number, f"Vehicle details updated: {json.dumps(data)}")
+            log_action("UPDATE", call_number, f"Vehicle details updated: {json.dumps(mapped_data)}")
             return jsonify({'status': 'success', 'message': message})
         return jsonify({'status': 'error', 'message': message}), 400
     except Exception as e:
@@ -278,8 +289,7 @@ def api_update_status(call_number):
         new_status = data.get('status')
         if not new_status:
             return jsonify({"error": "No status provided"}), 400
-        from utils import convert_frontend_status
-        new_status = convert_frontend_status(new_status)
+        new_status = new_status.replace('_', ' ')
         logging.info(f"Attempting status update for {call_number} to {new_status}")
         success = update_vehicle_status(call_number, new_status, data)
         if success:
@@ -405,8 +415,9 @@ def compliance_report():
     cursor = conn.cursor()
     cursor.execute("""
         SELECT towbook_call_number, tow_date, top_form_sent_date, tr52_available_date, 
-               status, auction_date, release_date, photo_paths, sale_amount, fees, net_proceeds,
-               jurisdiction, complaint_number, release_reason
+               tr208_available_date, status, auction_date, release_date, photo_paths, 
+               sale_amount, fees, net_proceeds, jurisdiction, complaint_number, release_reason,
+               tr208_eligible, inoperable, damage_extent
         FROM vehicles WHERE archived = 0
     """)
     vehicles = cursor.fetchall()
@@ -415,8 +426,8 @@ def compliance_report():
     output = StringIO()
     writer = csv.writer(output)
     writer.writerow(['Call Number', 'Complaint #', 'Jurisdiction', 'Tow Date', 'Notice Sent Date', 
-                    'Redemption End Date', 'Status', 'Auction Date', 'Release Date', 'Release Reason',
-                    'Photo Count', 'Sale Amount', 'Fees', 'Net Proceeds'])
+                    'TR52/TR208 Date', 'Status', 'TR208 Eligible', 'Auction Date', 'Release Date', 
+                    'Release Reason', 'Photo Count', 'Sale Amount', 'Fees', 'Net Proceeds'])
     for vehicle in vehicles:
         photo_count = 0
         if vehicle['photo_paths']:
@@ -431,8 +442,9 @@ def compliance_report():
             vehicle['jurisdiction'] or 'N/A',
             vehicle['tow_date'] or 'N/A', 
             vehicle['top_form_sent_date'] or 'N/A', 
-            vehicle['tr52_available_date'] or 'N/A', 
+            vehicle['tr52_available_date'] or vehicle['tr208_available_date'] or 'N/A', 
             vehicle['status'] or 'N/A', 
+            'Yes' if vehicle['tr208_eligible'] == 1 else 'No',
             vehicle['auction_date'] or 'N/A', 
             vehicle['release_date'] or 'N/A', 
             vehicle['release_reason'] or 'N/A',
@@ -454,9 +466,9 @@ def compliance_report_pdf():
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT towbook_call_number, complaint_number, tow_date, top_form_sent_date, tr52_available_date, 
-               status, auction_date, release_date, photo_paths, sale_amount, fees, net_proceeds,
-               jurisdiction
+        SELECT towbook_call_number, complaint_number, tow_date, top_form_sent_date, 
+               tr52_available_date, tr208_available_date, status, auction_date, release_date, 
+               photo_paths, sale_amount, fees, net_proceeds, jurisdiction, tr208_eligible
         FROM vehicles
     """)
     vehicles = [dict(row) for row in cursor.fetchall()]
@@ -612,6 +624,12 @@ def send_notification(notification_id):
             success, error = pdf_gen.generate_tr52_form(dict(notification), pdf_path)
             if success:
                 document_path = pdf_path
+        
+        elif notification_type == 'TR208':
+            pdf_path = os.path.join(app.config['GENERATED_FOLDER'], f"TR208_{vehicle_id}.pdf")
+            success, error = pdf_gen.generate_tr208_form(dict(notification), pdf_path)
+            if success:
+                document_path = pdf_path
                 
         elif notification_type == 'Auction_Ad':
             pdf_path = os.path.join(app.config['GENERATED_FOLDER'], f"Auction_{vehicle_id}.pdf")
@@ -736,19 +754,35 @@ def generate_top(call_number):
         for key in data:
             if data[key] is None or data[key] == '':
                 data[key] = 'N/A'
+                
+        # Check if the vehicle is eligible for TR208
+        is_tr208_eligible, _ = is_eligible_for_tr208(data)
+        data['tr208_eligible'] = 1 if is_tr208_eligible else 0
+                
         pdf_path = f"static/generated_pdfs/TOP_{call_number}.pdf"
         os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
         success, error = pdf_gen.generate_top(data, pdf_path)
         if success:
             update_fields = {
                 'top_form_sent_date': datetime.now().strftime('%Y-%m-%d'),
-                'top_notification_sent': 1
+                'top_notification_sent': 1,
+                'tr208_eligible': 1 if is_tr208_eligible else 0
             }
-            tr52_date = datetime.now() + timedelta(days=30)
-            update_fields['tr52_available_date'] = tr52_date.strftime('%Y-%m-%d')
-            update_fields['days_until_next_step'] = 30
-            update_fields['redemption_end_date'] = tr52_date.strftime('%Y-%m-%d')
+            
+            if is_tr208_eligible:
+                # Set TR208 timeline (27 days = 7 days police + 20 days owner)
+                tr208_date = calculate_tr208_timeline(datetime.now())
+                update_fields['tr208_available_date'] = tr208_date.strftime('%Y-%m-%d')
+                update_fields['days_until_next_step'] = 27
+            else:
+                # Standard TR52 timeline (20 days)
+                tr52_date = datetime.now() + timedelta(days=20)
+                update_fields['tr52_available_date'] = tr52_date.strftime('%Y-%m-%d')
+                update_fields['days_until_next_step'] = 20
+                
+            update_fields['redemption_end_date'] = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d')
             update_vehicle_status(call_number, 'TOP Generated', update_fields)
+            
             conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute("INSERT INTO police_logs (vehicle_id, communication_date, communication_type, notes) VALUES (?, ?, ?, ?)",
@@ -821,6 +855,162 @@ def generate_tr52(call_number):
         logging.error(f"Error generating TR52: {e}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/generate-tr208/<call_number>', methods=['POST'])
+def generate_tr208(call_number):
+    try:
+        conn = get_db_connection()
+        vehicle = conn.execute("SELECT * FROM vehicles WHERE towbook_call_number = ?", (call_number,)).fetchone()
+        conn.close()
+        if not vehicle:
+            return jsonify({'error': 'Vehicle not found'}), 404
+        
+        data = dict(vehicle)
+        for key in data:
+            if data[key] is None or data[key] == '':
+                data[key] = 'N/A'
+                
+        # Check if the vehicle is eligible for TR208
+        is_eligible, reasons = is_eligible_for_tr208(data)
+        
+        if not is_eligible:
+            reason_str = ", ".join([f"{k}: {v}" for k, v in reasons.items()])
+            return jsonify({'error': f'Vehicle not eligible for TR208: {reason_str}'}), 400
+        
+        pdf_path = f"static/generated_pdfs/TR208_{call_number}.pdf"
+        os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+        
+        success, error = pdf_gen.generate_tr208_form(data, pdf_path)
+        
+        if success:
+            update_fields = {'tr208_received_date': datetime.now().strftime('%Y-%m-%d')}
+            update_vehicle_status(call_number, 'TR208 Ready', update_fields)
+            
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute("INSERT INTO documents (vehicle_id, type, filename, upload_date) VALUES (?, ?, ?, ?)",
+                          (call_number, 'TR208 Form', os.path.basename(pdf_path), datetime.now().strftime('%Y-%m-%d')))
+            cursor.execute("INSERT INTO police_logs (vehicle_id, communication_date, communication_type, notes) VALUES (?, ?, ?, ?)",
+                           (call_number, datetime.now().strftime('%Y-%m-%d'), 'TR208 Form', 
+                            f"TR208 form generated for jurisdiction: {data['jurisdiction']}"))
+            conn.commit()
+            conn.close()
+            
+            log_action("GENERATE_TR208", call_number, "TR208 form generated for scrap vehicle")
+            return send_file(pdf_path, as_attachment=True)
+        
+        logging.error(f"Failed to generate TR208: {error}")
+        return jsonify({'error': error}), 500
+    except Exception as e:
+        logging.error(f"Error generating TR208: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/check-tr208-eligibility/<call_number>', methods=['GET'])
+def check_tr208_eligibility(call_number):
+    try:
+        conn = get_db_connection()
+        vehicle = conn.execute("SELECT * FROM vehicles WHERE towbook_call_number = ?", (call_number,)).fetchone()
+        conn.close()
+        
+        if not vehicle:
+            return jsonify({'error': 'Vehicle not found'}), 404
+        
+        data = dict(vehicle)
+        # Ensure no null values
+        for key in data:
+            if data[key] is None or data[key] == '':
+                data[key] = 'N/A'
+        
+        # Check eligibility
+        eligible, reasons = is_eligible_for_tr208(data)
+        
+        # Get the timeline
+        timeline_date = None
+        if eligible and data['tow_date'] != 'N/A':
+            timeline_date = calculate_tr208_timeline(data['tow_date']).strftime('%Y-%m-%d')
+        
+        return jsonify({
+            'eligible': eligible,
+            'reasons': reasons,
+            'timeline_date': timeline_date,
+            'vehicle': {
+                'year': data['year'],
+                'make': data['make'],
+                'model': data['model'],
+                'vin': data['vin']
+            }
+        })
+    except Exception as e:
+        logging.error(f"Error checking TR208 eligibility: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/update-vehicle-condition/<call_number>', methods=['POST'])
+def update_vehicle_condition(call_number):
+    try:
+        data = request.json
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Update condition fields
+        cursor.execute("""
+            UPDATE vehicles 
+            SET inoperable = ?, 
+                damage_extent = ?, 
+                condition_notes = ?,
+                last_updated = ?
+            WHERE towbook_call_number = ?
+        """, (
+            data.get('inoperable', 0),
+            data.get('damage_extent', 'N/A'),
+            data.get('condition_notes', 'N/A'),
+            datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            call_number
+        ))
+        
+        # Re-check TR208 eligibility
+        cursor.execute("SELECT * FROM vehicles WHERE towbook_call_number = ?", (call_number,))
+        vehicle = cursor.fetchone()
+        
+        if vehicle:
+            vehicle_data = dict(vehicle)
+            eligible, _ = is_eligible_for_tr208(vehicle_data)
+            
+            cursor.execute("UPDATE vehicles SET tr208_eligible = ? WHERE towbook_call_number = ?", 
+                          (1 if eligible else 0, call_number))
+            
+            # If eligible and has tow date, update TR208 timeline
+            if eligible and vehicle_data['tow_date'] and vehicle_data['tow_date'] != 'N/A':
+                tr208_date = calculate_tr208_timeline(vehicle_data['tow_date'])
+                cursor.execute("UPDATE vehicles SET tr208_available_date = ? WHERE towbook_call_number = ?",
+                              (tr208_date.strftime('%Y-%m-%d'), call_number))
+        
+        conn.commit()
+        
+        # Add a log entry
+        cursor.execute("""
+            INSERT INTO police_logs 
+            (vehicle_id, communication_date, communication_type, notes) 
+            VALUES (?, ?, ?, ?)
+        """, (
+            call_number,
+            datetime.now().strftime('%Y-%m-%d'),
+            'Vehicle Condition',
+            f"Vehicle condition updated: Inoperable: {data.get('inoperable')}, Damage: {data.get('damage_extent')}"
+        ))
+        
+        conn.commit()
+        conn.close()
+        
+        log_action("UPDATE_CONDITION", call_number, "Vehicle condition information updated")
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Vehicle condition updated',
+            'tr208_eligible': eligible
+        })
+    except Exception as e:
+        logging.error(f"Error updating vehicle condition: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @app.route('/api/mark-tr52-ready/<call_number>', methods=['POST'])
 def mark_tr52_ready(call_number):
     try:
@@ -832,6 +1022,19 @@ def mark_tr52_ready(call_number):
         return jsonify({'status': 'error', 'message': 'Failed to update status'}), 500
     except Exception as e:
         logging.error(f"Error marking TR52 ready: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/mark-tr208-ready/<call_number>', methods=['POST'])
+def mark_tr208_ready(call_number):
+    try:
+        update_fields = {'tr208_received_date': datetime.now().strftime('%Y-%m-%d')}
+        success = update_vehicle_status(call_number, 'TR208 Ready', update_fields)
+        if success:
+            log_action("TR208_READY", call_number, "TR208 form received")
+            return jsonify({'status': 'success', 'message': 'Vehicle marked as TR208 Ready'})
+        return jsonify({'status': 'error', 'message': 'Failed to update status'}), 500
+    except Exception as e:
+        logging.error(f"Error marking TR208 ready: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/paperwork-received/<call_number>', methods=['POST'])
@@ -1007,7 +1210,7 @@ def generate_release(call_number):
                 'Owner Redeemed': 'Released',
                 'Auctioned': 'Auctioned',
                 'Scrapped': 'Scrapped',
-                'Title Transfer': 'Released'
+                'Title Transfer': 'Transferred'
             }.get(release_reason, 'Released')
             release_vehicle(call_number, release_reason, data.get('recipient', 'Not specified'),
                            vehicle_data['release_date'], vehicle_data['release_time'])
@@ -1087,7 +1290,7 @@ def workflow_counts():
         due_today = cursor.fetchone()[0]
         cursor.execute("""
             SELECT COUNT(*) FROM vehicles
-            WHERE status = 'TR52 Ready'
+            WHERE status = 'TR52 Ready' OR status = 'TR208 Ready'
         """)
         ready = cursor.fetchone()[0]
         
@@ -1156,6 +1359,7 @@ def get_statistics():
         cursor.execute("""
             SELECT COUNT(*) FROM vehicles 
             WHERE tr52_available_date IS NOT NULL AND tr52_available_date != 'N/A'
+            OR tr208_available_date IS NOT NULL AND tr208_available_date != 'N/A'
         """)
         tr52_ready = cursor.fetchone()[0]
         
@@ -1183,6 +1387,13 @@ def get_statistics():
         """)
         total_proceeds = cursor.fetchone()[0] or 0
         
+        # Get TR208 metrics
+        cursor.execute("""
+            SELECT COUNT(*) FROM vehicles 
+            WHERE tr208_eligible = 1
+        """)
+        tr208_eligible = cursor.fetchone()[0]
+        
         conn.close()
         return jsonify({
             'totalVehicles': total_vehicles,
@@ -1195,6 +1406,7 @@ def get_statistics():
                 'tr52Ready': tr52_ready,
                 'auctionAds': auction_ads,
                 'releaseNotifications': release_notifications,
+                'tr208Eligible': tr208_eligible,
                 'totalSales': round(float(total_sales), 2),
                 'totalProceeds': round(float(total_proceeds), 2)
             }

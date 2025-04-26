@@ -656,3 +656,308 @@
 2025-04-21 08:23:54,285 - INFO - 127.0.0.1 - - [21/Apr/2025 08:23:54] "GET /scraping-progress HTTP/1.1" 200 -
 2025-04-21 08:23:56,293 - INFO - 127.0.0.1 - - [21/Apr/2025 08:23:56] "GET /scraping-progress HTTP/1.1" 200 -
 2025-04-21 08:24:17,291 - INFO - 127.0.0.1 - - [21/Apr/2025 08:24:17] "GET /scraping-progress HTTP/1.1" 200 -
+2025-04-21 12:45:00,639 - INFO - ===== iTow Impound Manager Started =====
+2025-04-21 12:45:00,669 - INFO - Database initialized
+2025-04-21 12:45:00,677 - WARNING - Logo file not found at static/logo.png. PDF documents will not include a logo.
+2025-04-21 12:45:06,838 - INFO - API request: status_type=None, sort=tow_date, direction=desc
+2025-04-21 12:45:06,934 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:45:26,500 - INFO - API request: status_type=None, sort=tow_date, direction=desc
+2025-04-21 12:45:26,504 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:45:47,823 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:45:52,201 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:45:52,201 - INFO - API request: status_type=None, sort=tow_date, direction=desc
+2025-04-21 12:45:55,444 - INFO - API request: status_type=Ready_Scrap, sort=tow_date, direction=desc
+2025-04-21 12:45:55,451 - INFO - Found 1 vehicles for status type Ready_Scrap
+2025-04-21 12:45:58,638 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:46:08,205 - INFO - API request: status_type=Ready_Scrap, sort=tow_date, direction=desc
+2025-04-21 12:46:08,207 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:46:08,214 - INFO - Found 0 vehicles for status type Ready_Scrap
+2025-04-21 12:46:11,726 - INFO - API request: status_type=Completed, sort=tow_date, direction=desc
+2025-04-21 12:46:11,735 - WARNING - Tow date processing error: time data '7/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,735 - WARNING - Tow date processing error: time data '4/9' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,735 - WARNING - Tow date processing error: time data '2/28/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,736 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,736 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,736 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,736 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,737 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,737 - WARNING - Tow date processing error: time data '12/6/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,737 - WARNING - Tow date processing error: time data '11/21/2023' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,737 - WARNING - Tow date processing error: time data '11/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,738 - WARNING - Tow date processing error: time data '11/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,738 - WARNING - Tow date processing error: time data '11/13/2023' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,738 - WARNING - Tow date processing error: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,738 - WARNING - Tow date processing error: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,738 - WARNING - Tow date processing error: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,739 - WARNING - Tow date processing error: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,739 - WARNING - Tow date processing error: time data '10/14/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,739 - INFO - Found 44 vehicles for status type Completed
+2025-04-21 12:46:11,740 - WARNING - Date processing error for 9871: time data '7/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,740 - WARNING - Date processing error for 0: time data '4/9' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,741 - WARNING - Date processing error for 17992: time data '2/28/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,741 - WARNING - Date processing error for 17937: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,742 - WARNING - Date processing error for 17919: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,742 - WARNING - Date processing error for 17916: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,742 - WARNING - Date processing error for 17915: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,742 - WARNING - Date processing error for 17914: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,743 - WARNING - Date processing error for 13834: time data '12/6/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,743 - WARNING - Date processing error for 6403: time data '11/21/2023' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,743 - WARNING - Date processing error for 12869: time data '11/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,743 - WARNING - Date processing error for 12530: time data '11/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,743 - WARNING - Date processing error for 6316: time data '11/13/2023' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,744 - WARNING - Date processing error for 12271: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,744 - WARNING - Date processing error for 12270: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,744 - WARNING - Date processing error for 12269: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,744 - WARNING - Date processing error for 12268: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:11,745 - WARNING - Date processing error for 11653: time data '10/14/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,327 - INFO - API request: status_type=Completed, sort=status, direction=asc
+2025-04-21 12:46:14,334 - WARNING - Tow date processing error: time data '11/13/2023' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,335 - WARNING - Tow date processing error: time data '11/21/2023' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,335 - WARNING - Tow date processing error: time data '7/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,335 - WARNING - Tow date processing error: time data '10/14/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,335 - WARNING - Tow date processing error: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,335 - WARNING - Tow date processing error: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,335 - WARNING - Tow date processing error: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,335 - WARNING - Tow date processing error: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,336 - WARNING - Tow date processing error: time data '11/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,336 - WARNING - Tow date processing error: time data '11/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,336 - WARNING - Tow date processing error: time data '12/6/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,336 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,336 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,336 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,337 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,337 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,337 - WARNING - Tow date processing error: time data '2/28/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,337 - WARNING - Tow date processing error: time data '4/9' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,337 - INFO - Found 44 vehicles for status type Completed
+2025-04-21 12:46:14,338 - WARNING - Date processing error for 6316: time data '11/13/2023' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,338 - WARNING - Date processing error for 6403: time data '11/21/2023' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,338 - WARNING - Date processing error for 9871: time data '7/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,338 - WARNING - Date processing error for 11653: time data '10/14/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,339 - WARNING - Date processing error for 12268: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,339 - WARNING - Date processing error for 12269: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,339 - WARNING - Date processing error for 12270: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,339 - WARNING - Date processing error for 12271: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,339 - WARNING - Date processing error for 12530: time data '11/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,339 - WARNING - Date processing error for 12869: time data '11/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,339 - WARNING - Date processing error for 13834: time data '12/6/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,340 - WARNING - Date processing error for 17914: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,340 - WARNING - Date processing error for 17915: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,340 - WARNING - Date processing error for 17916: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,340 - WARNING - Date processing error for 17919: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,340 - WARNING - Date processing error for 17937: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,340 - WARNING - Date processing error for 17992: time data '2/28/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,341 - WARNING - Date processing error for 0: time data '4/9' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,781 - INFO - API request: status_type=Completed, sort=status, direction=desc
+2025-04-21 12:46:14,788 - WARNING - Tow date processing error: time data '4/9' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,788 - WARNING - Tow date processing error: time data '2/28/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,789 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,789 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,789 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,789 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,789 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,789 - WARNING - Tow date processing error: time data '12/6/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,790 - WARNING - Tow date processing error: time data '11/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,790 - WARNING - Tow date processing error: time data '11/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,790 - WARNING - Tow date processing error: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,790 - WARNING - Tow date processing error: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,790 - WARNING - Tow date processing error: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,790 - WARNING - Tow date processing error: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,790 - WARNING - Tow date processing error: time data '10/14/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,791 - WARNING - Tow date processing error: time data '7/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,791 - WARNING - Tow date processing error: time data '11/21/2023' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,791 - WARNING - Tow date processing error: time data '11/13/2023' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,791 - INFO - Found 44 vehicles for status type Completed
+2025-04-21 12:46:14,792 - WARNING - Date processing error for 0: time data '4/9' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,792 - WARNING - Date processing error for 17992: time data '2/28/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,792 - WARNING - Date processing error for 17937: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,792 - WARNING - Date processing error for 17919: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,792 - WARNING - Date processing error for 17916: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,793 - WARNING - Date processing error for 17915: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,793 - WARNING - Date processing error for 17914: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,793 - WARNING - Date processing error for 13834: time data '12/6/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,793 - WARNING - Date processing error for 12869: time data '11/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,793 - WARNING - Date processing error for 12530: time data '11/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,793 - WARNING - Date processing error for 12271: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,793 - WARNING - Date processing error for 12270: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,794 - WARNING - Date processing error for 12269: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,794 - WARNING - Date processing error for 12268: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,794 - WARNING - Date processing error for 11653: time data '10/14/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,794 - WARNING - Date processing error for 9871: time data '7/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,794 - WARNING - Date processing error for 6403: time data '11/21/2023' does not match format '%Y-%m-%d'
+2025-04-21 12:46:14,794 - WARNING - Date processing error for 6316: time data '11/13/2023' does not match format '%Y-%m-%d'
+2025-04-21 12:52:14,442 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:52:41,284 - INFO - API request: status_type=None, sort=status, direction=desc
+2025-04-21 12:52:54,690 - INFO - API request: status_type=TOP_Generated, sort=status, direction=desc
+2025-04-21 12:52:54,698 - INFO - Found 2 vehicles for status type TOP_Generated
+2025-04-21 12:52:55,363 - INFO - API request: status_type=New, sort=status, direction=desc
+2025-04-21 12:52:55,369 - INFO - Found 0 vehicles for status type New
+2025-04-21 12:52:56,873 - INFO - API request: status_type=TOP_Generated, sort=status, direction=desc
+2025-04-21 12:52:56,879 - INFO - Found 2 vehicles for status type TOP_Generated
+2025-04-21 12:53:05,130 - INFO - API request: status_type=Ready_Auction, sort=status, direction=desc
+2025-04-21 12:53:05,137 - INFO - Found 3 vehicles for status type Ready_Auction
+2025-04-21 12:53:05,610 - INFO - API request: status_type=TR52_Ready, sort=status, direction=desc
+2025-04-21 12:53:05,617 - INFO - Found 13 vehicles for status type TR52_Ready
+2025-04-21 12:53:12,170 - INFO - API request: status_type=Ready_Auction, sort=status, direction=desc
+2025-04-21 12:53:12,176 - INFO - Found 3 vehicles for status type Ready_Auction
+2025-04-21 12:53:25,668 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:53:25,924 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:53:29,751 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:53:36,784 - INFO - API request: status_type=Ready_Auction, sort=status, direction=desc
+2025-04-21 12:53:36,785 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:53:36,789 - INFO - Found 2 vehicles for status type Ready_Auction
+2025-04-21 12:53:39,211 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:53:47,487 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:53:47,493 - INFO - API request: status_type=Ready_Auction, sort=status, direction=desc
+2025-04-21 12:53:47,498 - INFO - Found 1 vehicles for status type Ready_Auction
+2025-04-21 12:53:59,198 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:54:20,132 - INFO - API request: status_type=Ready_Auction, sort=status, direction=desc
+2025-04-21 12:54:20,135 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:54:20,142 - INFO - Found 0 vehicles for status type Ready_Auction
+2025-04-21 12:54:22,137 - INFO - API request: status_type=Ready_Scrap, sort=status, direction=desc
+2025-04-21 12:54:22,143 - INFO - Found 0 vehicles for status type Ready_Scrap
+2025-04-21 12:54:23,390 - INFO - API request: status_type=Completed, sort=status, direction=desc
+2025-04-21 12:54:23,400 - WARNING - Tow date processing error: time data '4/9' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,401 - WARNING - Tow date processing error: time data '2/28/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,401 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,401 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,401 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,402 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,402 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,402 - WARNING - Tow date processing error: time data '12/6/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,402 - WARNING - Tow date processing error: time data '11/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,403 - WARNING - Tow date processing error: time data '11/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,403 - WARNING - Tow date processing error: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,403 - WARNING - Tow date processing error: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,403 - WARNING - Tow date processing error: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,403 - WARNING - Tow date processing error: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,404 - WARNING - Tow date processing error: time data '10/14/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,404 - WARNING - Tow date processing error: time data '7/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,404 - WARNING - Tow date processing error: time data '11/21/2023' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,404 - WARNING - Tow date processing error: time data '11/13/2023' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,405 - INFO - Found 47 vehicles for status type Completed
+2025-04-21 12:54:23,406 - WARNING - Date processing error for 0: time data '4/9' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,406 - WARNING - Date processing error for 17992: time data '2/28/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,406 - WARNING - Date processing error for 17937: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,407 - WARNING - Date processing error for 17919: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,407 - WARNING - Date processing error for 17916: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,407 - WARNING - Date processing error for 17915: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,407 - WARNING - Date processing error for 17914: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,408 - WARNING - Date processing error for 13834: time data '12/6/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,408 - WARNING - Date processing error for 12869: time data '11/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,408 - WARNING - Date processing error for 12530: time data '11/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,408 - WARNING - Date processing error for 12271: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,409 - WARNING - Date processing error for 12270: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,409 - WARNING - Date processing error for 12269: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,409 - WARNING - Date processing error for 12268: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,409 - WARNING - Date processing error for 11653: time data '10/14/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,409 - WARNING - Date processing error for 9871: time data '7/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,410 - WARNING - Date processing error for 6403: time data '11/21/2023' does not match format '%Y-%m-%d'
+2025-04-21 12:54:23,410 - WARNING - Date processing error for 6316: time data '11/13/2023' does not match format '%Y-%m-%d'
+2025-04-21 12:54:25,299 - INFO - API request: status_type=TR52_Ready, sort=status, direction=desc
+2025-04-21 12:54:25,304 - INFO - Found 13 vehicles for status type TR52_Ready
+2025-04-21 12:54:27,748 - INFO - API request: status_type=TOP_Generated, sort=status, direction=desc
+2025-04-21 12:54:27,754 - INFO - Found 2 vehicles for status type TOP_Generated
+2025-04-21 12:54:33,826 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:54:38,275 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:54:43,937 - INFO - API request: status_type=TOP_Generated, sort=status, direction=desc
+2025-04-21 12:54:43,938 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:54:43,945 - INFO - Found 1 vehicles for status type TOP_Generated
+2025-04-21 12:54:45,785 - INFO - API request: status_type=New, sort=status, direction=desc
+2025-04-21 12:54:45,792 - INFO - Found 1 vehicles for status type New
+2025-04-21 12:54:48,176 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:54:52,920 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:54:52,920 - INFO - API request: status_type=New, sort=status, direction=desc
+2025-04-21 12:54:52,926 - INFO - Found 1 vehicles for status type New
+2025-04-21 12:54:56,470 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:54:58,840 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:54:59,003 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:55:23,827 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:55:23,828 - INFO - API request: status_type=New, sort=status, direction=desc
+2025-04-21 12:55:23,838 - INFO - Found 0 vehicles for status type New
+2025-04-21 12:55:23,839 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:55:23,916 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:55:27,046 - INFO - API request: status_type=New, sort=status, direction=desc
+2025-04-21 12:55:27,050 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 12:55:27,052 - INFO - Found 0 vehicles for status type New
+2025-04-21 12:56:11,956 - INFO - API request: status_type=New, sort=status, direction=desc
+2025-04-21 12:56:11,962 - INFO - Found 0 vehicles for status type New
+2025-04-21 12:56:11,965 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 15:57:20,082 - INFO - API request: status_type=None, sort=tow_date, direction=desc
+2025-04-21 15:57:20,215 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 20:22:44,889 - INFO - API request: status_type=None, sort=tow_date, direction=desc
+2025-04-21 20:22:45,011 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 20:23:28,323 - INFO - API request: status_type=None, sort=tow_date, direction=desc
+2025-04-21 20:23:28,373 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 20:23:50,496 - INFO - API request: status_type=New, sort=tow_date, direction=desc
+2025-04-21 20:23:50,504 - INFO - Found 0 vehicles for status type New
+2025-04-21 20:23:51,468 - INFO - API request: status_type=TOP_Generated, sort=tow_date, direction=desc
+2025-04-21 20:23:51,489 - INFO - Found 1 vehicles for status type TOP_Generated
+2025-04-21 20:23:52,532 - INFO - API request: status_type=TR52_Ready, sort=tow_date, direction=desc
+2025-04-21 20:23:52,541 - INFO - Found 13 vehicles for status type TR52_Ready
+2025-04-21 20:24:03,994 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 20:24:04,078 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 20:24:19,901 - INFO - API request: status_type=TR52_Ready, sort=tow_date, direction=desc
+2025-04-21 20:24:19,907 - INFO - Found 12 vehicles for status type TR52_Ready
+2025-04-21 20:24:19,909 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 20:24:19,914 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 20:24:19,981 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 20:24:34,233 - INFO - API request: status_type=None, sort=tow_date, direction=desc
+2025-04-21 20:24:40,445 - INFO - API request: status_type=TOP_Generated, sort=tow_date, direction=desc
+2025-04-21 20:24:40,451 - INFO - Found 2 vehicles for status type TOP_Generated
+2025-04-21 20:24:50,365 - INFO - API request: status_type=None, sort=tow_date, direction=desc
+2025-04-21 20:24:50,428 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 20:24:50,553 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-21 20:24:50,562 - INFO - API request: status_type=None, sort=tow_date, direction=desc
+2025-04-21 20:24:51,238 - INFO - API request: status_type=TOP_Generated, sort=tow_date, direction=desc
+2025-04-21 20:24:51,244 - INFO - Found 2 vehicles for status type TOP_Generated
+2025-04-21 20:24:59,816 - INFO - API request: status_type=None, sort=tow_date, direction=desc
+2025-04-21 20:25:13,214 - ERROR - Error getting statistics: no such column: top_notification_sent
+2025-04-21 20:25:52,253 - INFO - API request: status_type=Completed, sort=tow_date, direction=desc
+2025-04-21 20:25:52,266 - WARNING - Tow date processing error: time data '7/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,267 - WARNING - Tow date processing error: time data '4/9' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,267 - WARNING - Tow date processing error: time data '2/28/2025' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,268 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,268 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,269 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,269 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,269 - WARNING - Tow date processing error: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,269 - WARNING - Tow date processing error: time data '12/6/2024' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,270 - WARNING - Tow date processing error: time data '11/21/2023' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,270 - WARNING - Tow date processing error: time data '11/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,270 - WARNING - Tow date processing error: time data '11/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,271 - WARNING - Tow date processing error: time data '11/13/2023' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,271 - WARNING - Tow date processing error: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,271 - WARNING - Tow date processing error: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,272 - WARNING - Tow date processing error: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,272 - WARNING - Tow date processing error: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,272 - WARNING - Tow date processing error: time data '10/14/2024' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,273 - INFO - Found 48 vehicles for status type Completed
+2025-04-21 20:25:52,273 - WARNING - Date processing error for 9871: time data '7/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,274 - WARNING - Date processing error for 0: time data '4/9' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,275 - WARNING - Date processing error for 17992: time data '2/28/2025' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,275 - WARNING - Date processing error for 17937: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,276 - WARNING - Date processing error for 17919: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,276 - WARNING - Date processing error for 17916: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,277 - WARNING - Date processing error for 17915: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,277 - WARNING - Date processing error for 17914: time data '2/27/2025' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,277 - WARNING - Date processing error for 13834: time data '12/6/2024' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,278 - WARNING - Date processing error for 6403: time data '11/21/2023' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,278 - WARNING - Date processing error for 12869: time data '11/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,278 - WARNING - Date processing error for 12530: time data '11/13/2024' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,279 - WARNING - Date processing error for 6316: time data '11/13/2023' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,279 - WARNING - Date processing error for 12271: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,279 - WARNING - Date processing error for 12270: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,279 - WARNING - Date processing error for 12269: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,280 - WARNING - Date processing error for 12268: time data '10/29/2024' does not match format '%Y-%m-%d'
+2025-04-21 20:25:52,280 - WARNING - Date processing error for 11653: time data '10/14/2024' does not match format '%Y-%m-%d'
+2025-04-21 20:25:58,789 - INFO - API request: status_type=Ready_Auction, sort=tow_date, direction=desc
+2025-04-21 20:25:58,794 - INFO - Found 0 vehicles for status type Ready_Auction
+2025-04-21 20:26:00,371 - INFO - API request: status_type=Ready_Scrap, sort=tow_date, direction=desc
+2025-04-21 20:26:00,378 - INFO - Found 0 vehicles for status type Ready_Scrap
+2025-04-21 20:26:02,353 - INFO - API request: status_type=TR52_Ready, sort=tow_date, direction=desc
+2025-04-21 20:26:02,363 - INFO - Found 12 vehicles for status type TR52_Ready
+2025-04-21 20:26:06,474 - ERROR - Error getting statistics: no such column: top_notification_sent
+2025-04-21 20:26:37,524 - ERROR - Error getting statistics: no such column: top_notification_sent
+2025-04-21 20:26:39,096 - INFO - API request: status_type=New, sort=tow_date, direction=desc
+2025-04-21 20:26:39,102 - INFO - Found 0 vehicles for status type New

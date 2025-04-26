@@ -1,0 +1,12 @@
+2025-04-25 17:14:43,314 - INFO - ===== iTow Impound Manager Started =====
+2025-04-25 17:14:43,360 - INFO - Database initialized
+2025-04-25 17:14:43,371 - WARNING - Logo file not found at static/logo.png. PDF documents will not include a logo.
+2025-04-25 17:14:43,701 - INFO - API request: status_type=None, sort=tow_date, direction=desc
+2025-04-25 17:14:43,814 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-25 17:17:54,829 - INFO - API request: status_type=None, sort=tow_date, direction=desc
+2025-04-25 17:17:54,980 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-25 17:18:08,749 - INFO - API request: status_type=None, sort=tow_date, direction=desc
+2025-04-25 17:18:08,759 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-25 17:18:49,442 - INFO - API request: status_type=None, sort=tow_date, direction=desc
+2025-04-25 19:07:24,325 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-25 19:07:25,633 - INFO - API request: status_type=None, sort=tow_date, direction=desc

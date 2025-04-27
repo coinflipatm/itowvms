@@ -3,6 +3,22 @@ import os
 import logging
 from datetime import datetime, timedelta
 
+# Helper function for safely parsing dates
+def safe_parse_date(date_str):
+    """Safely parse a date string, returning None if invalid"""
+    if not date_str or date_str == 'N/A':
+        return None
+    
+    try:
+        return datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        try:
+            # Try alternate format
+            return datetime.strptime(date_str, '%m/%d/%Y').date()
+        except ValueError:
+            logging.warning(f"Could not parse date: {date_str}")
+            return None
+
 # Make sure we have a consistent database path
 def get_database_path():
     # Get the directory where this script is located
@@ -12,11 +28,21 @@ def get_database_path():
     return db_path
 
 def get_db_connection():
-    # Modify this path to point to your actual database file
-    db_path = r'C:\Users\Finor\impound_lot_manager\itowvms-1\vehicles.db'
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    return conn
+    try:
+        # Try the hardcoded path first
+        db_path = r'C:\Users\Finor\impound_lot_manager\itowvms-1\vehicles.db'
+        if not os.path.exists(db_path):
+            # Fall back to relative path if hardcoded path doesn't exist
+            db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'vehicles.db')
+            logging.info(f"Using fallback database path: {db_path}")
+        
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+    except Exception as e:
+        logging.error(f"Database connection error: {e}")
+        # Create a more helpful error message
+        raise Exception(f"Failed to connect to database at {db_path}. Error: {str(e)}")
 
 def transaction():
     """Context manager for database transactions"""
@@ -254,6 +280,21 @@ def get_vehicles_by_status(status_type, sort_column=None, sort_direction=None):
     from utils import get_status_filter
     
     try:
+        # Convert underscored status to space format to match database
+        original_status_type = status_type
+        if status_type == 'TOP_Generated':
+            status_type = 'TOP Generated'
+        elif status_type == 'TR52_Ready':
+            status_type = 'TR52 Ready'  
+        elif status_type == 'TR208_Ready':
+            status_type = 'TR208 Ready'
+        elif status_type == 'Ready_for_Auction':
+            status_type = 'Ready for Auction'
+        elif status_type == 'Ready_for_Scrap':
+            status_type = 'Ready for Scrap'
+        
+        logging.info(f"Getting vehicles by status: {status_type} (original: {original_status_type})")
+        
         conn = get_db_connection()
         cursor = conn.cursor()
         
@@ -286,32 +327,65 @@ def get_vehicles_by_status(status_type, sort_column=None, sort_direction=None):
         else:
             query += " ORDER BY tow_date DESC"
         
-        cursor.execute(query, status_filter if len(status_filter) > 0 else [status_type])
-        vehicles = [dict(row) for row in cursor.fetchall()]
+        logging.info(f"SQL Query: {query} with params: {status_filter}")
+        if status_type == 'active':
+            rows = cursor.execute(query).fetchall()
+        elif status_filter:
+            rows = cursor.execute(query, status_filter).fetchall()
+        else:
+            rows = cursor.execute(query, [status_type]).fetchall()
         
-        # Add days calculations
+        vehicles = [dict(row) for row in rows]
+        
+        # Add days calculations with improved error handling
         today = datetime.now().date()
         for vehicle in vehicles:
+            # Ensure all keys have values (not None)
+            for key in vehicle:
+                if vehicle[key] is None:
+                    vehicle[key] = 'N/A'
+            
+            # Calculate days since tow
             if vehicle.get('tow_date') and vehicle['tow_date'] != 'N/A':
-                try:
-                    tow_date = datetime.strptime(vehicle['tow_date'], '%Y-%m-%d').date()
+                tow_date = safe_parse_date(vehicle['tow_date'])
+                if tow_date:
                     vehicle['days_since_tow'] = (today - tow_date).days
-                except Exception as e:
-                    logging.warning(f"Tow date processing error: {e}")
-            if vehicle.get('status') == 'TOP Generated' and vehicle.get('top_form_sent_date') and vehicle['top_form_sent_date'] != 'N/A':
-                try:
-                    top_date = datetime.strptime(vehicle['top_form_sent_date'], '%Y-%m-%d').date()
-                    tr52_date = top_date + timedelta(days=20)
-                    vehicle['days_until_ready'] = max(0, (tr52_date - today).days)
-                    vehicle['tr52_date'] = tr52_date.strftime('%Y-%m-%d')
-                except Exception as e:
-                    logging.warning(f"TOP date processing error: {e}")
-            if vehicle.get('status') == 'Ready for Auction' and vehicle.get('auction_date') and vehicle['auction_date'] != 'N/A':
-                try:
-                    auction_date = datetime.strptime(vehicle['auction_date'], '%Y-%m-%d').date()
+                else:
+                    vehicle['days_since_tow'] = 0
+            
+            # Handle TOP Generated status
+            if vehicle.get('status') == 'TOP Generated':
+                # Look for TR208 eligible cases
+                if vehicle.get('tr208_eligible') == 1 and vehicle.get('tr208_available_date') and vehicle['tr208_available_date'] != 'N/A':
+                    tr208_date = safe_parse_date(vehicle['tr208_available_date'])
+                    if tr208_date:
+                        vehicle['days_until_next_step'] = max(0, (tr208_date - today).days)
+                        vehicle['next_step_label'] = 'days until TR208 Ready'
+                # Otherwise handle TR52 cases
+                elif vehicle.get('tr52_available_date') and vehicle['tr52_available_date'] != 'N/A':
+                    tr52_date = safe_parse_date(vehicle['tr52_available_date'])
+                    if tr52_date:
+                        vehicle['days_until_next_step'] = max(0, (tr52_date - today).days)
+                        vehicle['next_step_label'] = 'days until TR52 Ready'
+            
+            # Handle TR52/TR208 Ready statuses
+            elif vehicle.get('status') in ['TR52 Ready', 'TR208 Ready']:
+                vehicle['next_step_label'] = f'days since {vehicle["status"]}'
+                vehicle['days_until_next_step'] = vehicle.get('days_until_next_step', 0)
+            
+            # Handle Ready for Scrap status
+            elif vehicle.get('status') == 'Ready for Scrap' and vehicle.get('estimated_date') and vehicle['estimated_date'] != 'N/A':
+                estimated_date = safe_parse_date(vehicle['estimated_date'])
+                if estimated_date:
+                    vehicle['days_until_next_step'] = max(0, (estimated_date - today).days)
+                    vehicle['next_step_label'] = 'days until legal scrap date'
+            
+            # Handle Ready for Auction status
+            elif vehicle.get('status') == 'Ready for Auction' and vehicle.get('auction_date') and vehicle['auction_date'] != 'N/A':
+                auction_date = safe_parse_date(vehicle['auction_date'])
+                if auction_date:
                     vehicle['days_until_auction'] = max(0, (auction_date - today).days)
-                except Exception as e:
-                    logging.warning(f"Auction date processing error: {e}")
+                    vehicle['next_step_label'] = 'days until auction'
         
         conn.close()
         return vehicles
@@ -321,6 +395,21 @@ def get_vehicles_by_status(status_type, sort_column=None, sort_direction=None):
 
 def update_vehicle_status(call_number, new_status, update_fields=None):
     from utils import log_action, is_eligible_for_tr208, calculate_tr208_timeline, calculate_next_auction_date, calculate_newspaper_ad_date
+    
+    # First, convert any underscored status to space format
+    if new_status == 'TOP_Generated':
+        new_status = 'TOP Generated'
+    elif new_status == 'TR52_Ready':
+        new_status = 'TR52 Ready'  
+    elif new_status == 'TR208_Ready':
+        new_status = 'TR208 Ready'
+    elif new_status == 'Ready_for_Auction':
+        new_status = 'Ready for Auction'
+    elif new_status == 'Ready_for_Scrap':
+        new_status = 'Ready for Scrap'
+        
+    logging.info(f"Updating vehicle {call_number} status to: {new_status}")
+    
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -612,13 +701,16 @@ def insert_vehicle(data):
             
             # Create initial notification records
             if 'tow_date' in data and data['tow_date'] != 'N/A':
-                tow_date = datetime.strptime(data['tow_date'], '%Y-%m-%d')
-                top_due_date = tow_date + timedelta(days=1)
-                cursor.execute("""
-                    INSERT INTO notifications
-                    (vehicle_id, notification_type, due_date, status)
-                    VALUES (?, ?, ?, ?)
-                """, (towbook_call_number, 'TOP', top_due_date.strftime('%Y-%m-%d'), 'pending'))
+                try:
+                    tow_date = datetime.strptime(data['tow_date'], '%Y-%m-%d')
+                    top_due_date = tow_date + timedelta(days=1)
+                    cursor.execute("""
+                        INSERT INTO notifications
+                        (vehicle_id, notification_type, due_date, status)
+                        VALUES (?, ?, ?, ?)
+                    """, (towbook_call_number, 'TOP', top_due_date.strftime('%Y-%m-%d'), 'pending'))
+                except ValueError as e:
+                    logging.warning(f"Could not parse tow date '{data['tow_date']}' for {towbook_call_number}: {e}")
         
         conn.commit()
         conn.close()
@@ -627,7 +719,6 @@ def insert_vehicle(data):
     except Exception as e:
         logging.error(f"Insert error: {e}")
         return False, str(e)
-
 def check_and_update_statuses():
     from utils import log_action
     try:
@@ -658,147 +749,161 @@ def check_and_update_statuses():
             tow_date = vehicle['tow_date']
             if tow_date:
                 try:
-                    tow_date = datetime.strptime(tow_date, '%Y-%m-%d').date()
-                except ValueError:
-                    tow_date = datetime.strptime(tow_date, '%m/%d/%Y').date()
-                    cursor.execute("UPDATE vehicles SET tow_date = ? WHERE towbook_call_number = ?",
-                                 (tow_date.strftime('%Y-%m-%d'), vehicle['towbook_call_number']))
-
-                if vehicle['status'] == 'TOP Generated' and vehicle['top_form_sent_date']:
-                    try:
-                        top_date = datetime.strptime(vehicle['top_form_sent_date'], '%Y-%m-%d').date()
-                        days_since_top = (today - top_date).days
+                    tow_date = safe_parse_date(tow_date)
+                    if not tow_date:
+                        continue
                         
-                        # Check if vehicle is eligible for TR208
-                        if vehicle['tr208_eligible'] == 1:
-                            # Check if TR208 date is reached
-                            tr208_date = datetime.strptime(vehicle['tr208_available_date'], '%Y-%m-%d').date() if vehicle['tr208_available_date'] else top_date + timedelta(days=27)
-                            if today >= tr208_date:
-                                cursor.execute("""
-                                    UPDATE vehicles SET status = ?, last_updated = ?
-                                    WHERE towbook_call_number = ?
-                                """, ('TR208 Ready', datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                     vehicle['towbook_call_number']))
+                    # Convert to ISO format for database update if needed
+                    if isinstance(tow_date, datetime.date):
+                        cursor.execute("UPDATE vehicles SET tow_date = ? WHERE towbook_call_number = ?",
+                                     (tow_date.strftime('%Y-%m-%d'), vehicle['towbook_call_number']))
 
-                                # Create notification for TR208 ready
-                                cursor.execute("""
-                                    INSERT INTO notifications
-                                    (vehicle_id, notification_type, due_date, status)
-                                    VALUES (?, ?, ?, ?)
-                                """, (vehicle['towbook_call_number'], 'TR208_Ready',
-                                     today.strftime('%Y-%m-%d'), 'pending'))
+                    if vehicle['status'] == 'TOP Generated' and vehicle['top_form_sent_date']:
+                        try:
+                            top_date = safe_parse_date(vehicle['top_form_sent_date'])
+                            if not top_date:
+                                continue
+                                
+                            days_since_top = (today - top_date).days
+                            
+                            # Check if vehicle is eligible for TR208
+                            if vehicle['tr208_eligible'] == 1:
+                                # Check if TR208 date is reached
+                                tr208_date = safe_parse_date(vehicle['tr208_available_date']) if vehicle['tr208_available_date'] else top_date + timedelta(days=27)
+                                if not tr208_date:
+                                    continue
+                                    
+                                if today >= tr208_date:
+                                    cursor.execute("""
+                                        UPDATE vehicles SET status = ?, last_updated = ?
+                                        WHERE towbook_call_number = ?
+                                    """, ('TR208 Ready', datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                         vehicle['towbook_call_number']))
 
-                                log_action("AUTO_STATUS", vehicle['towbook_call_number'],
-                                         "Automatically moved to TR208 Ready status")
-                            else:
-                                days_left = (tr208_date - today).days
-                                cursor.execute("""
-                                    UPDATE vehicles SET days_until_next_step = ?
-                                    WHERE towbook_call_number = ?
-                                """, (days_left, vehicle['towbook_call_number']))
-                        else:
-                            # Standard TR52 path
-                            if days_since_top >= 20:
-                                cursor.execute("""
-                                    UPDATE vehicles SET status = ?, last_updated = ?
-                                    WHERE towbook_call_number = ?
-                                """, ('TR52 Ready', datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                     vehicle['towbook_call_number']))
-
-                                # Create notification for TR52 ready
-                                cursor.execute("""
-                                    INSERT INTO notifications
-                                    (vehicle_id, notification_type, due_date, status)
-                                    VALUES (?, ?, ?, ?)
-                                """, (vehicle['towbook_call_number'], 'TR52_Ready',
-                                     today.strftime('%Y-%m-%d'), 'pending'))
-
-                                log_action("AUTO_STATUS", vehicle['towbook_call_number'],
-                                         "Automatically moved to TR52 Ready status after 20 days")
-                            else:
-                                days_left = 20 - days_since_top
-                                cursor.execute("""
-                                    UPDATE vehicles SET days_until_next_step = ?
-                                    WHERE towbook_call_number = ?
-                                """, (days_left, vehicle['towbook_call_number']))
-
-                                # Check if we should send a reminder at 15 days
-                                if days_since_top == 15:
+                                    # Create notification for TR208 ready
                                     cursor.execute("""
                                         INSERT INTO notifications
                                         (vehicle_id, notification_type, due_date, status)
                                         VALUES (?, ?, ?, ?)
-                                    """, (vehicle['towbook_call_number'], 'TOP_Reminder',
+                                    """, (vehicle['towbook_call_number'], 'TR208_Ready',
                                          today.strftime('%Y-%m-%d'), 'pending'))
-                    except Exception as e:
-                        logging.warning(f"TOP date processing error for {vehicle['towbook_call_number']}: {e}")
 
-                elif vehicle['status'] == 'Ready for Auction' and vehicle['auction_date']:
-                    try:
-                        auction_date = datetime.strptime(vehicle['auction_date'], '%Y-%m-%d').date()
-                        days_until_auction = (auction_date - today).days
-                        cursor.execute("""
-                            UPDATE vehicles SET days_until_auction = ?
-                            WHERE towbook_call_number = ?
-                        """, (max(0, days_until_auction), vehicle['towbook_call_number']))
+                                    log_action("AUTO_STATUS", vehicle['towbook_call_number'],
+                                             "Automatically moved to TR208 Ready status")
+                                else:
+                                    days_left = (tr208_date - today).days
+                                    cursor.execute("""
+                                        UPDATE vehicles SET days_until_next_step = ?
+                                        WHERE towbook_call_number = ?
+                                    """, (days_left, vehicle['towbook_call_number']))
+                            else:
+                                # Standard TR52 path
+                                if days_since_top >= 20:
+                                    cursor.execute("""
+                                        UPDATE vehicles SET status = ?, last_updated = ?
+                                        WHERE towbook_call_number = ?
+                                    """, ('TR52 Ready', datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                         vehicle['towbook_call_number']))
 
-                        # Create notification for auction ad 10 days before auction
-                        if days_until_auction == 10 and not vehicle['auction_ad_sent']:
+                                    # Create notification for TR52 ready
+                                    cursor.execute("""
+                                        INSERT INTO notifications
+                                        (vehicle_id, notification_type, due_date, status)
+                                        VALUES (?, ?, ?, ?)
+                                    """, (vehicle['towbook_call_number'], 'TR52_Ready',
+                                         today.strftime('%Y-%m-%d'), 'pending'))
+
+                                    log_action("AUTO_STATUS", vehicle['towbook_call_number'],
+                                             "Automatically moved to TR52 Ready status after 20 days")
+                                else:
+                                    days_left = 20 - days_since_top
+                                    cursor.execute("""
+                                        UPDATE vehicles SET days_until_next_step = ?
+                                        WHERE towbook_call_number = ?
+                                    """, (days_left, vehicle['towbook_call_number']))
+
+                                    # Check if we should send a reminder at 15 days
+                                    if days_since_top == 15:
+                                        cursor.execute("""
+                                            INSERT INTO notifications
+                                            (vehicle_id, notification_type, due_date, status)
+                                            VALUES (?, ?, ?, ?)
+                                        """, (vehicle['towbook_call_number'], 'TOP_Reminder',
+                                             today.strftime('%Y-%m-%d'), 'pending'))
+                        except Exception as e:
+                            logging.warning(f"TOP date processing error for {vehicle['towbook_call_number']}: {e}")
+
+                    elif vehicle['status'] == 'Ready for Auction' and vehicle['auction_date']:
+                        try:
+                            auction_date = safe_parse_date(vehicle['auction_date'])
+                            if not auction_date:
+                                continue
+                                
+                            days_until_auction = (auction_date - today).days
                             cursor.execute("""
-                                INSERT INTO notifications
-                                (vehicle_id, notification_type, due_date, status)
-                                VALUES (?, ?, ?, ?)
-                            """, (vehicle['towbook_call_number'], 'Auction_Ad',
-                                 today.strftime('%Y-%m-%d'), 'pending'))
-
-                        # Create notification for auction report day after auction
-                        if days_until_auction == -1:
-                            cursor.execute("""
-                                INSERT INTO notifications
-                                (vehicle_id, notification_type, due_date, status)
-                                VALUES (?, ?, ?, ?)
-                            """, (vehicle['towbook_call_number'], 'Auction_Report',
-                                 today.strftime('%Y-%m-%d'), 'pending'))
-
-                        if days_until_auction < -1:
-                            cursor.execute("""
-                                UPDATE vehicles SET status = ?, archived = 1, release_reason = ?,
-                                release_date = ?, last_updated = ?
+                                UPDATE vehicles SET days_until_auction = ?
                                 WHERE towbook_call_number = ?
-                            """, ('Auctioned', 'Auto-completed auction',
-                                 auction_date.strftime('%Y-%m-%d'),
-                                 datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                 vehicle['towbook_call_number']))
-                            log_action("AUTO_STATUS", vehicle['towbook_call_number'],
-                                     "Automatically marked as Auctioned after auction date")
-                    except Exception as e:
-                        logging.warning(f"Auction date processing error for {vehicle['towbook_call_number']}: {e}")
+                            """, (max(0, days_until_auction), vehicle['towbook_call_number']))
 
-                elif vehicle['status'] == 'Ready for Scrap':
-                    try:
-                        days_since_tow = (today - tow_date).days
-                        if days_since_tow < 27:
-                            days_left = 27 - days_since_tow
-                            cursor.execute("""
-                                UPDATE vehicles SET days_until_next_step = ?
-                                WHERE towbook_call_number = ?
-                            """, (days_left, vehicle['towbook_call_number']))
-
-                            # Create notification for scrap photos 1 day before legal scrap date
-                            if days_left == 1:
+                            # Create notification for auction ad 10 days before auction
+                            if days_until_auction == 10 and not vehicle['auction_ad_sent']:
                                 cursor.execute("""
                                     INSERT INTO notifications
                                     (vehicle_id, notification_type, due_date, status)
                                     VALUES (?, ?, ?, ?)
-                                """, (vehicle['towbook_call_number'], 'Scrap_Photos',
+                                """, (vehicle['towbook_call_number'], 'Auction_Ad',
                                      today.strftime('%Y-%m-%d'), 'pending'))
-                        else:
-                            cursor.execute("""
-                                UPDATE vehicles SET days_until_next_step = 0
-                                WHERE towbook_call_number = ?
-                            """, (vehicle['towbook_call_number'],))
-                    except Exception as e:
-                        logging.warning(f"Scrap date processing error for {vehicle['towbook_call_number']}: {e}")
+
+                            # Create notification for auction report day after auction
+                            if days_until_auction == -1:
+                                cursor.execute("""
+                                    INSERT INTO notifications
+                                    (vehicle_id, notification_type, due_date, status)
+                                    VALUES (?, ?, ?, ?)
+                                """, (vehicle['towbook_call_number'], 'Auction_Report',
+                                     today.strftime('%Y-%m-%d'), 'pending'))
+
+                            if days_until_auction < -1:
+                                cursor.execute("""
+                                    UPDATE vehicles SET status = ?, archived = 1, release_reason = ?,
+                                    release_date = ?, last_updated = ?
+                                    WHERE towbook_call_number = ?
+                                """, ('Auctioned', 'Auto-completed auction',
+                                     auction_date.strftime('%Y-%m-%d'),
+                                     datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                     vehicle['towbook_call_number']))
+                                log_action("AUTO_STATUS", vehicle['towbook_call_number'],
+                                         "Automatically marked as Auctioned after auction date")
+                        except Exception as e:
+                            logging.warning(f"Auction date processing error for {vehicle['towbook_call_number']}: {e}")
+
+                    elif vehicle['status'] == 'Ready for Scrap':
+                        try:
+                            days_since_tow = (today - tow_date).days if tow_date else 0
+                            if days_since_tow < 27:
+                                days_left = 27 - days_since_tow
+                                cursor.execute("""
+                                    UPDATE vehicles SET days_until_next_step = ?
+                                    WHERE towbook_call_number = ?
+                                """, (days_left, vehicle['towbook_call_number']))
+
+                                # Create notification for scrap photos 1 day before legal scrap date
+                                if days_left == 1:
+                                    cursor.execute("""
+                                        INSERT INTO notifications
+                                        (vehicle_id, notification_type, due_date, status)
+                                        VALUES (?, ?, ?, ?)
+                                    """, (vehicle['towbook_call_number'], 'Scrap_Photos',
+                                         today.strftime('%Y-%m-%d'), 'pending'))
+                            else:
+                                cursor.execute("""
+                                    UPDATE vehicles SET days_until_next_step = 0
+                                    WHERE towbook_call_number = ?
+                                """, (vehicle['towbook_call_number'],))
+                        except Exception as e:
+                            logging.warning(f"Scrap date processing error for {vehicle['towbook_call_number']}: {e}")
+                except Exception as e:
+                    logging.warning(f"Date processing error for {vehicle['towbook_call_number']}: {e}")
 
         # Check for any pending notifications
         cursor.execute("""
@@ -837,8 +942,22 @@ def check_and_update_statuses():
         return False
 
 def get_vehicles(tab, sort_column=None, sort_direction='asc'):
+    """
+    Enhanced version of get_vehicles with improved error handling
+    """
     try:
-        if tab == 'active':
+        # Special handling for status types that come with underscores from frontend
+        if tab == 'TOP_Generated':
+            return get_vehicles_by_status('TOP Generated', sort_column, sort_direction)
+        elif tab == 'TR52_Ready':
+            return get_vehicles_by_status('TR52 Ready', sort_column, sort_direction)
+        elif tab == 'TR208_Ready':
+            return get_vehicles_by_status('TR208 Ready', sort_column, sort_direction)
+        elif tab == 'Ready_for_Auction':
+            return get_vehicles_by_status('Ready for Auction', sort_column, sort_direction)
+        elif tab == 'Ready_for_Scrap':
+            return get_vehicles_by_status('Ready for Scrap', sort_column, sort_direction)
+        elif tab == 'active':
             conn = get_db_connection()
             cursor = conn.cursor()
             sort_by = "tow_date DESC"
@@ -852,8 +971,18 @@ def get_vehicles(tab, sort_column=None, sort_direction='asc'):
                     sort_by = f"{sort_column} {sort_dir}"
             cursor.execute(f"SELECT * FROM vehicles WHERE archived = 0 ORDER BY {sort_by}")
             vehicles = cursor.fetchall()
+            
+            # Convert row objects to dictionaries and ensure no None values
+            result = []
+            for vehicle in vehicles:
+                vehicle_dict = dict(vehicle)
+                for key in vehicle_dict:
+                    if vehicle_dict[key] is None:
+                        vehicle_dict[key] = 'N/A'
+                result.append(vehicle_dict)
+                
             conn.close()
-            return vehicles
+            return result
         else:
             return get_vehicles_by_status(tab, sort_column, sort_direction)
     except Exception as e:
@@ -894,6 +1023,18 @@ def toggle_archive_status(call_number):
 def batch_update_status(vehicle_ids, new_status):
     from utils import log_action
     try:
+        # Convert underscored status to space format if needed
+        if new_status == 'TOP_Generated':
+            new_status = 'TOP Generated'
+        elif new_status == 'TR52_Ready':
+            new_status = 'TR52 Ready'  
+        elif new_status == 'TR208_Ready':
+            new_status = 'TR208 Ready'
+        elif new_status == 'Ready_for_Auction':
+            new_status = 'Ready for Auction'
+        elif new_status == 'Ready_for_Scrap':
+            new_status = 'Ready for Scrap'
+            
         conn = get_db_connection()
         cursor = conn.cursor()
         updated_count = 0

@@ -187,21 +187,52 @@ def calculate_newspaper_ad_date(auction_date):
     
     return ad_date
 
+# Update this function in your utils.py file
 def get_status_filter(status_type):
+    """
+    Convert frontend status types to backend status filters
+    This function handles the conversion between frontend status naming conventions
+    (with underscores) to backend status naming (with spaces)
+    """
+    # First convert any underscored status types to spaced format
+    if status_type == 'TOP_Generated':
+        status_type = 'TOP Generated'
+    elif status_type == 'TR52_Ready':
+        status_type = 'TR52 Ready'
+    elif status_type == 'TR208_Ready':
+        status_type = 'TR208 Ready'
+    elif status_type == 'Ready_for_Auction':
+        status_type = 'Ready for Auction'
+    elif status_type == 'Ready_for_Scrap':
+        status_type = 'Ready for Scrap'
+    elif status_type == 'Ready_Auction':  # Handle old format
+        status_type = 'Ready for Auction'
+    elif status_type == 'Ready_Scrap':    # Handle old format  
+        status_type = 'Ready for Scrap'
+        
+    # Log the status type for debugging
+    logging.info(f"Status filter requested for: {status_type}")
+    
+    # Standard status mappings
     filters = {
         'New': ['New'],
-        'TOP_Generated': ['TOP Generated'],
-        'TR52_Ready': ['TR52 Ready'],
-        'Ready_Auction': ['Ready for Auction'],
-        'Ready_Scrap': ['Ready for Scrap'],
+        'TOP Generated': ['TOP Generated'],
+        'TR52 Ready': ['TR52 Ready'],
+        'TR208 Ready': ['TR208 Ready'],
+        'Ready for Auction': ['Ready for Auction'],
+        'Ready for Scrap': ['Ready for Scrap'],
         'Auction': ['Auction'],
         'Completed': ['Released', 'Scrapped', 'Auctioned', 'Transferred']
     }
+    
+    # Backward compatibility mappings
     backward_compat = {
         'Ready': ['TR52 Ready', 'Ready for Auction', 'Ready for Scrap'],
         'Scheduled': ['Scheduled for Release']
     }
-    return filters.get(status_type, backward_compat.get(status_type, []))
+    
+    # Return the appropriate filter list
+    return filters.get(status_type, backward_compat.get(status_type, [status_type]))
 
 def calculate_tr52_countdown(top_sent_date):
     if not top_sent_date or top_sent_date == 'N/A':

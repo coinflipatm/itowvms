@@ -297,6 +297,7 @@
 </head>
 <body>
     <!-- Sidebar -->
+    <!-- Fixed Sidebar Navigation with Proper Status Types -->
     <div class="sidebar">
         <a class="navbar-brand text-white" href="/"><img src="/static/logo.png" alt="iTow Logo"> iTow Manager</a>
         <hr class="bg-light">
@@ -2245,8 +2246,16 @@
             });
         }
 
+        // Fixed loadVehicles function to properly handle status types and parsing
+     // Update this JavaScript function to properly handle status types and date parsing
         function loadVehicles(tab) {
-            const url = tab === 'active' ? `/api/vehicles?sort=${sortColumn}&direction=${sortDirection}` : `/api/vehicles?status_type=${tab}&sort=${sortColumn}&direction=${sortDirection}`;
+            // Construct the correct URL based on tab - keep underscore format for frontend
+            const url = tab === 'active' 
+                ? `/api/vehicles?sort=${sortColumn}&direction=${sortDirection}` 
+                : `/api/vehicles?status_type=${tab}&sort=${sortColumn}&direction=${sortDirection}`;
+            
+            console.log(`Loading vehicles with URL: ${url}`);
+            
             $.get(url, function(data) {
                 const tbody = $('#vehicle-table-body');
                 tbody.empty();
@@ -2257,6 +2266,13 @@
                 }
                 
                 data.forEach(vehicle => {
+                    // Make sure all properties have values to prevent "undefined" errors
+                    for (const key in vehicle) {
+                        if (vehicle[key] === null || vehicle[key] === undefined) {
+                            vehicle[key] = 'N/A';
+                        }
+                    }
+                    
                     const statusClass = {
                         'New': 'status-new',
                         'TOP Generated': 'status-top',
@@ -2270,18 +2286,21 @@
                         'Transferred': 'status-released'
                     }[vehicle.status] || '';
                     
-                    // Create timeline indicator
+                    // Create timeline indicator with safe handling of values
                     let timelineIndicator = '';
                     if (vehicle.days_until_next_step !== undefined && vehicle.days_until_next_step !== 'N/A') {
-                        const daysClass = vehicle.days_until_next_step <= 1 ? 'critical' : 
-                                          vehicle.days_until_next_step <= 3 ? 'warning' : '';
-                        timelineIndicator = `<span class="days-counter ${daysClass}">${vehicle.days_until_next_step} days</span>`;
+                        const daysValue = parseInt(vehicle.days_until_next_step) || 0;
+                        const daysClass = daysValue <= 1 ? 'critical' : 
+                                    daysValue <= 3 ? 'warning' : '';
+                        timelineIndicator = `<span class="days-counter ${daysClass}">${daysValue} days</span>`;
                     } else if (vehicle.days_until_auction !== undefined && vehicle.days_until_auction !== 'N/A') {
-                        const daysClass = vehicle.days_until_auction <= 1 ? 'critical' : 
-                                          vehicle.days_until_auction <= 3 ? 'warning' : '';
-                        timelineIndicator = `<span class="days-counter ${daysClass}">${vehicle.days_until_auction} days</span>`;
+                        const daysValue = parseInt(vehicle.days_until_auction) || 0;
+                        const daysClass = daysValue <= 1 ? 'critical' : 
+                                    daysValue <= 3 ? 'warning' : '';
+                        timelineIndicator = `<span class="days-counter ${daysClass}">${daysValue} days</span>`;
                     } else if (vehicle.days_since_tow !== undefined) {
-                        timelineIndicator = `<span class="days-counter">${vehicle.days_since_tow} days</span>`;
+                        const daysValue = parseInt(vehicle.days_since_tow) || 0;
+                        timelineIndicator = `<span class="days-counter">${daysValue} days</span>`;
                     }
                     
                     const row = `
@@ -2317,17 +2336,22 @@
                         if (data.length > 0) {
                             const vehicle = data[0];
                             $('#edit-call-number').val(vehicle.towbook_call_number);
-                            $('#edit-complaint_number').val(vehicle.complaint_number);
-                            $('#edit-vin').val(vehicle.vin);
-                            $('#edit-make').val(vehicle.make);
-                            $('#edit-model').val(vehicle.model);
-                            $('#edit-year').val(vehicle.year);
-                            $('#edit-color').val(vehicle.color);
-                            $('#edit-plate').val(vehicle.plate);
-                            $('#edit-state').val(vehicle.state);
+                            $('#edit-complaint_number').val(vehicle.complaint_number !== 'N/A' ? vehicle.complaint_number : '');
+                            $('#edit-vin').val(vehicle.vin !== 'N/A' ? vehicle.vin : '');
+                            $('#edit-make').val(vehicle.make !== 'N/A' ? vehicle.make : '');
+                            $('#edit-model').val(vehicle.model !== 'N/A' ? vehicle.model : '');
+                            $('#edit-year').val(vehicle.year !== 'N/A' ? vehicle.year : '');
+                            $('#edit-color').val(vehicle.color !== 'N/A' ? vehicle.color : '');
+                            $('#edit-plate').val(vehicle.plate !== 'N/A' ? vehicle.plate : '');
+                            $('#edit-state').val(vehicle.state !== 'N/A' ? vehicle.state : '');
                             $('#edit-tow_date').val(vehicle.tow_date !== 'N/A' ? vehicle.tow_date : '');
                             $('#edit-tow_time').val(vehicle.tow_time !== 'N/A' ? vehicle.tow_time : '');
-                            $('#edit-requested_by').val(vehicle.requested_by !== 'N/A' ? vehicle.requested_by : '');
+                            
+                            // Handle requested_by vs requestor field
+                            const requestedBy = vehicle.requested_by !== 'N/A' ? vehicle.requested_by : 
+                                                vehicle.requestor !== 'N/A' ? vehicle.requestor : '';
+                            $('#edit-requested_by').val(requestedBy);
+                            
                             $('#edit-location').val(vehicle.location !== 'N/A' ? vehicle.location : '');
                             $('#edit-jurisdiction').val(vehicle.jurisdiction !== 'N/A' ? vehicle.jurisdiction : '');
                             $('#edit-status').val(vehicle.status);
@@ -2337,8 +2361,127 @@
                         }
                     });
                 });
+            }).fail(function(xhr, status, error) {
+                console.error("Error loading vehicles:", error);
+                console.error("Response:", xhr.responseText);
+                $('#vehicle-table-body').html('<tr><td colspan="12" class="text-center text-danger">Error loading vehicles. Please check console for details.</td></tr>');
             });
         }
+
+        // Add this event listener to handle sidebar navigation
+        $(document).ready(function() {
+            // Sidebar navigation
+            $('.sidebar a').click(function(e) {
+                e.preventDefault();
+                $('.sidebar a').removeClass('active');
+                $(this).addClass('active');
+                currentTab = $(this).data('tab');
+                
+                // Format the page title correctly
+                if (currentTab === 'TOP_Generated') {
+                    $('#page-title').text('TOP Generated');
+                } else if (currentTab === 'TR52_Ready') {
+                    $('#page-title').text('TR52 Ready');
+                } else if (currentTab === 'TR208_Ready') {
+                    $('#page-title').text('TR208 Ready');
+                } else if (currentTab === 'Ready_for_Auction') {
+                    $('#page-title').text('Ready for Auction');
+                } else if (currentTab === 'Ready_for_Scrap') {
+                    $('#page-title').text('Ready for Scrap');
+                } else {
+                    $('#page-title').text($(this).text().trim());
+                }
+                
+                // Hide all containers
+                $('#vehicles-container, #notifications-container, #contacts-container, #statistics-container, #compliance-container').addClass('d-none');
+                $('#workflow-counts').show();
+                $('#upcoming-actions-dashboard').show();
+                
+                if (currentTab === 'notifications') {
+                    $('#notifications-container').removeClass('d-none');
+                    loadPendingNotifications();
+                } else if (currentTab === 'contacts') {
+                    $('#contacts-container').removeClass('d-none');
+                    loadContacts();
+                } else if (currentTab === 'statistics') {
+                    $('#statistics-container').removeClass('d-none');
+                    $('#workflow-counts').hide();
+                    $('#upcoming-actions-dashboard').hide();
+                    updateStatistics();
+                } else if (currentTab === 'compliance') {
+                    $('#compliance-container').removeClass('d-none');
+                    $('#workflow-counts').hide();
+                    $('#upcoming-actions-dashboard').hide();
+                    loadComplianceStatus();
+                    $('#compliance-notification-count').text(pendingNotificationsCount);
+                } else {
+                    $('#vehicles-container').removeClass('d-none');
+                    loadVehicles(currentTab);
+                }
+            });
+
+            // Set the initial tab
+            loadVehicles('active');
+            
+            // Debug helpers
+            window.debugFilters = function(statusType) {
+                console.log("Status type:", statusType);
+                // You can add more debug functions as needed
+            };
+        });
+
+        // This event listener fixes the sidebar navigation
+        $(document).ready(function() {
+            // Sidebar navigation
+            $('.sidebar a').click(function(e) {
+                e.preventDefault();
+                $('.sidebar a').removeClass('active');
+                $(this).addClass('active');
+                currentTab = $(this).data('tab');
+                
+                // Fix for status types with different formats
+                if (currentTab === 'TOP_Generated') {
+                    $('#page-title').text('TOP Generated');
+                } else if (currentTab === 'TR52_Ready') {
+                    $('#page-title').text('TR52 Ready');
+                } else if (currentTab === 'TR208_Ready') {
+                    $('#page-title').text('TR208 Ready');
+                } else if (currentTab === 'Ready_for_Auction') {
+                    $('#page-title').text('Ready for Auction');
+                } else if (currentTab === 'Ready_for_Scrap') {
+                    $('#page-title').text('Ready for Scrap');
+                } else {
+                    $('#page-title').text($(this).text().trim());
+                }
+                
+                // Hide all containers
+                $('#vehicles-container, #notifications-container, #contacts-container, #statistics-container, #compliance-container').addClass('d-none');
+                $('#workflow-counts').show();
+                $('#upcoming-actions-dashboard').show();
+                
+                if (currentTab === 'notifications') {
+                    $('#notifications-container').removeClass('d-none');
+                    loadPendingNotifications();
+                } else if (currentTab === 'contacts') {
+                    $('#contacts-container').removeClass('d-none');
+                    loadContacts();
+                } else if (currentTab === 'statistics') {
+                    $('#statistics-container').removeClass('d-none');
+                    $('#workflow-counts').hide();
+                    $('#upcoming-actions-dashboard').hide();
+                    updateStatistics();
+                } else if (currentTab === 'compliance') {
+                    $('#compliance-container').removeClass('d-none');
+                    $('#workflow-counts').hide();
+                    $('#upcoming-actions-dashboard').hide();
+                    loadComplianceStatus();
+                    $('#compliance-notification-count').text(pendingNotificationsCount);
+                } else {
+                    $('#vehicles-container').removeClass('d-none');
+                    loadVehicles(currentTab);
+                }
+            });
+        });
 
         function loadVehicleDetails(callNumber) {
             $.get(`/api/vehicles?call_number=${callNumber}`, function(data) {

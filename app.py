@@ -195,6 +195,8 @@ def api_get_vehicles():
         for vehicle in vehicles:
             for key in vehicle:
                 vehicle[key] = vehicle[key] if vehicle[key] else 'N/A'
+            
+            # Safely process dates and calculations
             if 'tow_date' in vehicle and vehicle['tow_date'] != 'N/A':
                 try:
                     tow_date = datetime.strptime(vehicle['tow_date'], '%Y-%m-%d')
@@ -205,34 +207,64 @@ def api_get_vehicles():
                     vehicle['storage_fee'] = storage_fee
                     vehicle['storage_days'] = storage_days
                     
+                    # Process status-specific dates safely
                     if vehicle['status'] == 'TOP Generated':
+                        # Handle TR208 eligible vehicles
                         if vehicle.get('tr208_eligible') == 1 and vehicle.get('tr208_available_date') != 'N/A':
-                            tr208_date = datetime.strptime(vehicle['tr208_available_date'], '%Y-%m-%d')
-                            vehicle['days_until_next_step'] = max(0, (tr208_date - datetime.now()).days)
-                            vehicle['next_step_label'] = 'days until TR208 Ready'
+                            try:
+                                tr208_date = datetime.strptime(vehicle['tr208_available_date'], '%Y-%m-%d')
+                                vehicle['days_until_next_step'] = max(0, (tr208_date - datetime.now()).days)
+                                vehicle['next_step_label'] = 'days until TR208 Ready'
+                            except (ValueError, TypeError):
+                                vehicle['days_until_next_step'] = 0
+                                vehicle['next_step_label'] = 'days until TR208 Ready'
+                        # Handle TR52 vehicles
                         elif vehicle.get('tr52_available_date') != 'N/A':
-                            tr52_date = datetime.strptime(vehicle['tr52_available_date'], '%Y-%m-%d')
-                            vehicle['days_until_next_step'] = max(0, (tr52_date - datetime.now()).days)
-                            vehicle['next_step_label'] = 'days until TR52 Ready'
-                    elif vehicle['status'] == 'TR52 Ready' or vehicle['status'] == 'TR208 Ready':
+                            try:
+                                tr52_date = datetime.strptime(vehicle['tr52_available_date'], '%Y-%m-%d')
+                                vehicle['days_until_next_step'] = max(0, (tr52_date - datetime.now()).days)
+                                vehicle['next_step_label'] = 'days until TR52 Ready'
+                            except (ValueError, TypeError):
+                                vehicle['days_until_next_step'] = 0
+                                vehicle['next_step_label'] = 'days until TR52 Ready'
+                    
+                    # Handle TR52/TR208 Ready
+                    elif vehicle['status'] in ['TR52 Ready', 'TR208 Ready']:
                         vehicle['next_step_label'] = f'days since {vehicle["status"]}'
                         vehicle['days_until_next_step'] = vehicle.get('days_until_next_step', 0)
+                    
+                    # Handle Ready for Scrap
                     elif vehicle['status'] == 'Ready for Scrap' and vehicle.get('estimated_date') != 'N/A':
-                        estimated_date = datetime.strptime(vehicle['estimated_date'], '%Y-%m-%d')
-                        vehicle['days_until_next_step'] = max(0, (estimated_date - datetime.now()).days)
-                        vehicle['next_step_label'] = 'days until legal scrap date'
+                        try:
+                            estimated_date = datetime.strptime(vehicle['estimated_date'], '%Y-%m-%d')
+                            vehicle['days_until_next_step'] = max(0, (estimated_date - datetime.now()).days)
+                            vehicle['next_step_label'] = 'days until legal scrap date'
+                        except (ValueError, TypeError):
+                            vehicle['days_until_next_step'] = 0
+                            vehicle['next_step_label'] = 'days until legal scrap date'
+                    
+                    # Handle Ready for Auction
                     elif vehicle['status'] == 'Ready for Auction' and vehicle.get('auction_date') != 'N/A':
-                        auction_date = datetime.strptime(vehicle['auction_date'], '%Y-%m-%d')
-                        vehicle['days_until_auction'] = max(0, (auction_date - datetime.now()).days)
-                        vehicle['next_step_label'] = 'days until auction'
+                        try:
+                            auction_date = datetime.strptime(vehicle['auction_date'], '%Y-%m-%d')
+                            vehicle['days_until_auction'] = max(0, (auction_date - datetime.now()).days)
+                            vehicle['next_step_label'] = 'days until auction'
+                        except (ValueError, TypeError):
+                            vehicle['days_until_auction'] = 0
+                            vehicle['next_step_label'] = 'days until auction'
+                            
                 except Exception as e:
                     logging.warning(f"Date processing error for {vehicle['towbook_call_number']}: {e}")
+                    # Ensure default values if date processing fails
+                    vehicle['days_since_tow'] = 0
+                    vehicle['storage_fee'] = 0
+                    vehicle['storage_days'] = 0
         
         return jsonify(vehicles)
     except Exception as e:
         logging.error(f"Error in api_get_vehicles: {e}")
         return jsonify({'error': str(e)}), 500
-
+    
 @app.route('/api/vehicles/<call_number>', methods=['PUT'])
 @login_required
 def update_vehicle_api(call_number):

@@ -31,7 +31,7 @@ SMS_SETTINGS = {
 }
 
 def get_db_connection():
-    conn = sqlite3.connect('vehicles.db')
+    conn = sqlite3.connect('database.db')  # Changed from vehicles.db to database.db to match the auth system
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -54,18 +54,54 @@ def ensure_logs_table_exists():
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute('CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, action_type TEXT, vehicle_id TEXT, details TEXT, timestamp TEXT)')
+        
+        # Create user_logs table if it doesn't exist
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            username TEXT NOT NULL,
+            action_type TEXT NOT NULL,
+            details TEXT
+        )
+        ''')
+        
         conn.commit()
         conn.close()
     except Exception as e:
         logging.error(f"Logs table error: {e}")
 
-def log_action(action_type, vehicle_id, details):
+def log_action(action_type, user_id, details):
+    """
+    Log an action in the system.
+    
+    Args:
+        action_type (str): Type of action (UPDATE, INSERT, etc.)
+        user_id (str): User who performed the action
+        details (str): Details about the action
+    """
     ensure_logs_table_exists()
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO logs (action_type, vehicle_id, details, timestamp) VALUES (?, ?, ?, ?)",
-                       (action_type, vehicle_id, details, datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+        
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        cursor.execute(
+            "INSERT INTO logs (action_type, vehicle_id, details, timestamp) VALUES (?, ?, ?, ?)",
+            (action_type, user_id, details, timestamp)
+        )
+        
+        # Also log to user_logs if the table exists
+        try:
+            cursor.execute(
+                "INSERT INTO user_logs (timestamp, username, action_type, details) VALUES (?, ?, ?, ?)",
+                (timestamp, user_id, action_type, details)
+            )
+        except:
+            # If user_logs table doesn't exist yet, that's okay
+            pass
+            
         conn.commit()
         conn.close()
         return True

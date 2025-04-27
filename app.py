@@ -9,6 +9,8 @@ from utils import (generate_complaint_number, release_vehicle, log_action,
                    calculate_storage_fees, determine_jurisdiction, send_email_notification, 
                    send_sms_notification, send_fax_notification, is_valid_email, is_valid_phone,
                    generate_certified_mail_number, is_eligible_for_tr208, calculate_tr208_timeline)
+from flask_login import login_required, current_user
+from auth import auth_bp, login_manager, init_auth_db, User
 from datetime import datetime, timedelta
 import threading
 import os
@@ -25,9 +27,20 @@ import re
 setup_logging()
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'dev_key_change_this_in_production')
+
+# Initialize Flask-Login
+login_manager.init_app(app)
+login_manager.login_view = 'auth.login'
+login_manager.login_message = 'Please log in to access this page.'
+login_manager.login_message_category = 'info'
+
+# Register authentication blueprint
+app.register_blueprint(auth_bp)
 
 # Initialize components
 init_db()
+init_auth_db()
 ensure_logs_table_exists()
 pdf_gen = PDFGenerator()
 
@@ -72,11 +85,13 @@ def run_status_checks():
             time.sleep(60)  # Retry after a minute if there's an error
 
 @app.route('/')
+@login_required
 def index():
     status = request.args.get('status', 'New')
     return render_template('index.html', status=status)
 
 @app.route('/api/vehicles')
+@login_required
 def api_get_vehicles():
     try:
         status_type = request.args.get('status_type')
@@ -196,6 +211,7 @@ def api_get_vehicles():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/vehicles/<call_number>', methods=['PUT'])
+@login_required
 def update_vehicle_api(call_number):
     try:
         data = request.json
@@ -216,7 +232,7 @@ def update_vehicle_api(call_number):
                 
         success, message = update_vehicle(call_number, mapped_data)
         if success:
-            log_action("UPDATE", call_number, f"Vehicle details updated: {json.dumps(mapped_data)}")
+            log_action("UPDATE", current_user.username, f"Vehicle {call_number} details updated: {json.dumps(mapped_data)}")
             return jsonify({'status': 'success', 'message': message})
         return jsonify({'status': 'error', 'message': message}), 400
     except Exception as e:
@@ -224,8 +240,13 @@ def update_vehicle_api(call_number):
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/vehicles/delete/<call_number>', methods=['DELETE'])
+@login_required
 def delete_vehicle(call_number):
     try:
+        # Check if user is admin
+        if current_user.role != 'admin':
+            return jsonify({'status': 'error', 'message': 'Admin privileges required for this action'}), 403
+            
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM vehicles WHERE towbook_call_number = ?", (call_number,))
@@ -239,13 +260,14 @@ def delete_vehicle(call_number):
         cursor.execute("DELETE FROM vehicles WHERE towbook_call_number = ?", (call_number,))
         conn.commit()
         conn.close()
-        log_action("SYSTEM", "ADMIN", f"Vehicle {call_number} permanently deleted")
+        log_action("DELETE", current_user.username, f"Vehicle {call_number} permanently deleted")
         return jsonify({'status': 'success', 'message': f'Vehicle {call_number} deleted'})
     except Exception as e:
         logging.error(f"Error deleting vehicle {call_number}: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/vehicles/add', methods=['POST'])
+@login_required
 def add_vehicle():
     try:
         data = request.json
@@ -275,7 +297,7 @@ def add_vehicle():
                 
         success, message = insert_vehicle(data)
         if success:
-            log_action("INSERT", data['towbook_call_number'], f"New vehicle added: {json.dumps(data)}")
+            log_action("INSERT", current_user.username, f"New vehicle added: {json.dumps(data)}")
             return jsonify({'status': 'success', 'message': message})
         return jsonify({'status': 'error', 'message': message}), 400
     except Exception as e:
@@ -283,6 +305,7 @@ def add_vehicle():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/update-status/<call_number>', methods=['POST'])
+@login_required
 def api_update_status(call_number):
     try:
         data = request.get_json()
@@ -294,7 +317,7 @@ def api_update_status(call_number):
         success = update_vehicle_status(call_number, new_status, data)
         if success:
             logging.info(f"Status updated: {call_number} => {new_status}")
-            log_action("USER", call_number, f"Status updated to {new_status}")
+            log_action("STATUS_CHANGE", current_user.username, f"Vehicle {call_number} status updated to {new_status}")
             return jsonify({"status": "success", "message": "Status updated"}), 200
         else:
             logging.error(f"Failed to update status for {call_number} to {new_status}")
@@ -304,6 +327,7 @@ def api_update_status(call_number):
         return jsonify({"error": str(e)}), 500
     
 @app.route('/api/check-statuses', methods=['POST'])
+@login_required
 def check_statuses():
     try:
         conn = get_db_connection()
@@ -332,7 +356,7 @@ def check_statuses():
                         days_until_auction = ?
                     WHERE towbook_call_number = ?
                 """, (auction_date.strftime('%Y-%m-%d'), days_to_monday, call_number))
-                log_action("STATUS_CORRECTION", call_number, f"Changed incorrect status 'Auction' to 'Ready for Auction'")
+                log_action("STATUS_CORRECTION", current_user.username, f"Vehicle {call_number} changed incorrect status 'Auction' to 'Ready for Auction'")
                 logging.info(f"Fixed status for vehicle {call_number}")
                 fixed_count += 1
         conn.commit()
@@ -343,6 +367,7 @@ def check_statuses():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/upload-photo/<call_number>', methods=['POST'])
+@login_required
 def upload_photo(call_number):
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
@@ -372,11 +397,12 @@ def upload_photo(call_number):
                        (json.dumps(photo_paths), call_number))
         conn.commit()
         conn.close()
-        log_action("PHOTO_UPLOAD", call_number, f"Uploaded photo: {new_filename}")
+        log_action("PHOTO_UPLOAD", current_user.username, f"Vehicle {call_number} photo uploaded: {new_filename}")
         return jsonify({'status': 'success', 'filename': new_filename})
     return jsonify({'error': 'File type not allowed'}), 400
 
 @app.route('/api/police-logs/<call_number>', methods=['GET'])
+@login_required
 def get_police_logs(call_number):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -386,6 +412,7 @@ def get_police_logs(call_number):
     return jsonify(logs)
 
 @app.route('/api/police-logs/<call_number>', methods=['POST'])
+@login_required
 def add_police_log(call_number):
     data = request.json
     communication_date = data.get('communication_date', datetime.now().strftime('%Y-%m-%d'))
@@ -406,10 +433,11 @@ def add_police_log(call_number):
     """, (call_number, communication_date, communication_type, notes, recipient, contact_method))
     conn.commit()
     conn.close()
-    log_action("POLICE_LOG", call_number, f"Added police communication log: {communication_type}")
+    log_action("POLICE_LOG", current_user.username, f"Vehicle {call_number} police communication log added: {communication_type}")
     return jsonify({'status': 'success'})
 
 @app.route('/api/compliance-report', methods=['GET'])
+@login_required
 def compliance_report():
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -462,6 +490,7 @@ def compliance_report():
     )
 
 @app.route('/api/compliance-report/pdf', methods=['GET'])
+@login_required
 def compliance_report_pdf():
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -484,6 +513,7 @@ def compliance_report_pdf():
         return jsonify({'error': error}), 500
 
 @app.route('/api/upload-document/<call_number>', methods=['POST'])
+@login_required
 def upload_document(call_number):
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
@@ -526,12 +556,13 @@ def upload_document(call_number):
         conn.commit()
         conn.close()
         
-        log_action("DOCUMENT_UPLOAD", call_number, f"Uploaded {document_type} document: {new_filename}")
+        log_action("DOCUMENT_UPLOAD", current_user.username, f"Vehicle {call_number} {document_type} document uploaded: {new_filename}")
         return jsonify({'status': 'success', 'filename': new_filename})
     
     return jsonify({'error': 'File type not allowed'}), 400
 
 @app.route('/api/upload-tr52/<call_number>', methods=['POST'])
+@login_required
 def upload_tr52(call_number):
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
@@ -554,11 +585,12 @@ def upload_tr52(call_number):
                        (call_number, datetime.now().strftime('%Y-%m-%d'), 'TR52 Amended', 'Amended TR52 uploaded'))
         conn.commit()
         conn.close()
-        log_action("TR52_UPLOAD", call_number, f"Uploaded amended TR52: {new_filename}")
+        log_action("TR52_UPLOAD", current_user.username, f"Vehicle {call_number} amended TR52 uploaded: {new_filename}")
         return jsonify({'status': 'success', 'filename': new_filename})
     return jsonify({'error': 'File type not allowed'}), 400
 
 @app.route('/api/documents/<call_number>', methods=['GET'])
+@login_required
 def get_documents(call_number):
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -569,11 +601,13 @@ def get_documents(call_number):
     return jsonify(documents)
 
 @app.route('/api/pending-notifications', methods=['GET'])
+@login_required
 def pending_notifications():
     notifications = get_pending_notifications()
     return jsonify(notifications)
 
 @app.route('/api/notification/<notification_id>/send', methods=['POST'])
+@login_required
 def send_notification(notification_id):
     try:
         data = request.json
@@ -724,7 +758,7 @@ def send_notification(notification_id):
             conn.commit()
             conn.close()
             
-            log_action("NOTIFICATION", vehicle_id, f"Sent {notification_type} notification via {method} to {recipient}")
+            log_action("NOTIFICATION", current_user.username, f"Vehicle {vehicle_id} {notification_type} notification sent via {method} to {recipient}")
             
             if document_path:
                 return jsonify({
@@ -743,6 +777,7 @@ def send_notification(notification_id):
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/generate-top/<call_number>', methods=['POST'])
+@login_required
 def generate_top(call_number):
     try:
         conn = get_db_connection()
@@ -792,7 +827,7 @@ def generate_top(call_number):
                           (call_number, 'TOP Form', os.path.basename(pdf_path), datetime.now().strftime('%Y-%m-%d')))
             conn.commit()
             conn.close()
-            log_action("GENERATE_TOP", call_number, "TOP form generated and notified")
+            log_action("GENERATE_TOP", current_user.username, f"Vehicle {call_number} TOP form generated and notified")
             
             # Create notification record
             conn = get_db_connection()
@@ -819,6 +854,7 @@ def generate_top(call_number):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/generate-tr52/<call_number>', methods=['POST'])
+@login_required
 def generate_tr52(call_number):
     try:
         conn = get_db_connection()
@@ -847,7 +883,7 @@ def generate_tr52(call_number):
             conn.commit()
             conn.close()
             
-            log_action("GENERATE_TR52", call_number, "TR52 form generated")
+            log_action("GENERATE_TR52", current_user.username, f"Vehicle {call_number} TR52 form generated")
             return send_file(pdf_path, as_attachment=True)
         logging.error(f"Failed to generate TR52: {error}")
         return jsonify({'error': error}), 500
@@ -856,6 +892,7 @@ def generate_tr52(call_number):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/generate-tr208/<call_number>', methods=['POST'])
+@login_required
 def generate_tr208(call_number):
     try:
         conn = get_db_connection()
@@ -895,7 +932,7 @@ def generate_tr208(call_number):
             conn.commit()
             conn.close()
             
-            log_action("GENERATE_TR208", call_number, "TR208 form generated for scrap vehicle")
+            log_action("GENERATE_TR208", current_user.username, f"Vehicle {call_number} TR208 form generated for scrap vehicle")
             return send_file(pdf_path, as_attachment=True)
         
         logging.error(f"Failed to generate TR208: {error}")
@@ -905,6 +942,7 @@ def generate_tr208(call_number):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/check-tr208-eligibility/<call_number>', methods=['GET'])
+@login_required
 def check_tr208_eligibility(call_number):
     try:
         conn = get_db_connection()
@@ -944,6 +982,7 @@ def check_tr208_eligibility(call_number):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/update-vehicle-condition/<call_number>', methods=['POST'])
+@login_required
 def update_vehicle_condition(call_number):
     try:
         data = request.json
@@ -1000,7 +1039,7 @@ def update_vehicle_condition(call_number):
         conn.commit()
         conn.close()
         
-        log_action("UPDATE_CONDITION", call_number, "Vehicle condition information updated")
+        log_action("UPDATE_CONDITION", current_user.username, f"Vehicle {call_number} condition information updated")
         
         return jsonify({
             'status': 'success',
@@ -1012,12 +1051,13 @@ def update_vehicle_condition(call_number):
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/mark-tr52-ready/<call_number>', methods=['POST'])
+@login_required
 def mark_tr52_ready(call_number):
     try:
         update_fields = {'tr52_received_date': datetime.now().strftime('%Y-%m-%d')}
         success = update_vehicle_status(call_number, 'TR52 Ready', update_fields)
         if success:
-            log_action("TR52_READY", call_number, "TR52 form received")
+            log_action("TR52_READY", current_user.username, f"Vehicle {call_number} marked as TR52 Ready")
             return jsonify({'status': 'success', 'message': 'Vehicle marked as TR52 Ready'})
         return jsonify({'status': 'error', 'message': 'Failed to update status'}), 500
     except Exception as e:
@@ -1025,12 +1065,13 @@ def mark_tr52_ready(call_number):
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/mark-tr208-ready/<call_number>', methods=['POST'])
+@login_required
 def mark_tr208_ready(call_number):
     try:
         update_fields = {'tr208_received_date': datetime.now().strftime('%Y-%m-%d')}
         success = update_vehicle_status(call_number, 'TR208 Ready', update_fields)
         if success:
-            log_action("TR208_READY", call_number, "TR208 form received")
+            log_action("TR208_READY", current_user.username, f"Vehicle {call_number} marked as TR208 Ready")
             return jsonify({'status': 'success', 'message': 'Vehicle marked as TR208 Ready'})
         return jsonify({'status': 'error', 'message': 'Failed to update status'}), 500
     except Exception as e:
@@ -1038,12 +1079,13 @@ def mark_tr208_ready(call_number):
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/paperwork-received/<call_number>', methods=['POST'])
+@login_required
 def paperwork_received(call_number):
     try:
         update_fields = {'paperwork_received_date': datetime.now().strftime('%Y-%m-%d')}
         success = update_vehicle_status(call_number, 'Scheduled for Release', update_fields)
         if success:
-            log_action("PAPERWORK_RECEIVED", call_number, "Paperwork received")
+            log_action("PAPERWORK_RECEIVED", current_user.username, f"Vehicle {call_number} paperwork received")
             return jsonify({'status': 'success', 'message': 'Paperwork received'})
         return jsonify({'status': 'error', 'message': 'Failed to update status'}), 500
     except Exception as e:
@@ -1051,6 +1093,7 @@ def paperwork_received(call_number):
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/decision/<call_number>', methods=['POST'])
+@login_required
 def api_decision(call_number):
     from utils import calculate_next_auction_date
     data = request.get_json()
@@ -1085,7 +1128,7 @@ def api_decision(call_number):
             'pending'
         ))
         
-        log_action("USER", call_number, f"Decision: Auction, scheduled for {auction_date}")
+        log_action("DECISION", current_user.username, f"Vehicle {call_number} decision: Auction, scheduled for {auction_date}")
     elif decision == 'scrap':
         scrap_date = datetime.now() + timedelta(days=7)
         update_vehicle_status(call_number, 'Ready for Scrap', {
@@ -1104,7 +1147,7 @@ def api_decision(call_number):
             'pending'
         ))
         
-        log_action("USER", call_number, "Decision: Scrap")
+        log_action("DECISION", current_user.username, f"Vehicle {call_number} decision: Scrap")
     else:
         conn.close()
         return jsonify({"error": "Invalid decision"}), 400
@@ -1114,6 +1157,7 @@ def api_decision(call_number):
     return jsonify({"message": "Decision recorded"}), 200
 
 @app.route('/api/schedule-auction', methods=['POST'])
+@login_required
 def schedule_auction():
     try:
         data = request.json
@@ -1123,7 +1167,7 @@ def schedule_auction():
             return jsonify({'status': 'error', 'message': 'Missing vehicle IDs or auction date'}), 400
         success, message = create_auction(auction_date, vehicle_ids)
         if success:
-            log_action("AUCTION_SCHEDULED", "BATCH", f"Auction scheduled: {message}")
+            log_action("AUCTION_SCHEDULED", current_user.username, f"Auction scheduled: {message}")
             
             # Generate newspaper ad
             try:
@@ -1166,6 +1210,7 @@ def schedule_auction():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/generate-release/<call_number>', methods=['POST'])
+@login_required
 def generate_release(call_number):
     try:
         data = request.json
@@ -1237,7 +1282,7 @@ def generate_release(call_number):
             
             conn.commit()
             conn.close()
-            log_action("RELEASE", call_number, f"Vehicle released: {release_reason}")
+            log_action("RELEASE", current_user.username, f"Vehicle {call_number} released: {release_reason}")
             return send_file(pdf_path, as_attachment=True)
         return jsonify({'error': error}), 500
     except Exception as e:
@@ -1245,6 +1290,7 @@ def generate_release(call_number):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/mark-released/<call_number>', methods=['POST'])
+@login_required
 def mark_released(call_number):
     try:
         data = request.json
@@ -1252,7 +1298,7 @@ def mark_released(call_number):
                                  data.get('recipient', 'Not specified'), data.get('release_date'),
                                  data.get('release_time'))
         if success:
-            log_action("RELEASE", call_number, f"Marked as released: {data.get('release_reason')}")
+            log_action("RELEASE", current_user.username, f"Vehicle {call_number} marked as released: {data.get('release_reason')}")
             return jsonify({'status': 'success'})
         return jsonify({'error': 'Failed to release vehicle'}), 500
     except Exception as e:
@@ -1260,6 +1306,7 @@ def mark_released(call_number):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/logs')
+@login_required
 def get_action_logs():
     try:
         vehicle_id = request.args.get('vehicle_id')
@@ -1271,6 +1318,7 @@ def get_action_logs():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/workflow-counts')
+@login_required
 def workflow_counts():
     try:
         conn = get_db_connection()
@@ -1313,6 +1361,7 @@ def workflow_counts():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/statistics')
+@login_required
 def get_statistics():
     try:
         conn = get_db_connection()
@@ -1416,6 +1465,7 @@ def get_statistics():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/contacts', methods=['GET'])
+@login_required
 def api_get_contacts():
     try:
         contacts = get_contacts()
@@ -1425,6 +1475,7 @@ def api_get_contacts():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/contacts', methods=['POST'])
+@login_required
 def api_save_contact():
     try:
         data = request.json
@@ -1437,6 +1488,7 @@ def api_save_contact():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/generate-certified-mail/<call_number>', methods=['POST'])
+@login_required
 def generate_certified_mail(call_number):
     try:
         # Generate a certified mail tracking number
@@ -1467,7 +1519,7 @@ def generate_certified_mail(call_number):
         conn.commit()
         conn.close()
         
-        log_action("CERTIFIED_MAIL", call_number, f"Certified mail generated: {certified_mail_number}")
+        log_action("CERTIFIED_MAIL", current_user.username, f"Vehicle {call_number} certified mail generated: {certified_mail_number}")
         
         return jsonify({
             'status': 'success',
@@ -1479,6 +1531,7 @@ def generate_certified_mail(call_number):
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/auto-detect-jurisdiction/<call_number>', methods=['POST'])
+@login_required
 def auto_detect_jurisdiction(call_number):
     try:
         conn = get_db_connection()
@@ -1512,7 +1565,7 @@ def auto_detect_jurisdiction(call_number):
         conn.commit()
         conn.close()
         
-        log_action("AUTO_DETECT", call_number, f"Auto-detected jurisdiction: {jurisdiction} from location: {location}")
+        log_action("AUTO_DETECT", current_user.username, f"Vehicle {call_number} jurisdiction auto-detected: {jurisdiction} from location: {location}")
         
         return jsonify({
             'status': 'success',
@@ -1525,6 +1578,7 @@ def auto_detect_jurisdiction(call_number):
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/calculate-storage-fees/<call_number>', methods=['GET'])
+@login_required
 def api_calculate_storage_fees(call_number):
     try:
         daily_rate = request.args.get('rate', 25.00, type=float)
@@ -1554,6 +1608,7 @@ def api_calculate_storage_fees(call_number):
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/document-download/<path:filename>', methods=['GET'])
+@login_required
 def download_document(filename):
     try:
         file_path = os.path.join(app.config['DOCUMENT_FOLDER'], filename)
@@ -1569,6 +1624,7 @@ def download_document(filename):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/generate-scrap-certification/<call_number>', methods=['POST'])
+@login_required
 def generate_scrap_certification(call_number):
     try:
         data = request.json
@@ -1641,7 +1697,7 @@ def generate_scrap_certification(call_number):
             conn.commit()
             conn.close()
             
-            log_action("SCRAP", call_number, f"Vehicle scrapped with salvage value: ${float(salvage_value):.2f}")
+            log_action("SCRAP", current_user.username, f"Vehicle {call_number} scrapped with salvage value: ${float(salvage_value):.2f}")
             
             return jsonify({
                 'status': 'success',
@@ -1656,9 +1712,16 @@ def generate_scrap_certification(call_number):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/scraping-progress')
+@login_required
 def scraping_progress():
     progress = {'percentage': 0, 'is_running': False, 'processed': 0, 'total': 0, 'status': 'Not running'}
     return jsonify({'progress': progress})
+
+# Update utils.py log_action function to include user information
+# This function already exists in your utils.py file, but now includes user info
+@app.context_processor
+def inject_user():
+    return dict(current_user=current_user)
 
 if __name__ == '__main__':
     port = 5000

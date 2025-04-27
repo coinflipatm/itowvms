@@ -2,7 +2,8 @@ from flask import Flask, render_template, send_file, request, jsonify, redirect,
 from database import (init_db, get_vehicles_by_status, update_vehicle_status, 
                       update_vehicle, insert_vehicle, get_db_connection, check_and_update_statuses, 
                       get_logs, toggle_archive_status, create_auction, get_pending_notifications,
-                      mark_notification_sent, get_contact_by_jurisdiction, save_contact, get_contacts)
+                      mark_notification_sent, get_contact_by_jurisdiction, save_contact, get_contacts,
+                      get_vehicles)
 from generator import PDFGenerator
 from utils import (generate_complaint_number, release_vehicle, log_action, 
                    ensure_logs_table_exists, setup_logging, get_status_filter, calculate_newspaper_ad_date,
@@ -90,6 +91,40 @@ def index():
     status = request.args.get('status', 'New')
     return render_template('index.html', status=status)
 
+@app.route('/admin_users')
+@login_required
+def admin_users():
+    # Check if user is admin
+    if current_user.role != 'admin':
+        return redirect(url_for('index'))
+    return render_template('admin_users.html')
+
+@app.route('/create_invite')
+@login_required
+def create_invite():
+    # Check if user is admin
+    if current_user.role != 'admin':
+        return redirect(url_for('index'))
+    return render_template('create_invite.html')
+
+@app.route('/profile')
+@login_required
+def profile():
+    return render_template('profile.html')
+
+@app.route('/logs')
+@login_required
+def logs_page():
+    return render_template('logs.html')
+
+@app.route('/invitations')
+@login_required
+def invitations():
+    # Check if user is admin
+    if current_user.role != 'admin':
+        return redirect(url_for('index'))
+    return render_template('invitations.html')
+
 @app.route('/api/vehicles')
 @login_required
 def api_get_vehicles():
@@ -154,20 +189,8 @@ def api_get_vehicles():
             vehicles = get_vehicles_by_status(status_type, sort_column, sort_direction)
             logging.info(f"Found {len(vehicles)} vehicles for status type {status_type}")
         else:
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            sort_by = "tow_date DESC"
-            if sort_column:
-                valid_columns = [
-                    'towbook_call_number', 'complaint_number', 'vin', 'make', 'model', 
-                    'year', 'color', 'tow_date', 'jurisdiction', 'status', 'last_updated'
-                ]
-                if sort_column in valid_columns:
-                    sort_dir = "ASC" if sort_direction.lower() == 'asc' else "DESC"
-                    sort_by = f"{sort_column} {sort_dir}"
-            cursor.execute(f"SELECT * FROM vehicles WHERE archived = 0 ORDER BY {sort_by}")
-            vehicles = [dict(row) for row in cursor.fetchall()]
-            conn.close()
+            vehicles = get_vehicles('active', sort_column, sort_direction)
+            logging.info(f"Found {len(vehicles)} active vehicles")
     
         for vehicle in vehicles:
             for key in vehicle:

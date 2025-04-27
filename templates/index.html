@@ -304,15 +304,19 @@
         <a href="#" data-tab="New"><i class="fas fa-plus"></i> New</a>
         <a href="#" data-tab="TOP_Generated"><i class="fas fa-file-alt"></i> TOP Generated</a>
         <a href="#" data-tab="TR52_Ready"><i class="fas fa-check"></i> TR52 Ready</a>
-        <a href="#" data-tab="Ready_Auction"><i class="fas fa-gavel"></i> Ready for Auction</a>
-        <a href="#" data-tab="Ready_Scrap"><i class="fas fa-trash"></i> Ready for Scrap</a>
+        <a href="#" data-tab="TR208_Ready"><i class="fas fa-check"></i> TR208 Ready</a>
+        <a href="#" data-tab="Ready_for_Auction"><i class="fas fa-gavel"></i> Ready for Auction</a>
+        <a href="#" data-tab="Ready_for_Scrap"><i class="fas fa-trash"></i> Ready for Scrap</a>
         <a href="#" data-tab="Completed"><i class="fas fa-archive"></i> Completed</a>
         <a href="#" data-tab="notifications"><i class="fas fa-bell"></i> Notifications <span id="notification-count" class="notification-badge d-none">0</span></a>
         <a href="#" data-tab="contacts"><i class="fas fa-address-book"></i> Jurisdiction Contacts</a>
         <a href="#" data-tab="statistics"><i class="fas fa-chart-bar"></i> Statistics</a>
         <a href="#" data-tab="compliance"><i class="fas fa-shield-alt"></i> Compliance</a>
+        <a href="/profile" data-tab="profile"><i class="fas fa-user"></i> Profile</a>
+        <a href="/logs" data-tab="logs"><i class="fas fa-history"></i> System Logs</a>
+        <!-- Admin links will be added dynamically by navbar.js if the user is an admin -->
     </div>
-
+    
     <!-- Main Content -->
     <div class="content">
         <div class="d-flex justify-content-between align-items-center mb-4">
@@ -3574,6 +3578,131 @@
                 });
             }, 2000);
         }
+
+        // Fix for vehicle loading by ensuring the API calls use the correct status names
+        function loadVehicles(tab) {
+            const url = tab === 'active' 
+                ? `/api/vehicles?sort=${sortColumn}&direction=${sortDirection}` 
+                : `/api/vehicles?status_type=${tab}&sort=${sortColumn}&direction=${sortDirection}`;
+            
+            console.log(`Loading vehicles with URL: ${url}`);
+            
+            $.get(url, function(data) {
+                const tbody = $('#vehicle-table-body');
+                tbody.empty();
+                
+                if (data.length === 0) {
+                    tbody.html('<tr><td colspan="12" class="text-center">No vehicles found</td></tr>');
+                    return;
+                }
+                
+                data.forEach(vehicle => {
+                    const statusClass = {
+                        'New': 'status-new',
+                        'TOP Generated': 'status-top',
+                        'TR52 Ready': 'status-tr52',
+                        'TR208 Ready': 'status-tr208',
+                        'Ready for Auction': 'status-auction',
+                        'Ready for Scrap': 'status-scrap',
+                        'Released': 'status-released',
+                        'Auctioned': 'status-released',
+                        'Scrapped': 'status-released',
+                        'Transferred': 'status-released'
+                    }[vehicle.status] || '';
+                    
+                    // Create timeline indicator
+                    let timelineIndicator = '';
+                    if (vehicle.days_until_next_step !== undefined && vehicle.days_until_next_step !== 'N/A') {
+                        const daysClass = vehicle.days_until_next_step <= 1 ? 'critical' : 
+                                    vehicle.days_until_next_step <= 3 ? 'warning' : '';
+                        timelineIndicator = `<span class="days-counter ${daysClass}">${vehicle.days_until_next_step} days</span>`;
+                    } else if (vehicle.days_until_auction !== undefined && vehicle.days_until_auction !== 'N/A') {
+                        const daysClass = vehicle.days_until_auction <= 1 ? 'critical' : 
+                                    vehicle.days_until_auction <= 3 ? 'warning' : '';
+                        timelineIndicator = `<span class="days-counter ${daysClass}">${vehicle.days_until_auction} days</span>`;
+                    } else if (vehicle.days_since_tow !== undefined) {
+                        timelineIndicator = `<span class="days-counter">${vehicle.days_since_tow} days</span>`;
+                    }
+                    
+                    const row = `
+                        <tr>
+                            <td>${vehicle.towbook_call_number}</td>
+                            <td>${vehicle.complaint_number || 'N/A'}</td>
+                            <td>${vehicle.vin}</td>
+                            <td>${vehicle.make}</td>
+                            <td>${vehicle.model}</td>
+                            <td>${vehicle.year}</td>
+                            <td>${vehicle.color}</td>
+                            <td>${vehicle.tow_date}</td>
+                            <td>${vehicle.jurisdiction}</td>
+                            <td><span class="status-label ${statusClass}">${vehicle.status}</span></td>
+                            <td>${timelineIndicator}</td>
+                            <td>
+                                <button class="btn btn-sm btn-primary view-details" data-call-number="${vehicle.towbook_call_number}"><i class="fas fa-eye"></i></button>
+                                <button class="btn btn-sm btn-secondary edit-vehicle" data-call-number="${vehicle.towbook_call_number}"><i class="fas fa-edit"></i></button>
+                            </td>
+                        </tr>`;
+                    tbody.append(row);
+                });
+                
+                // Add event listeners for the newly created buttons
+                $('.view-details').click(function() {
+                    const callNumber = $(this).data('call-number');
+                    loadVehicleDetails(callNumber);
+                });
+                
+                $('.edit-vehicle').click(function() {
+                    const callNumber = $(this).data('call-number');
+                    $.get(`/api/vehicles?call_number=${callNumber}`, function(data) {
+                        if (data.length > 0) {
+                            const vehicle = data[0];
+                            $('#edit-call-number').val(vehicle.towbook_call_number);
+                            $('#edit-complaint_number').val(vehicle.complaint_number);
+                            $('#edit-vin').val(vehicle.vin);
+                            $('#edit-make').val(vehicle.make);
+                            $('#edit-model').val(vehicle.model);
+                            $('#edit-year').val(vehicle.year);
+                            $('#edit-color').val(vehicle.color);
+                            $('#edit-plate').val(vehicle.plate);
+                            $('#edit-state').val(vehicle.state);
+                            $('#edit-tow_date').val(vehicle.tow_date !== 'N/A' ? vehicle.tow_date : '');
+                            $('#edit-tow_time').val(vehicle.tow_time !== 'N/A' ? vehicle.tow_time : '');
+                            $('#edit-requested_by').val(vehicle.requested_by !== 'N/A' ? vehicle.requested_by : vehicle.requestor !== 'N/A' ? vehicle.requestor : '');
+                            $('#edit-location').val(vehicle.location !== 'N/A' ? vehicle.location : '');
+                            $('#edit-jurisdiction').val(vehicle.jurisdiction !== 'N/A' ? vehicle.jurisdiction : '');
+                            $('#edit-status').val(vehicle.status);
+                            $('#edit-officer_name').val(vehicle.officer_name !== 'N/A' ? vehicle.officer_name : '');
+                            $('#edit-case_number').val(vehicle.case_number !== 'N/A' ? vehicle.case_number : '');
+                            $('#editVehicleModal').modal('show');
+                        }
+                    });
+                });
+            }).fail(function(xhr, status, error) {
+                console.error("Error loading vehicles:", error);
+                console.error("Response:", xhr.responseText);
+                $('#vehicle-table-body').html('<tr><td colspan="12" class="text-center text-danger">Error loading vehicles. Please check console for details.</td></tr>');
+            });
+        }
+
+        // Make sure to create the static/js directory and save navbar.js there
+        $(document).ready(function() {
+            // Create static/js directory if it doesn't exist
+            $.ajax({
+                url: '/static/js',
+                type: 'HEAD',
+                error: function() {
+                    console.warn("static/js directory may not exist. Create it manually if needed.");
+                }
+            });
+            
+            // Set the user role data attribute on body for navbar.js to use
+            const userRole = '{{ current_user.role }}';
+            document.body.dataset.userRole = userRole;
+            
+            // Debugging: Log when page is loaded
+            console.log("Index page loaded. Current tab:", currentTab);
+        });
     </script>
+    <script src="/static/js/navbar.js"></script>
 </body>
 </html>

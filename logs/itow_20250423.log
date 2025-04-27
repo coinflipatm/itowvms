@@ -1,0 +1,14 @@
+2025-04-23 17:20:23,953 - INFO - ===== iTow Impound Manager Started =====
+2025-04-23 17:20:23,988 - INFO - Database initialized
+2025-04-23 17:20:23,998 - WARNING - Logo file not found at static/logo.png. PDF documents will not include a logo.
+2025-04-23 17:20:24,036 - ERROR - OSError: write error
+2025-04-23 17:20:32,343 - INFO - ===== iTow Impound Manager Started =====
+2025-04-23 17:20:32,392 - INFO - Database initialized
+2025-04-23 17:20:32,398 - WARNING - Logo file not found at static/logo.png. PDF documents will not include a logo.
+2025-04-23 17:20:33,747 - INFO - API request: status_type=None, sort=tow_date, direction=desc
+2025-04-23 17:20:33,823 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-23 17:20:44,965 - ERROR - Error getting statistics: no such column: top_notification_sent
+2025-04-23 17:21:22,459 - INFO - API request: status_type=None, sort=tow_date, direction=desc
+2025-04-23 18:34:50,868 - INFO - ===== iTow Impound Manager Started =====
+2025-04-23 18:34:50,894 - INFO - Database initialized
+2025-04-23 18:34:50,902 - WARNING - Logo file not found at static/logo.png. PDF documents will not include a logo.

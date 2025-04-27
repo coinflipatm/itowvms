@@ -1,0 +1,14 @@
+2025-04-22 20:12:32,283 - INFO - ===== iTow Impound Manager Started =====
+2025-04-22 20:12:32,317 - INFO - Database initialized
+2025-04-22 20:12:32,325 - WARNING - Logo file not found at static/logo.png. PDF documents will not include a logo.
+2025-04-22 20:12:32,401 - ERROR - OSError: write error
+2025-04-22 20:12:41,723 - INFO - API request: status_type=None, sort=tow_date, direction=desc
+2025-04-22 20:12:41,735 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-22 20:13:01,627 - INFO - API request: status_type=TR52_Ready, sort=tow_date, direction=desc
+2025-04-22 20:13:01,651 - INFO - Found 12 vehicles for status type TR52_Ready
+2025-04-22 20:17:42,391 - INFO - API request: status_type=TR52_Ready, sort=tow_date, direction=desc
+2025-04-22 20:17:42,398 - INFO - Found 12 vehicles for status type TR52_Ready
+2025-04-22 20:17:42,475 - INFO - API request: status_type=None, sort=None, direction=desc
+2025-04-22 21:54:47,265 - INFO - API request: status_type=TR52_Ready, sort=tow_date, direction=desc
+2025-04-22 21:54:47,282 - INFO - Found 12 vehicles for status type TR52_Ready
+2025-04-22 21:54:47,287 - INFO - API request: status_type=None, sort=None, direction=desc

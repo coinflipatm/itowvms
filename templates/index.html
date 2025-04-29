@@ -1975,7 +1975,37 @@
                     }
                 });
             });
-
+            
+            $('#scrape-form').submit(function(e) {
+                e.preventDefault();
+                const start_date = $('#start_date').val();
+                const end_date = $('#end_date').val();
+                const headless = $('#headless').is(':checked');
+                const auto_determine_jurisdiction = $('#auto_determine_jurisdiction').is(':checked');
+                
+                // Reset progress indicators
+                $('#progress-bar').css('width', '0%').text('0%');
+                $('#progress-text').text('Starting scraper...');
+                
+                $.ajax({
+                    url: '/api/start-scraping',
+                    method: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        start_date: start_date,
+                        end_date: end_date,
+                        headless: headless,
+                        auto_determine_jurisdiction: auto_determine_jurisdiction
+                    }),
+                    success: function(response) {
+                        alert(response.message);
+                        // Keep modal open to show progress
+                    },
+                    error: function(xhr) {
+                        alert('Error: ' + (xhr.responseJSON ? xhr.responseJSON.message : 'Unknown error'));
+                    }
+                });
+            });
             // Contact form
             $('#contact-form').submit(function(e) {
                 e.preventDefault();

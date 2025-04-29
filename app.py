@@ -13,6 +13,7 @@ from utils import (generate_complaint_number, release_vehicle, log_action,
 from flask_login import login_required, current_user
 from auth import auth_bp, login_manager, init_auth_db, User
 from datetime import datetime, timedelta
+from scraper import TowBookScraper
 import threading
 import os
 import logging
@@ -1766,12 +1767,56 @@ def generate_scrap_certification(call_number):
         logging.error(f"Error generating scrap certification: {e}")
         return jsonify({'error': str(e)}), 500
 
+scraper = None
+
+@app.route('/api/start-scraping', methods=['POST'])
+@login_required
+def start_scraping():
+    try:
+        global scraper
+        
+        data = request.json
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        headless = data.get('headless', True)
+        auto_determine = data.get('auto_determine_jurisdiction', True)
+        
+        if not start_date or not end_date:
+            return jsonify({'status': 'error', 'message': 'Start date and end date are required'}), 400
+        
+        # Get credentials from environment variables or use defaults
+        # You should replace these with your actual TowBook credentials
+        username = os.environ.get('TOWBOOK_USERNAME', 'itow05')
+        password = os.environ.get('TOWBOOK_PASSWORD', 'iTow2023')
+        
+        # Create a new scraper instance
+        scraper = TowBookScraper(username, password)
+        
+        # Start scraping in a separate thread
+        thread = threading.Thread(
+            target=scraper.start_scraping_with_date_range,
+            args=(start_date, end_date, headless)
+        )
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({'status': 'success', 'message': 'Scraping started successfully'})
+    except Exception as e:
+        logging.error(f"Error starting scraper: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @app.route('/scraping-progress')
 @login_required
 def scraping_progress():
-    progress = {'percentage': 0, 'is_running': False, 'processed': 0, 'total': 0, 'status': 'Not running'}
-    return jsonify({'progress': progress})
-
+    try:
+        global scraper
+        if scraper:
+            return jsonify({'progress': scraper.get_progress()})
+        else:
+            return jsonify({'progress': {'percentage': 0, 'is_running': False, 'processed': 0, 'total': 0, 'status': 'Not running'}})
+    except Exception as e:
+        logging.error(f"Error getting scraping progress: {e}")
+        return jsonify({'progress': {'percentage': 0, 'is_running': False, 'processed': 0, 'total': 0, 'status': f'Error: {str(e)}'}})
 # Update utils.py log_action function to include user information
 # This function already exists in your utils.py file, but now includes user info
 @app.context_processor

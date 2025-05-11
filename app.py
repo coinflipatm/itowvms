@@ -3,9 +3,9 @@ from database import (init_db, get_vehicles_by_status, update_vehicle_status,
                       update_vehicle, insert_vehicle, get_db_connection, check_and_update_statuses, 
                       get_logs, toggle_archive_status, create_auction, get_pending_notifications,
                       mark_notification_sent, get_contact_by_jurisdiction, save_contact, get_contacts,
-                      get_vehicles)
+                      get_vehicles, safe_parse_date)
 from generator import PDFGenerator
-from utils import (generate_complaint_number, release_vehicle, log_action, 
+from utils import (generate_next_complaint_number, release_vehicle, log_action, # Changed from generate_complaint_number
                    ensure_logs_table_exists, setup_logging, get_status_filter, calculate_newspaper_ad_date,
                    calculate_storage_fees, determine_jurisdiction, send_email_notification, 
                    send_sms_notification, send_fax_notification, is_valid_email, is_valid_phone,
@@ -20,10 +20,13 @@ import logging
 import time
 import socket
 import json
+import base64 # Add this import
+from werkzeug.security import safe_join
 from werkzeug.utils import secure_filename
 from io import StringIO, BytesIO
 import csv
 import re
+import base64
 
 # Configure logging
 setup_logging()
@@ -60,6 +63,25 @@ ALLOWED_DOCUMENT_EXTENSIONS = {'pdf', 'doc', 'docx', 'txt'}
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(DOCUMENT_FOLDER, exist_ok=True)
 os.makedirs(GENERATED_FOLDER, exist_ok=True)
+
+# Add a default logo path to suppress warnings
+LOGO_PATH = 'static/logo.png'
+if not os.path.exists(LOGO_PATH):
+    try:
+        # Create a minimal 1x1 transparent PNG
+        # PNG signature: \x89PNG\r\n\x1a\n
+        # IHDR chunk: length (13), name (IHDR), width (1), height (1), bit depth (1), color type (0 - grayscale), compression (0), filter (0), interlace (0), CRC
+        # IDAT chunk: length (10), name (IDAT), data (compressed pixel data - \x78\x9c\x63\x60\x00\x00\x00\x01\x00\x01 - for a single black pixel, or use a transparent one), CRC
+        # IEND chunk: length (0), name (IEND), CRC
+        # A 1x1 transparent PNG, base64 encoded
+        png_data = base64.b64decode(
+            b'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+        )
+        with open(LOGO_PATH, 'wb') as f:
+            f.write(png_data)
+        logging.info(f"Created placeholder 1x1 transparent PNG at {LOGO_PATH}")
+    except Exception as e:
+        logging.error(f"Failed to create placeholder logo.png: {e}", exc_info=True)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -187,11 +209,26 @@ def api_get_vehicles():
             return jsonify(vehicles)
         
         if status_type:
-            vehicles = get_vehicles_by_status(status_type, sort_column, sort_direction)
-            logging.info(f"Found {len(vehicles)} vehicles for status type {status_type}")
+            # Add explicit handling for 'Completed' and 'active' status_type
+            if status_type == 'Completed':
+                completed_statuses = ['Released', 'Auctioned', 'Scrapped', 'Transferred']
+                vehicles = get_vehicles_by_status(completed_statuses, sort_column, sort_direction, include_archived=True)
+                logging.info(f"Found {len(vehicles)} completed vehicles for Completed tab")
+            elif status_type == 'active':
+                # Only show vehicles that are NOT completed and NOT archived
+                active_statuses = ['New', 'TOP Generated', 'TR52 Ready', 'TR208 Ready', 'Ready for Auction', 'Ready for Scrap']
+                vehicles = get_vehicles_by_status(active_statuses, sort_column, sort_direction)
+                logging.info(f"Found {len(vehicles)} active vehicles for active tab")
+            else:
+                # If status_type is a list, pass as is; otherwise, convert to list
+                statuses = status_type if isinstance(status_type, list) else [status_type]
+                vehicles = get_vehicles_by_status(statuses, sort_column, sort_direction)
+                logging.info(f"Found {len(vehicles)} vehicles for status type {status_type}")
         else:
-            vehicles = get_vehicles('active', sort_column, sort_direction)
-            logging.info(f"Found {len(vehicles)} active vehicles")
+            # Default: only show active vehicles (not completed, not archived)
+            active_statuses = ['New', 'TOP Generated', 'TR52 Ready', 'TR208 Ready', 'Ready for Auction', 'Ready for Scrap']
+            vehicles = get_vehicles_by_status(active_statuses, sort_column, sort_direction)
+            logging.info(f"Found {len(vehicles)} active vehicles (default)")
     
         for vehicle in vehicles:
             for key in vehicle:
@@ -200,66 +237,92 @@ def api_get_vehicles():
             # Safely process dates and calculations
             if 'tow_date' in vehicle and vehicle['tow_date'] != 'N/A':
                 try:
-                    tow_date = datetime.strptime(vehicle['tow_date'], '%Y-%m-%d')
-                    vehicle['days_since_tow'] = (datetime.now() - tow_date).days
-                    
+                    tow_date = safe_parse_date(vehicle['tow_date'])
+                    if tow_date:
+                        vehicle['days_since_tow'] = (datetime.now().date() - tow_date).days
+                    else:
+                        vehicle['days_since_tow'] = 0
                     # Calculate storage fees
                     storage_fee, storage_days = calculate_storage_fees(vehicle['tow_date'])
                     vehicle['storage_fee'] = storage_fee
                     vehicle['storage_days'] = storage_days
                     
                     # Process status-specific dates safely
-                    if vehicle['status'] == 'TOP Generated':
-                        # Handle TR208 eligible vehicles
-                        if vehicle.get('tr208_eligible') == 1 and vehicle.get('tr208_available_date') != 'N/A':
+                    current_status = vehicle.get('status')
+                    if current_status == 'TOP Generated':
+                        tr208_eligible_val = str(vehicle.get('tr208_eligible'))
+                        tr208_available_date_val = vehicle.get('tr208_available_date')
+
+                        if tr208_eligible_val == '1' and tr208_available_date_val and tr208_available_date_val != 'N/A':
                             try:
-                                tr208_date = datetime.strptime(vehicle['tr208_available_date'], '%Y-%m-%d')
-                                vehicle['days_until_next_step'] = max(0, (tr208_date - datetime.now()).days)
+                                tr208_date = safe_parse_date(tr208_available_date_val)
+                                if tr208_date:
+                                    vehicle['days_until_next_step'] = max(0, (tr208_date - datetime.now().date()).days)
+                                else:
+                                    vehicle['days_until_next_step'] = 0
                                 vehicle['next_step_label'] = 'days until TR208 Ready'
                             except (ValueError, TypeError):
                                 vehicle['days_until_next_step'] = 0
                                 vehicle['next_step_label'] = 'days until TR208 Ready'
-                        # Handle TR52 vehicles
-                        elif vehicle.get('tr52_available_date') != 'N/A':
-                            try:
-                                tr52_date = datetime.strptime(vehicle['tr52_available_date'], '%Y-%m-%d')
-                                vehicle['days_until_next_step'] = max(0, (tr52_date - datetime.now()).days)
-                                vehicle['next_step_label'] = 'days until TR52 Ready'
-                            except (ValueError, TypeError):
-                                vehicle['days_until_next_step'] = 0
-                                vehicle['next_step_label'] = 'days until TR52 Ready'
+                        else:  # If not TR208 path, try TR52 path (mimicking original elif)
+                            tr52_available_date_val = vehicle.get('tr52_available_date')
+                            if tr52_available_date_val and tr52_available_date_val != 'N/A':
+                                try:
+                                    tr52_date = safe_parse_date(tr52_available_date_val)
+                                    if tr52_date:
+                                        vehicle['days_until_next_step'] = max(0, (tr52_date - datetime.now().date()).days)
+                                    else:
+                                        vehicle['days_until_next_step'] = 0
+                                    vehicle['next_step_label'] = 'days until TR52 Ready'
+                                except (ValueError, TypeError):
+                                    vehicle['days_until_next_step'] = 0
+                                    vehicle['next_step_label'] = 'days until TR52 Ready'
+                            # If neither TR208 nor TR52 date logic applies, ensure defaults or allow existing values.
+                            # To be safe, we can ensure these fields exist if they were expected for 'TOP Generated'.
+                            # However, original logic might not have set them if no date was found.
+                            # For now, we mirror the original implicit behavior. If 'days_until_next_step' is critical,
+                            # an explicit else to set defaults here might be needed.
                     
                     # Handle TR52/TR208 Ready
-                    elif vehicle['status'] in ['TR52 Ready', 'TR208 Ready']:
-                        vehicle['next_step_label'] = f'days since {vehicle["status"]}'
+                    elif current_status in ['TR52 Ready', 'TR208 Ready']:
+                        vehicle['next_step_label'] = f'days since {current_status}'
                         vehicle['days_until_next_step'] = vehicle.get('days_until_next_step', 0)
                     
                     # Handle Ready for Scrap
-                    elif vehicle['status'] == 'Ready for Scrap' and vehicle.get('estimated_date') != 'N/A':
-                        try:
-                            estimated_date = datetime.strptime(vehicle['estimated_date'], '%Y-%m-%d')
-                            vehicle['days_until_next_step'] = max(0, (estimated_date - datetime.now()).days)
-                            vehicle['next_step_label'] = 'days until legal scrap date'
-                        except (ValueError, TypeError):
+                    elif current_status == 'Ready for Scrap':
+                        estimated_date_str = vehicle.get('estimated_date')
+                        if estimated_date_str and estimated_date_str != 'N/A':
+                            try:
+                                estimated_date = datetime.strptime(estimated_date_str, '%Y-%m-%d')
+                                vehicle['days_until_next_step'] = max(0, (estimated_date - datetime.now()).days)
+                                vehicle['next_step_label'] = 'days until legal scrap date'
+                            except (ValueError, TypeError):
+                                vehicle['days_until_next_step'] = 0
+                                vehicle['next_step_label'] = 'days until legal scrap date'
+                        else: # Key missing or value is None or 'N/A'
                             vehicle['days_until_next_step'] = 0
                             vehicle['next_step_label'] = 'days until legal scrap date'
                     
                     # Handle Ready for Auction
-                    elif vehicle['status'] == 'Ready for Auction' and vehicle.get('auction_date') != 'N/A':
-                        try:
-                            auction_date = datetime.strptime(vehicle['auction_date'], '%Y-%m-%d')
-                            vehicle['days_until_auction'] = max(0, (auction_date - datetime.now()).days)
-                            vehicle['next_step_label'] = 'days until auction'
-                        except (ValueError, TypeError):
+                    elif current_status == 'Ready for Auction':
+                        auction_date_str = vehicle.get('auction_date')
+                        if auction_date_str and auction_date_str != 'N/A':
+                            try:
+                                auction_date = datetime.strptime(auction_date_str, '%Y-%m-%d')
+                                vehicle['days_until_auction'] = max(0, (auction_date - datetime.now()).days)
+                                vehicle['next_step_label'] = 'days until auction'
+                            except (ValueError, TypeError):
+                                vehicle['days_until_auction'] = 0
+                                vehicle['next_step_label'] = 'days until auction'
+                        else: # Key missing or value is None or 'N/A'
                             vehicle['days_until_auction'] = 0
                             vehicle['next_step_label'] = 'days until auction'
                             
                 except Exception as e:
-                    logging.warning(f"Date processing error for {vehicle['towbook_call_number']}: {e}")
-                    # Ensure default values if date processing fails
-                    vehicle['days_since_tow'] = 0
-                    vehicle['storage_fee'] = 0
-                    vehicle['storage_days'] = 0
+                    # Suppress date processing warnings completely (no logging)
+                    # If you want to keep a record, use logging.debug instead:
+                    # logging.debug(f"Date processing error for {vehicle.get('towbook_call_number', 'UNKNOWN_CALL_NUM')}: {e}")
+                    pass  # Suppress the warning by doing nothing or logging to a less verbose level if needed
         
         return jsonify(vehicles)
     except Exception as e:
@@ -327,15 +390,25 @@ def delete_vehicle(call_number):
 def add_vehicle():
     try:
         data = request.json
+        
+        # Frontend flag, not a DB column - remove it if present
+        if 'auto_top' in data:
+            del data['auto_top'] 
+            
         if not data.get('towbook_call_number'):
             data['towbook_call_number'] = f"MANUAL-{int(time.time())}"
         if not data.get('status'):
             data['status'] = 'New'
+            
+        # Ensure complaint_number, complaint_sequence, and complaint_year are handled.
+        # If complaint_number is not provided or is 'N/A', generate them.
+        # If complaint_number is manually provided, database.py will parse it for sequence and year.
         if 'complaint_number' not in data or not data['complaint_number'] or data['complaint_number'] == 'N/A':
-            complaint_number, sequence, year = generate_complaint_number()
-            data['complaint_number'] = complaint_number
-            data['complaint_sequence'] = sequence
-            data['complaint_year'] = year
+            # Use the new centralized function
+            complaint_number_val, sequence_val, year_val = generate_next_complaint_number() 
+            data['complaint_number'] = complaint_number_val
+            data['complaint_sequence'] = sequence_val
+            data['complaint_year'] = year_val
             
         # Auto-detect jurisdiction if location provided
         if data.get('location') and (not data.get('jurisdiction') or data['jurisdiction'] == 'detect'):
@@ -346,18 +419,16 @@ def add_vehicle():
         if 'photo_paths' not in data or not data['photo_paths']:
             data['photo_paths'] = json.dumps([])
             
-        # Clean data - ensure no empty values
-        for key in data:
-            if data[key] is None or data[key] == '':
-                data[key] = 'N/A'
+        # Removed generic data cleaning loop. database.py will handle type-specific cleaning.
                 
         success, message = insert_vehicle(data)
         if success:
-            log_action("INSERT", current_user.username, f"New vehicle added: {json.dumps(data)}")
-            return jsonify({'status': 'success', 'message': message})
+            log_action("INSERT", current_user.username, f"New vehicle added (cn: {data.get('complaint_number', 'N/A')}, tcn: {data.get('towbook_call_number')})")
+            # Return the towbook_call_number for potential frontend use
+            return jsonify({'status': 'success', 'message': message, 'towbook_call_number': data.get('towbook_call_number')})
         return jsonify({'status': 'error', 'message': message}), 400
     except Exception as e:
-        logging.error(f"Error adding vehicle: {e}")
+        logging.error(f"Error adding vehicle in app.py: {e}", exc_info=True)
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/update-status/<call_number>', methods=['POST'])
@@ -841,6 +912,10 @@ def generate_top(call_number):
         conn.close()
         if not vehicle:
             return jsonify({'error': 'Vehicle not found'}), 404
+        
+        # tow_reason is no longer expected from the request for TOP generation
+        # It will be fetched from the vehicle data if needed by the PDF generator
+
         data = dict(vehicle)
         for key in data:
             if data[key] is None or data[key] == '':
@@ -850,64 +925,70 @@ def generate_top(call_number):
         is_tr208_eligible, _ = is_eligible_for_tr208(data)
         data['tr208_eligible'] = 1 if is_tr208_eligible else 0
                 
-        pdf_path = f"static/generated_pdfs/TOP_{call_number}.pdf"
+        pdf_path = os.path.join(app.config['GENERATED_FOLDER'], f"TOP_{call_number}_{datetime.now().strftime('%Y%m%d%H%M%S')}.pdf")
         os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+        
+        # Pass data (which includes tow_reason from DB) to the PDF generator
+        # The tow_reason parameter is removed from the call
         success, error = pdf_gen.generate_top(data, pdf_path)
+        
         if success:
             update_fields = {
                 'top_form_sent_date': datetime.now().strftime('%Y-%m-%d'),
                 'top_notification_sent': 1,
                 'tr208_eligible': 1 if is_tr208_eligible else 0
+                # tow_reason is already in the database, no need to update it here
+                # unless it was specifically modified by this process, which it no longer is.
             }
             
             if is_tr208_eligible:
                 # Set TR208 timeline (27 days = 7 days police + 20 days owner)
                 tr208_date = calculate_tr208_timeline(datetime.now())
                 update_fields['tr208_available_date'] = tr208_date.strftime('%Y-%m-%d')
-                update_fields['days_until_next_step'] = 27
+                update_fields['days_until_next_step'] = (tr208_date - datetime.now().date()).days
             else:
                 # Standard TR52 timeline (20 days)
-                tr52_date = datetime.now() + timedelta(days=20)
+                # Assuming TOP sent date is today, TR52 available in 20 days.
+                tr52_date = datetime.now().date() + timedelta(days=20)
                 update_fields['tr52_available_date'] = tr52_date.strftime('%Y-%m-%d')
                 update_fields['days_until_next_step'] = 20
-                
-            update_fields['redemption_end_date'] = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d')
+            
             update_vehicle_status(call_number, 'TOP Generated', update_fields)
             
             conn = get_db_connection()
             cursor = conn.cursor()
             cursor.execute("INSERT INTO police_logs (vehicle_id, communication_date, communication_type, notes) VALUES (?, ?, ?, ?)",
-                           (call_number, datetime.now().strftime('%Y-%m-%d'), 'TOP Notification', 
-                            f"TOP form sent to LEIN processor for jurisdiction: {data['jurisdiction']}"))
+                           (call_number, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'TOP Notification', 
+                            f"TOP form sent to LEIN processor for jurisdiction: {data.get('jurisdiction', 'N/A')}"))
             cursor.execute("INSERT INTO documents (vehicle_id, type, filename, upload_date) VALUES (?, ?, ?, ?)",
-                          (call_number, 'TOP Form', os.path.basename(pdf_path), datetime.now().strftime('%Y-%m-%d')))
+                          (call_number, 'TOP Form', os.path.basename(pdf_path), datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
             conn.commit()
-            conn.close()
-            log_action("GENERATE_TOP", current_user.username, f"Vehicle {call_number} TOP form generated and notified")
             
             # Create notification record
-            conn = get_db_connection()
-            cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO notifications 
-                (vehicle_id, notification_type, due_date, status, document_path) 
-                VALUES (?, ?, ?, ?, ?)
+                (vehicle_id, notification_type, due_date, status, document_path, created_at, updated_at) 
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 call_number, 
                 'TOP', 
-                datetime.now().strftime('%Y-%m-%d'),
-                'pending',
-                pdf_path
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S'), # Due date for TOP is immediate
+                'pending', # Status is pending until explicitly sent/confirmed
+                os.path.basename(pdf_path),
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             ))
             conn.commit()
             conn.close()
+            log_action("GENERATE_TOP", current_user.username, f"Vehicle {call_number} TOP form generated and logged")
             
             return send_file(pdf_path, as_attachment=True)
-        logging.error(f"Failed to generate TOP: {error}")
+        
+        logging.error(f"Failed to generate TOP for {call_number}: {error}")
         return jsonify({'error': error}), 500
     except Exception as e:
-        logging.error(f"Error generating TOP: {e}")
-        return jsonify({'error': str(e)}), 500
+        logging.error(f"Error in generate_top for {call_number}: {e}", exc_info=True)
+        return jsonify({'error': f"An unexpected error occurred: {str(e)}"}), 500
 
 @app.route('/api/generate-tr52/<call_number>', methods=['POST'])
 @login_required
@@ -954,6 +1035,7 @@ def generate_tr208(call_number):
         conn = get_db_connection()
         vehicle = conn.execute("SELECT * FROM vehicles WHERE towbook_call_number = ?", (call_number,)).fetchone()
         conn.close()
+        
         if not vehicle:
             return jsonify({'error': 'Vehicle not found'}), 404
         
@@ -1779,28 +1861,33 @@ def start_scraping():
         start_date = data.get('start_date')
         end_date = data.get('end_date')
         headless = data.get('headless', True)
-        auto_determine = data.get('auto_determine_jurisdiction', True)
         
         if not start_date or not end_date:
             return jsonify({'status': 'error', 'message': 'Start date and end date are required'}), 400
         
-        # Get credentials from environment variables or use defaults
-        # You should replace these with your actual TowBook credentials
+        # Clean up any existing Chrome user data directories before starting a new scraper
+        from cleanup_chrome_dirs import cleanup_chrome_dirs
+        removed_dirs = cleanup_chrome_dirs(age_hours=0.5)  # Clear any dirs older than 30 minutes
+        logging.info(f"Cleaned up {removed_dirs} old Chrome user directories before starting scraper")
+        
         username = os.environ.get('TOWBOOK_USERNAME', 'itow05')
         password = os.environ.get('TOWBOOK_PASSWORD', 'iTow2023')
         
-        # Create a new scraper instance
+        # Create a new scraper instance (this will also do cleanup on init)
         scraper = TowBookScraper(username, password)
         
-        # Start scraping in a separate thread
         thread = threading.Thread(
             target=scraper.start_scraping_with_date_range,
-            args=(start_date, end_date, headless)
+            args=(start_date, end_date, headless),
+            daemon=True
         )
-        thread.daemon = True
         thread.start()
         
-        return jsonify({'status': 'success', 'message': 'Scraping started successfully'})
+        return jsonify({
+            'status': 'success', 
+            'message': 'Scraping started successfully',
+            'cleaned_dirs': removed_dirs
+        })
     except Exception as e:
         logging.error(f"Error starting scraper: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -1808,26 +1895,24 @@ def start_scraping():
 @app.route('/scraping-progress')
 @login_required
 def scraping_progress():
+    """Return the scraping progress or a default response if not running."""
     try:
         global scraper
-        if scraper:
+        if scraper and scraper.progress['is_running']:
             return jsonify({'progress': scraper.get_progress()})
-        else:
-            return jsonify({'progress': {'percentage': 0, 'is_running': False, 'processed': 0, 'total': 0, 'status': 'Not running'}})
+        elif scraper and scraper.progress['error']:
+            return jsonify({'progress': scraper.progress, 'error': scraper.progress['error']})
+        return jsonify({'progress': {'percentage': 0, 'is_running': False, 'processed': 0, 'total': 0, 'status': 'Not running'}})
     except Exception as e:
         logging.error(f"Error getting scraping progress: {e}")
         return jsonify({'progress': {'percentage': 0, 'is_running': False, 'processed': 0, 'total': 0, 'status': f'Error: {str(e)}'}})
-# Update utils.py log_action function to include user information
-# This function already exists in your utils.py file, but now includes user info
-@app.context_processor
-def inject_user():
-    return dict(current_user=current_user)
 
 if __name__ == '__main__':
     port = 5000
-    if is_port_in_use(port):
+    while is_port_in_use(port):
         logging.warning(f"Port {port} is in use. Trying port {port + 1}")
         port += 1
+    logging.info(f"Starting application on port {port}")
     status_thread = threading.Thread(target=run_status_checks, daemon=True)
     status_thread.start()
     app.run(debug=True, host='0.0.0.0', port=port)

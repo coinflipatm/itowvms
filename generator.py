@@ -30,16 +30,17 @@ class PDFGenerator:
 
     def _add_header(self, elements):
         """Add company header to document"""
-        if os.path.exists(self.logo_path):
+        if (os.path.exists(self.logo_path)):
             try:
                 logo = Image(self.logo_path, width=1.5*inch, height=0.75*inch)
                 elements.append(logo)
-                elements.append(Spacer(1, 12))
+                elements.append(Spacer(1, 6)) # Reduced spacer
             except Exception as e:
                 logging.error(f"Error adding logo to PDF: {e}")
         
-        header = '<para alignment="center"><b>iTow</b><br/>205 W Johnson St, Clio, MI 48420<br/>Phone 810-394-5937 · EMAIL: itow2017@gmail.com</para>'
-        elements.append(Paragraph(header, self.header_style))
+        # More concise header
+        header_text = '<para alignment="center"><b>iTow</b> | 205 W Johnson St, Clio, MI 48420 | Phone: 810-394-5937 | itow2017@gmail.com</para>'
+        elements.append(Paragraph(header_text, self.styles['Normal'])) # Using Normal style, adjust if needed
         elements.append(Spacer(1, 12))
 
     def _handle_empty_value(self, value):
@@ -48,29 +49,34 @@ class PDFGenerator:
             return 'N/A'
         return value
 
-    def generate_top(self, data, pdf_path):
+    def generate_top(self, data, pdf_path): # Removed tow_reason parameter
         try:
             os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
-            doc = SimpleDocTemplate(pdf_path, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=72)
+            doc = SimpleDocTemplate(pdf_path, pagesize=letter, rightMargin=72, leftMargin=72, topMargin=72, bottomMargin=18)
             elements = []
-            
+
             # Add header
             self._add_header(elements)
-            
+
             # Add title
-            elements.append(Paragraph('PRIVATE PROPERTY IMPOUND NOTIFICATION', self.title_style))
+            elements.append(Paragraph("Michigan Private Property Vehicle Tow Notification Form", self.title_style))
             elements.append(Spacer(1, 12))
-            
-            # Add notice text
-            notice = 'This is notification of a vehicle removal off of private property.<br/>Per MCL 257.252a(9)'
-            elements.append(Paragraph(notice, self.field_style))
+
+            # Add description
+            description_text = """
+            <para fontSize="10">
+            This form notifies the local police agency of a vehicle towed from private property under MCL 257.252a et seq., 
+            providing vehicle and towing details for processing in the LEIN system.
+            </para>
+            """
+            elements.append(Paragraph(description_text, self.styles['Normal']))
             elements.append(Spacer(1, 12))
             
             # Add timestamp
             timestamp = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
             elements.append(Paragraph(timestamp, self.small_style))
             elements.append(Spacer(1, 12))
-            
+
             # Build vehicle description
             vehicle_desc = ' '.join(filter(None, [
                 self._handle_empty_value(data.get('year', 'N/A')), 
@@ -80,54 +86,43 @@ class PDFGenerator:
             ]))
             
             # Create details table
-            details = [
+            details_data = [
                 ['TO:', self._handle_empty_value(data.get('jurisdiction', 'N/A'))],
                 ['DATE OF TOW:', self._handle_empty_value(data.get('tow_date', 'N/A'))],
                 ['TIME OF TOW:', self._handle_empty_value(data.get('tow_time', 'N/A'))],
                 ['TOWED FROM:', self._handle_empty_value(data.get('location', 'N/A'))],
-                ['REQUESTED BY:', self._handle_empty_value(data.get('requestor', 'N/A'))],
+                # Removed REASON FOR TOW from here
+                ['REQUESTED BY:', self._handle_empty_value(data.get('requestor', data.get('requested_by', 'N/A')))], # Handles both field names
                 ['VEHICLE DESCRIPTION:', vehicle_desc],
                 ['VIN:', self._handle_empty_value(data.get('vin', 'N/A'))],
                 ['PLATE NUMBER:', self._handle_empty_value(data.get('plate', 'N/A'))],
                 ['STATE:', self._handle_empty_value(data.get('state', 'N/A'))],
                 ['COMPLAINT #:', self._handle_empty_value(data.get('complaint_number', 'N/A'))],
-                ['CASE NUMBER:', self._handle_empty_value(data.get('case_number', 'N/A'))],
+                ['CASE NUMBER:', self._handle_empty_value(data.get('case_number', 'N/A'))], 
                 ['OFFICER NAME:', self._handle_empty_value(data.get('officer_name', 'N/A'))]
             ]
             
-            # Create table
-            table = Table(details, colWidths=[1.5*inch, 4*inch])
+            # Filter out rows where the value is 'N/A' or empty, unless it's a key field like VIN or Complaint #
+            # For TOP form, most fields are important, so we might not filter aggressively.
+            # details = [row for row in details_data if row[1] and row[1] != 'N/A' or row[0] in ['VIN:', 'COMPLAINT #:']]
+            details = details_data # Keep all details for TOP form
+
+            table = Table(details, colWidths=[2*inch, 4*inch])
             table.setStyle(TableStyle([
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-                ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('PADDING', (0, 0), (-1, -1), 6)
+                ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+                ('BACKGROUND', (0,0), (0,-1), colors.lightgrey), # Label column background
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('PADDING', (0,0), (-1,-1), 6)
             ]))
             elements.append(table)
-            
-            # Add legal notice
             elements.append(Spacer(1, 24))
-            legal_notice = """
-            <para fontSize="10">
-            NOTE: Per MCL 257.252a(9), this vehicle has been removed from private property at the request 
-            of the property owner or authorized agent. The owner may reclaim the vehicle by paying the 
-            accrued towing and storage fees. If the vehicle remains unclaimed for 20 days, it may be 
-            considered abandoned and subject to procedures under MCL 257.252g.
-            </para>
-            """
-            elements.append(Paragraph(legal_notice, self.small_style))
-            
-            # Add signature line
-            elements.append(Spacer(1, 48))
-            elements.append(Paragraph('_________________________     _________________________', self.field_style))
-            elements.append(Paragraph('Towing Agent Signature     Police Department Receipt', self.small_style))
-            
-            # Build the document
+
             doc.build(elements)
+            logging.info(f"Successfully generated TOP form for {data.get('towbook_call_number', 'Unknown Call#')} at {pdf_path}")
             return True, None
         except Exception as e:
-            logging.error(f"Error generating TOP: {e}")
-            return False, str(e)
+            logging.error(f"Error in PDFGenerator.generate_top for {data.get('towbook_call_number', 'Unknown Call#')} with path {pdf_path}: {e}", exc_info=True)
+            return False, f"PDF generation failed: {str(e)}"
 
     def generate_release_notice(self, data, pdf_path):
         try:
@@ -241,7 +236,7 @@ class PDFGenerator:
             # Calculate relevant dates
             tow_date = datetime.strptime(self._handle_empty_value(data.get('tow_date', datetime.now().strftime('%Y-%m-%d'))), '%Y-%m-%d')
             top_sent_date = data.get('top_form_sent_date')
-            if top_sent_date and top_sent_date != 'N/A':
+            if (top_sent_date and top_sent_date != 'N/A'):
                 top_sent_date = datetime.strptime(top_sent_date, '%Y-%m-%d')
             else:
                 top_sent_date = tow_date + timedelta(days=1)

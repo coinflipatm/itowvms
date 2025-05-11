@@ -14,40 +14,88 @@ import string
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 import time
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
-# Configure email settings - replace with your own
+# Replace hardcoded email settings with environment variables
 EMAIL_SETTINGS = {
-    'smtp_server': 'smtp.gmail.com',
-    'smtp_port': 587,
-    'username': 'your-email@gmail.com',
-    'password': 'your-app-password',
-    'from_email': 'iTow Vehicle Management <your-email@gmail.com>'
+    'smtp_server': os.getenv('SMTP_SERVER', 'smtp.gmail.com'),
+    'smtp_port': int(os.getenv('SMTP_PORT', 587)),
+    'username': os.getenv('EMAIL_USERNAME', 'your-email@gmail.com'),
+    'password': os.getenv('EMAIL_PASSWORD', 'your-app-password'),
+    'from_email': os.getenv('FROM_EMAIL', 'iTow Vehicle Management <your-email@gmail.com>')
 }
 
-# Configure SMS settings - replace with your own
+# Replace hardcoded SMS settings with environment variables
 SMS_SETTINGS = {
-    'api_key': 'your-sms-api-key',
-    'from_number': 'your-from-number'
+    'api_key': os.getenv('SMS_API_KEY', 'your-sms-api-key'),
+    'from_number': os.getenv('SMS_FROM_NUMBER', 'your-from-number')
 }
 
+# Existing get_db_connection for 'database.db' (used for logs, auth, etc.)
 def get_db_connection():
     conn = sqlite3.connect('database.db')  # Changed from vehicles.db to database.db to match the auth system
     conn.row_factory = sqlite3.Row
     return conn
 
+# New database connection function specifically for 'vehicles.db'
+def get_vehicles_db_connection_for_utils():
+    try:
+        db_name = 'vehicles.db'
+        # Assumes utils.py is in the root of the workspace, and vehicles.db is also there.
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        db_path = os.path.join(script_dir, db_name)
+
+        if not os.path.exists(db_path):
+            logging.warning(f"utils.py: vehicles.db not found at {db_path}. Trying direct name '{db_name}' as CWD might be workspace root.")
+            db_path = db_name # Try 'vehicles.db' directly
+            if not os.path.exists(db_path):
+                current_cwd = os.getcwd()
+                logging.error(f"utils.py: vehicles.db still not found at direct path '{db_name}'. Workspace root: {current_cwd}")
+                raise Exception(f"utils.py: Vehicles database '{db_name}' not found. Looked in {script_dir} and {current_cwd}.")
+        
+        # logging.info(f"utils.py: Connecting to vehicles.db at {db_path}") # Reduce verbose logging
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+    except Exception as e:
+        # Log the original error and the path it tried if db_path is set
+        path_info = f" (path attempted: {locals().get('db_path', 'unknown')})"
+        logging.error(f"utils.py: Database connection error to vehicles.db{path_info}: {e}", exc_info=True)
+        raise Exception(f"utils.py: Failed to connect to vehicles database. Error: {str(e)}")
+
 def generate_complaint_number():
     try:
-        conn = get_db_connection()
+        conn = get_vehicles_db_connection_for_utils() # Use the new connection for vehicles.db
         cursor = conn.cursor()
-        current_year = datetime.now().strftime('%y')
-        cursor.execute("SELECT complaint_sequence FROM vehicles WHERE complaint_year = ? ORDER BY complaint_sequence DESC LIMIT 1", (current_year,))
+        current_year_short = datetime.now().strftime('%y')  # e.g., "25"
+
+        # Fetch the highest complaint_sequence for the current year
+        cursor.execute(
+            "SELECT MAX(complaint_sequence) FROM vehicles WHERE complaint_year = ?",
+            (current_year_short,)
+        )
         result = cursor.fetchone()
-        next_sequence = 95 if not result else result[0] + 1
+
+        if result and result[0] is not None:
+            # Increment the existing sequence for the current year
+            next_sequence = int(result[0]) + 1
+        else:
+            # No records for this year yet, or complaint_sequence was NULL/empty, so start at 1
+            next_sequence = 1
+        
         conn.close()
-        return f"IT{next_sequence:04d}-{current_year}", next_sequence, current_year
+        
+        # Format: ITXXXX-YY (e.g., IT0001-25, IT0104-25)
+        complaint_number_str = f"IT{next_sequence:04d}-{current_year_short}"
+        logging.info(f"Generated complaint number: {complaint_number_str}, sequence: {next_sequence}, year: {current_year_short}")
+        return complaint_number_str, next_sequence, current_year_short
     except Exception as e:
-        logging.error(f"Complaint number error: {e}")
-        return f"ITERR-{current_year}", 999, current_year
+        current_year_short_fallback = datetime.now().strftime('%y')
+        logging.error(f"Error generating complaint number: {e}", exc_info=True) # MODIFIED: Added exc_info=True
+        # Fallback in case of error; sequence 0 indicates an issue.
+        return f"ITERR0000-{current_year_short_fallback}", 0, current_year_short_fallback
 
 def ensure_logs_table_exists():
     try:
@@ -84,24 +132,15 @@ def log_action(action_type, user_id, details):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        
         cursor.execute(
             "INSERT INTO logs (action_type, vehicle_id, details, timestamp) VALUES (?, ?, ?, ?)",
             (action_type, user_id, details, timestamp)
         )
-        
-        # Also log to user_logs if the table exists
-        try:
-            cursor.execute(
-                "INSERT INTO user_logs (timestamp, username, action_type, details) VALUES (?, ?, ?, ?)",
-                (timestamp, user_id, action_type, details)
-            )
-        except:
-            # If user_logs table doesn't exist yet, that's okay
-            pass
-            
+        cursor.execute(
+            "INSERT INTO user_logs (timestamp, username, action_type, details) VALUES (?, ?, ?, ?)",
+            (timestamp, user_id, action_type, details)
+        )
         conn.commit()
         conn.close()
         return True
@@ -149,25 +188,22 @@ def release_vehicle(call_number, reason, recipient=None, release_date=None, rele
     return success
 
 def calculate_next_auction_date(ad_placement_date=None):
-    today = datetime.now().date()
-    if ad_placement_date and ad_placement_date != 'N/A':
-        if isinstance(ad_placement_date, str):
-            try:
-                ad_date = datetime.strptime(ad_placement_date, '%Y-%m-%d').date()
-            except ValueError:
-                return calculate_next_auction_date(None)  # Fall back to default calculation
-        else:
+    """Calculate the next auction date based on ad placement date."""
+    try:
+        if ad_placement_date and isinstance(ad_placement_date, str):
+            ad_date = datetime.strptime(ad_placement_date, '%Y-%m-%d')
+        elif isinstance(ad_placement_date, datetime):
             ad_date = ad_placement_date
-        min_auction_date = ad_date + timedelta(days=5)
-        days_to_monday = (7 - min_auction_date.weekday()) % 7
-        if days_to_monday == 0:
-            days_to_monday = 7
-        return min_auction_date + timedelta(days=days_to_monday)
-    else:
-        # If no ad date provided, schedule next auction on the next Monday, at least 2 weeks out
-        days_to_monday = (7 - today.weekday()) % 7 or 7  # If today is Monday, go to next Monday
-        # Add an additional week to ensure enough time for ad placement
-        return today + timedelta(days=days_to_monday + 7)
+        else:
+            ad_date = datetime.now()
+        # Auctions are held on Mondays
+        days_to_monday = (7 - ad_date.weekday()) % 7
+        if days_to_monday < 3:
+            days_to_monday += 7
+        return ad_date + timedelta(days=days_to_monday)
+    except Exception as e:
+        logging.error(f"Error calculating next auction date: {e}")
+        return datetime.now() + timedelta(days=7)
 
 def calculate_newspaper_ad_date(auction_date):
     if isinstance(auction_date, str):
@@ -234,14 +270,32 @@ def get_status_filter(status_type):
     # Return the appropriate filter list
     return filters.get(status_type, backward_compat.get(status_type, [status_type]))
 
+def safe_parse_date(date_str):
+    """Safely parse a date string, returning None if invalid"""
+    if not date_str or date_str == 'N/A':
+        return None
+    
+    try:
+        return datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        try:
+            # Try alternate format
+            return datetime.strptime(date_str, '%m/%d/%Y').date()
+        except ValueError:
+            # logging.warning(f"Could not parse date: {date_str}")  # Suppressed per requirements
+            return None
+
 def calculate_tr52_countdown(top_sent_date):
     if not top_sent_date or top_sent_date == 'N/A':
         return None
     try:
         if isinstance(top_sent_date, str):
             top_date = datetime.strptime(top_sent_date, '%Y-%m-%d').date()
+        elif hasattr(top_sent_date, 'date'):  # Check if it's a datetime object
+            top_date = top_sent_date.date()
         else:
-            top_date = top_sent_date
+            top_date = top_sent_date  # Assume it's already a date object
+            
         tr52_date = top_date + timedelta(days=20)
         today = datetime.now().date()
         days_left = (tr52_date - today).days
@@ -332,50 +386,27 @@ def send_fax_notification(fax_number, message, attachment_path=None):
         return False, str(e)
 
 def determine_jurisdiction(address):
-    """Determine jurisdiction based on address using geocoding"""
+    """Determine jurisdiction based on address using geocoding."""
     if not address or address == 'N/A':
         return 'Unknown'
-        
     try:
-        # Create a geocoder with custom user agent
         geolocator = Nominatim(user_agent="iTow_Manager")
-        
-        # Clean up the address
         address_clean = re.sub(r'\s*\(.*?\)', '', address).strip()
-        
-        # Add Genesee County, MI to improve accuracy
         search_address = f"{address_clean}, Genesee County, MI"
-        
-        # Try geocoding with retry logic
-        for attempt in range(3):
+        for _ in range(3):  # Retry up to 3 times
             try:
-                location = geolocator.geocode(search_address, exactly_one=True, timeout=10, addressdetails=True)
-                break
-            except (GeocoderTimedOut, GeocoderServiceError):
-                if attempt < 2:
-                    time.sleep(1)
-                    continue
-                return 'Unknown'
-        
-        if not location or 'address' not in location.raw:
-            return 'Unknown'
-            
-        # Extract address components
-        addr = location.raw['address']
-        
-        # Verify we're in Genesee County
-        county = addr.get('county', '')
-        if 'Genesee' not in county and 'genesee' not in county.lower():
-            return 'Out of County'
-            
-        # Try various fields to determine jurisdiction
-        jurisdiction = addr.get('township', addr.get('city', addr.get('municipality', 'Unknown')))
-        
-        # Clean up the jurisdiction name
-        if jurisdiction:
-            jurisdiction = jurisdiction.replace(" Charter Township", " Township")
-            
-        return jurisdiction
+                location = geolocator.geocode(search_address, timeout=10)
+                if location and 'address' in location.raw:
+                    addr = location.raw['address']
+                    county = addr.get('county', '')
+                    if 'Genesee' not in county:
+                        return 'Out of County'
+                    jurisdiction = addr.get('township', addr.get('city', 'Unknown'))
+                    return jurisdiction.replace(" Charter Township", " Township") if jurisdiction else 'Unknown'
+            except GeocoderTimedOut:
+                logging.warning("Geocoding timed out, retrying...")
+                time.sleep(2)
+        return 'Unknown'
     except Exception as e:
         logging.error(f"Geocoding error: {e}")
         return 'Unknown'
@@ -388,27 +419,20 @@ def generate_certified_mail_number():
     return f"{prefix}{random_digits}"
 
 def calculate_storage_fees(tow_date, daily_rate=25.00):
-    """Calculate storage fees based on tow date and daily rate"""
-    if not tow_date or tow_date == 'N/A':
-        return 0.00, 0
-        
+    """Calculate storage fees based on tow date."""
     try:
         if isinstance(tow_date, str):
             tow_date = datetime.strptime(tow_date, '%Y-%m-%d').date()
+        elif hasattr(tow_date, 'date'):  # Check if it's a datetime object
+            tow_date = tow_date.date()
+        # If it's already a date object, use it directly
             
         today = datetime.now().date()
         days = (today - tow_date).days
-        
-        # Minimum 1 day charge
-        days = max(1, days)
-        
-        # Calculate the fee
-        fee = days * daily_rate
-        
-        return round(fee, 2), days
+        return max(0, days * daily_rate), days
     except Exception as e:
-        logging.error(f"Storage fee calculation error: {e}")
-        return 0.00, 0
+        logging.error(f"Error calculating storage fees: {e}")
+        return 0, 0
 
 def generate_confirmation_code():
     """Generate a short confirmation code for vehicle releases"""
@@ -657,16 +681,23 @@ def calculate_tr208_timeline(tow_date):
     Calculate the TR208 timeline (27 days from tow)
     
     Args:
-        tow_date (str): Tow date in YYYY-MM-DD format
+        tow_date (str or datetime): Tow date
         
     Returns:
         (datetime.date): Date when TR208 can be processed
     """
-    if isinstance(tow_date, str):
-        tow_date = datetime.strptime(tow_date, '%Y-%m-%d').date()
-    
-    # 27 days from tow (7 for police notification + 20 for owner redemption)
-    return tow_date + timedelta(days=27)
+    try:
+        if isinstance(tow_date, str):
+            tow_date = datetime.strptime(tow_date, '%Y-%m-%d').date()
+        elif hasattr(tow_date, 'date'):  # Check if it's a datetime object
+            tow_date = tow_date.date()
+        # If it's already a date object, use it directly
+            
+        # 27 days from tow (7 for police notification + 20 for owner redemption)
+        return tow_date + timedelta(days=27)
+    except Exception as e:
+        logging.error(f"Error calculating TR208 timeline: {e}")
+        return datetime.now().date() + timedelta(days=27)
 
 def setup_logging():
     """Configure application logging"""
@@ -767,3 +798,305 @@ def get_notification_templates():
             """
         }
     }
+
+def get_element_value_by_css(driver, css_selector):
+    """Get element value with fallback"""
+    try:
+        element = WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.CSS_SELECTOR, css_selector)))
+        value = driver.execute_script("return arguments[0].value;", element) or element.get_attribute("value")
+        return value.strip() if value else ""
+    except Exception:
+        # Don't log this as it's too verbose for selectors that won't match
+        return ""
+
+def get_select_value_by_css(driver, css_selector):
+    """Get selected option text"""
+    try:
+        select = WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.CSS_SELECTOR, css_selector)))
+        value = driver.execute_script("return arguments[0].options[arguments[0].selectedIndex]?.text || '';", select)
+        return value.strip() if value else ""
+    except:
+        return ""
+
+def extract_datetime_fields(driver, vehicle_data):
+    """Extract date and time with multiple fallback methods"""
+    # Define various selectors for different field types
+    date_selectors = ["input#x-impound-date-date", "input[id*='impound'][id*='date']", "input.datepicker", "input[name*='date']", "#serviceDate"]
+    time_selectors = ["input#x-impound-date-time", "input[id*='impound'][id*='time']", "input.timepicker", "input[name*='time']", "#serviceTime"]
+    po_selectors = ["input#poNumber", "input[id*='poNumber']", "input[name*='poNumber']", "input[placeholder*='PO']", "input[placeholder*='po']"]
+
+    # Get tow date
+    date_value = ""
+    for selector in date_selectors:
+        date_value = get_element_value_by_css(driver, selector)
+        if date_value:
+            logging.info(f"Found date: {date_value} with {selector}")
+            break
+
+    # Get tow time - improved to ensure we get this value
+    time_value = ""
+    for selector in time_selectors:
+        time_value = get_element_value_by_css(driver, selector)
+        if time_value:
+            logging.info(f"Found time: {time_value} with {selector}")
+            break
+    
+    # Try additional time selectors if not found
+    if not time_value:
+        # Try JavaScript approach to find time input
+        try:
+            time_value = driver.execute_script("""
+                return Array.from(document.querySelectorAll('input')).find(i => 
+                    (i.placeholder && i.placeholder.toLowerCase().includes('time')) || 
+                    (i.id && i.id.toLowerCase().includes('time')) ||
+                    (i.name && i.name.toLowerCase().includes('time'))
+                )?.value || '';
+            """)
+            if time_value:
+                logging.info(f"Found time using JavaScript: {time_value}")
+        except Exception as e:
+            logging.warning(f"JavaScript time extraction error: {e}")
+    
+    # If still no time value, use current time as fallback
+    if not time_value:
+        time_value = datetime.now().strftime('%H:%M')
+        logging.info(f"Using current time as fallback: {time_value}")
+    
+    # Get PO number for complaint number
+    po_value = ""
+    for selector in po_selectors:
+        po_value = get_element_value_by_css(driver, selector)
+        if po_value:
+            logging.info(f"Found PO#: {po_value} with {selector}")
+            break
+    
+    # Try additional PO selectors if not found
+    if not po_value:
+        try:
+            # Try JavaScript approach to find PO input
+            po_value = driver.execute_script("""
+                return Array.from(document.querySelectorAll('input')).find(i => 
+                    (i.placeholder && i.placeholder.toLowerCase().includes('po')) || 
+                    (i.id && i.id.toLowerCase().includes('po')) ||
+                    (i.name && i.name.toLowerCase().includes('po'))
+                )?.value || '';
+            """)
+            if po_value:
+                logging.info(f"Found PO# using JavaScript: {po_value}")
+                
+            # If still not found, try to look for a field with 'reference' or 'ref' in its attributes
+            if not po_value:
+                po_value = driver.execute_script("""
+                    return Array.from(document.querySelectorAll('input')).find(i => 
+                        (i.placeholder && (i.placeholder.toLowerCase().includes('reference') || i.placeholder.toLowerCase().includes('ref'))) || 
+                        (i.id && (i.id.toLowerCase().includes('reference') || i.id.toLowerCase().includes('ref'))) ||
+                        (i.name && (i.name.toLowerCase().includes('reference') || i.name.toLowerCase().includes('ref')))
+                    )?.value || '';
+                """)
+                if po_value:
+                    logging.info(f"Found PO# as reference number using JavaScript: {po_value}")
+        except Exception as e:
+            logging.warning(f"JavaScript PO extraction error: {e}")
+
+    # Update vehicle data
+    if date_value:
+        vehicle_data['tow_date'] = date_value
+        
+        # Format the date properly if found
+        try:
+            if '/' in date_value:
+                # MM/DD/YYYY format
+                tow_date = datetime.strptime(date_value, '%m/%d/%Y')
+                vehicle_data['tow_date'] = tow_date.strftime('%Y-%m-%d')
+            else:
+                # Try another common format
+                tow_date = datetime.strptime(date_value, '%Y-%m-%d')
+                # Already in the right format
+        except Exception as e:
+            logging.warning(f"Date format conversion error: {e}")
+            # If we can't parse it, leave it as is
+            
+    if time_value:
+        vehicle_data['tow_time'] = time_value
+    
+    if po_value:
+        vehicle_data['complaint_number'] = po_value
+    
+    return vehicle_data
+
+def generate_next_complaint_number(db_path="vehicles.db"):
+    """
+    Generates the next sequential complaint number in ITXXXX-YY format.
+    Connects to the database, checks for an override, then finds the highest 
+    sequence for the current year, increments it, and returns the new 
+    complaint number, sequence, and year.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        current_year_short = datetime.now().strftime('%y')  # e.g., "25"
+
+        # Check for an override for the current year
+        cursor.execute(
+            "SELECT next_sequence_number FROM complaint_sequence_override WHERE year = ?",
+            (current_year_short,)
+        )
+        override_result = cursor.fetchone()
+
+        if override_result:
+            next_seq_num = override_result[0]
+            # Optionally, one might want to remove the override after using it,
+            # or have a flag to indicate it's a one-time use.
+            # For now, we'll assume it stays until changed/deleted.
+            logging.info(f"Using overridden next complaint sequence {next_seq_num} for year {current_year_short}")
+        else:
+            # No override, proceed with normal sequence generation
+            query = f"SELECT complaint_number FROM vehicles WHERE complaint_number LIKE 'IT____-{current_year_short}'"
+            cursor.execute(query)
+            all_complaints_for_year = cursor.fetchall()
+
+            max_seq = 0
+            if all_complaints_for_year:
+                for row in all_complaints_for_year:
+                    cn = row[0]
+                    if cn and len(cn) == 9 and cn.startswith("IT") and cn[6] == '-':
+                        try:
+                            seq_part_str = cn[2:6]
+                            seq_part_int = int(seq_part_str)
+                            if seq_part_int > max_seq:
+                                max_seq = seq_part_int
+                        except ValueError:
+                            logging.warning(f"Could not parse sequence from complaint number: {cn} in utils.generate_next_complaint_number")
+                            continue
+            next_seq_num = max_seq + 1
+        
+        new_complaint_number = f"IT{next_seq_num:04d}-{current_year_short}"
+        logging.info(f"Generated next complaint number: {new_complaint_number}, sequence: {next_seq_num}, year: {current_year_short}")
+        # Return all three components
+        return new_complaint_number, next_seq_num, current_year_short
+        
+    except sqlite3.Error as e:
+        logging.error(f"Database error in generate_next_complaint_number: {e}")
+        current_year_short_fallback = datetime.now().strftime('%y')
+        # Fallback in case of error; sequence 0 indicates an issue.
+        return f"ITERR0000-{current_year_short_fallback}", 0, current_year_short_fallback
+    finally:
+        if conn:
+            conn.close()
+
+def get_current_complaint_sequence_info(db_path="vehicles.db"):
+    """
+    Retrieves the current state of the complaint number sequence.
+    Returns the next expected sequence number and the current year.
+    Checks for overrides first.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        current_year_short = datetime.now().strftime('%y')
+
+        # Check for an override for the current year
+        cursor.execute(
+            "SELECT next_sequence_number FROM complaint_sequence_override WHERE year = ?",
+            (current_year_short,)
+        )
+        override_result = cursor.fetchone()
+
+        if override_result:
+            next_seq_num = override_result[0]
+            is_overridden = True
+        else:
+            # No override, calculate next based on existing data
+            query = f"SELECT complaint_number FROM vehicles WHERE complaint_number LIKE 'IT____-{current_year_short}'"
+            cursor.execute(query)
+            all_complaints_for_year = cursor.fetchall()
+            max_seq = 0
+            if all_complaints_for_year:
+                for row in all_complaints_for_year:
+                    cn = row[0]
+                    if cn and len(cn) == 9 and cn.startswith("IT") and cn[6] == '-':
+                        try:
+                            seq_part_str = cn[2:6]
+                            seq_part_int = int(seq_part_str)
+                            if seq_part_int > max_seq:
+                                max_seq = seq_part_int
+                        except ValueError:
+                            continue # Skip malformed ones
+            next_seq_num = max_seq + 1
+            is_overridden = False
+        
+        return {
+            "next_sequence_number": next_seq_num,
+            "current_year": current_year_short,
+            "is_overridden": is_overridden
+        }
+    except sqlite3.Error as e:
+        logging.error(f"Database error in get_current_complaint_sequence_info: {e}")
+        return {
+            "next_sequence_number": 0, # Indicate error
+            "current_year": datetime.now().strftime('%y'),
+            "is_overridden": False,
+            "error": str(e)
+        }
+    finally:
+        if conn:
+            conn.close()
+
+def set_complaint_sequence_override(next_sequence_number, year=None, db_path="vehicles.db"):
+    """
+    Sets or updates an override for the next complaint sequence number for a given year.
+    If year is None, defaults to the current year.
+    """
+    conn = None
+    if year is None:
+        year = datetime.now().strftime('%y')
+    
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Use INSERT OR REPLACE to either insert a new override or update an existing one
+        cursor.execute(
+            "INSERT OR REPLACE INTO complaint_sequence_override (year, next_sequence_number) VALUES (?, ?)",
+            (year, next_sequence_number)
+        )
+        conn.commit()
+        logging.info(f"Set complaint sequence override for year {year} to {next_sequence_number}")
+        return True, f"Next complaint number for year {year} set to IT{next_sequence_number:04d}-{year}."
+    except sqlite3.Error as e:
+        logging.error(f"Database error in set_complaint_sequence_override: {e}")
+        return False, str(e)
+    finally:
+        if conn:
+            conn.close()
+
+def clear_complaint_sequence_override(year=None, db_path="vehicles.db"):
+    """
+    Clears an override for the complaint sequence number for a given year.
+    If year is None, defaults to the current year.
+    """
+    conn = None
+    if year is None:
+        year = datetime.now().strftime('%y')
+        
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM complaint_sequence_override WHERE year = ?", (year,))
+        conn.commit()
+        
+        if cursor.rowcount > 0:
+            logging.info(f"Cleared complaint sequence override for year {year}.")
+            return True, f"Override for year {year} cleared. System will use standard sequence."
+        else:
+            logging.info(f"No complaint sequence override found for year {year} to clear.")
+            return True, f"No override was set for year {year}."
+            
+    except sqlite3.Error as e:
+        logging.error(f"Database error in clear_complaint_sequence_override: {e}")
+        return False, str(e)
+    finally:
+        if conn:
+            conn.close()

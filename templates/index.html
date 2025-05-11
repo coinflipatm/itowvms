@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport"="width=device-width, initial-scale=1.0">
     <title>iTow Impound Manager</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css" rel="stylesheet">
@@ -293,7 +293,32 @@
             font-weight: bold;
             font-size: 0.8rem;
         }
+        .status-released, .status-released.badge {
+            background-color: #adb5bd !important;
+            color: #fff !important;
+        }
     </style>
+    <script>
+        let scrapingInterval;
+        function startScrapingProgress() {
+            scrapingInterval = setInterval(() => {
+                fetch('/scraping-progress')
+                    .then(response => response.json())
+                    .then(data => {
+                        const progress = data.progress;
+                        if (!progress.is_running) {
+                            clearInterval(scrapingInterval);
+                        }
+                        document.getElementById('scraping-status').innerText = progress.status;
+                        document.getElementById('scraping-progress').value = progress.percentage;
+                    })
+                    .catch(error => console.error('Error fetching scraping progress:', error));
+            }, 5000);
+        }
+        function stopScrapingProgress() {
+            clearInterval(scrapingInterval);
+        }
+    </script>
 </head>
 <body>
     <!-- Sidebar -->
@@ -301,14 +326,14 @@
     <div class="sidebar">
         <a class="navbar-brand text-white" href="/"><img src="/static/logo.png" alt="iTow Logo"> iTow Manager</a>
         <hr class="bg-light">
-        <a href="#" data-tab="active" class="active"><i class="fas fa-car"></i> Active Vehicles</a>
+        <a href="#" data-tab="active" class="active" data-bs-toggle="tooltip" title="Active: New, TOP Generated, TR52 Ready, TR208 Ready, Ready for Auction, Ready for Scrap"><i class="fas fa-car"></i> Active Vehicles</a>
         <a href="#" data-tab="New"><i class="fas fa-plus"></i> New</a>
         <a href="#" data-tab="TOP_Generated"><i class="fas fa-file-alt"></i> TOP Generated</a>
         <a href="#" data-tab="TR52_Ready"><i class="fas fa-check"></i> TR52 Ready</a>
         <a href="#" data-tab="TR208_Ready"><i class="fas fa-check"></i> TR208 Ready</a>
         <a href="#" data-tab="Ready_for_Auction"><i class="fas fa-gavel"></i> Ready for Auction</a>
         <a href="#" data-tab="Ready_for_Scrap"><i class="fas fa-trash"></i> Ready for Scrap</a>
-        <a href="#" data-tab="Completed"><i class="fas fa-archive"></i> Completed</a>
+        <a href="#" data-tab="Completed" data-bs-toggle="tooltip" title="Completed: Released, Auctioned, Scrapped, Transferred"><i class="fas fa-archive"></i> Completed</a>
         <a href="#" data-tab="notifications"><i class="fas fa-bell"></i> Notifications <span id="notification-count" class="notification-badge d-none">0</span></a>
         <a href="#" data-tab="contacts"><i class="fas fa-address-book"></i> Jurisdiction Contacts</a>
         <a href="#" data-tab="statistics"><i class="fas fa-chart-bar"></i> Statistics</a>
@@ -328,7 +353,13 @@
                 <a href="/api/compliance-report" class="btn btn-success"><i class="fas fa-download"></i> Compliance Report</a>
             </div>
         </div>
-
+        <!-- Workflow Legend -->
+        <div class="alert alert-secondary mb-3" id="workflow-legend">
+            <strong>Workflow Stages:</strong>
+            <span class="badge status-new">Active</span> (New, TOP Generated, TR52 Ready, TR208 Ready, Ready for Auction, Ready for Scrap)
+            <span class="badge status-released ms-2">Completed</span> (Released, Auctioned, Scrapped, Transferred)
+            <span class="ms-2"><i class="fas fa-info-circle" data-bs-toggle="tooltip" title="Active Vehicles: All vehicles currently in process. Completed: Vehicles that have been released, auctioned, scrapped, or transferred."></i></span>
+        </div>
         <!-- Workflow Counts -->
         <div class="row mb-4" id="workflow-counts">
             <div class="col-md-3">
@@ -940,7 +971,7 @@
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label for="edit-tow_time" class="form-label">Tow Time</label>
-                                <input type="time" class="form-control" id="edit-tow_time" name="tow_time">
+                                <input type="text" class="form-control" id="edit-tow_time" name="tow_time" placeholder="HH:MM">
                             </div>
                         </div>
                         <div class="row">
@@ -1708,7 +1739,6 @@
             loadUpcomingActions();
             checkPendingNotifications();
             setupEventListeners();
-            checkScrapingProgress();
             
             // Auto-refresh data every 5 minutes
             setInterval(function() {
@@ -1999,7 +2029,7 @@
                     }),
                     success: function(response) {
                         alert(response.message);
-                        // Keep modal open to show progress
+                        startScrapingProgressPolling(); // Start polling only after scrape is started
                     },
                     error: function(xhr) {
                         alert('Error: ' + (xhr.responseJSON ? xhr.responseJSON.message : 'Unknown error'));
@@ -2011,6 +2041,10 @@
                 e.preventDefault();
                 const formData = {};
                 $(this).serializeArray().forEach(item => {
+                    // Only include contact-id if it has a value (i.e., editing)
+                    if (item.name === 'id' && !item.value) {
+                        return;
+                    }
                     formData[item.name] = item.value;
                 });
                 
@@ -2374,8 +2408,68 @@
                             $('#edit-color').val(vehicle.color !== 'N/A' ? vehicle.color : '');
                             $('#edit-plate').val(vehicle.plate !== 'N/A' ? vehicle.plate : '');
                             $('#edit-state').val(vehicle.state !== 'N/A' ? vehicle.state : '');
-                            $('#edit-tow_date').val(vehicle.tow_date !== 'N/A' ? vehicle.tow_date : '');
-                            $('#edit-tow_time').val(vehicle.tow_time !== 'N/A' ? vehicle.tow_time : '');
+                            
+                            // --- Start Date/Time Formatting ---
+                            let towDateStr = vehicle.tow_date;
+                            let towTimeStr = vehicle.tow_time;
+                            let formattedDate = '';
+                            let formattedTime = '';
+
+                            if (towDateStr && towDateStr !== 'N/A') {
+                                try {
+                                    // Attempt to parse the date string, potentially including time
+                                    const dateObj = new Date(towDateStr);
+                                    
+                                    // Check if the date object is valid
+                                    if (!isNaN(dateObj.getTime())) {
+                                        // Format date as YYYY-MM-DD
+                                        const year = dateObj.getFullYear();
+                                        const month = (dateObj.getMonth() + 1).toString().padStart(2, '0');
+                                        const day = dateObj.getDate().toString().padStart(2, '0');
+                                        formattedDate = `${year}-${month}-${day}`;
+
+                                        // Check if the original string likely contained time info
+                                        if (towDateStr.includes(':') || towDateStr.includes(' ')) {
+                                             // Format time as HH:MM (24-hour)
+                                            const hours = dateObj.getHours().toString().padStart(2, '0');
+                                            const minutes = dateObj.getMinutes().toString().padStart(2, '0');
+                                            formattedTime = `${hours}:${minutes}`;
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.error("Error parsing tow_date:", e);
+                                    // Fallback: If parsing fails, try to use the value if it looks like YYYY-MM-DD
+                                    if (/^\d{4}-\d{2}-\d{2}$/.test(towDateStr)) {
+                                        formattedDate = towDateStr;
+                                    }
+                                }
+                            }
+                            
+                            // If time wasn't extracted from tow_date, try parsing tow_time separately
+                            if (!formattedTime && towTimeStr && towTimeStr !== 'N/A') {
+                                try {
+                                    // Simple check for HH:MM format or attempt to parse common time formats
+                                    if (/^\d{1,2}:\d{2}$/.test(towTimeStr)) {
+                                        // Assume it's already HH:MM, might need padding
+                                        let [hours, minutes] = towTimeStr.split(':');
+                                        formattedTime = `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+                                    } else {
+                                        // Try parsing with a dummy date
+                                        const timeObj = new Date(`1970-01-01T${towTimeStr}`);
+                                        if (!isNaN(timeObj.getTime())) {
+                                            const hours = timeObj.getHours().toString().padStart(2, '0');
+                                            const minutes = timeObj.getMinutes().toString().padStart(2, '0');
+                                            formattedTime = `${hours}:${minutes}`;
+                                        }
+                                    }
+                                } catch(e) {
+                                     console.error("Error parsing tow_time:", e);
+                                }
+                            }
+
+                            $('#edit-tow_date').val(formattedDate);
+                            $('#edit-tow_time').val(formattedTime);
+                            // --- End Date/Time Formatting ---
                             
                             // Handle requested_by vs requestor field
                             const requestedBy = vehicle.requested_by !== 'N/A' ? vehicle.requested_by : 
@@ -2546,8 +2640,8 @@
                             <dd class="col-sm-8">${vehicle.vin}</dd>
                             <dt class="col-sm-4">Plate:</dt>
                             <dd class="col-sm-8">${vehicle.plate} (${vehicle.state})</dd>
-                            <dt class="col-sm-4">Tow Date:</dt>
-                            <dd class="col-sm-8">${vehicle.tow_date} ${vehicle.tow_time}</dd>
+                            <dt class="col-sm-4">Tow Date/Time:</dt>
+                            <dd class="col-sm-8">${vehicle.tow_date && vehicle.tow_date !== 'N/A' ? vehicle.tow_date : 'N/A'} ${vehicle.tow_time && vehicle.tow_time !== 'N/A' ? vehicle.tow_time : ''}</dd>
                             <dt class="col-sm-4">Location:</dt>
                             <dd class="col-sm-8">${vehicle.location}</dd>
                             <dt class="col-sm-4">Jurisdiction:</dt>
@@ -3738,19 +3832,57 @@
             }
         }
 
-        function checkScrapingProgress() {
-            setInterval(() => {
+        // Remove any global or automatic polling for /scraping-progress
+        // Instead, start polling only after the scrape form is submitted
+        let scrapingProgressInterval = null;
+
+        function startScrapingProgressPolling() {
+            if (scrapingProgressInterval) clearInterval(scrapingProgressInterval);
+            scrapingProgressInterval = setInterval(() => {
                 $.get('/scraping-progress', function(data) {
                     const progress = data.progress;
                     $('#progress-bar').css('width', `${progress.percentage}%`).text(`${progress.percentage}%`);
                     $('#progress-text').text(progress.is_running ? `Processing ${progress.processed}/${progress.total}: ${progress.status}` : progress.status);
-                    
                     if (progress.error) {
                         $('#progress-text').html(`<span class="text-danger">${progress.error}</span>`);
+                    }
+                    if (!progress.is_running) {
+                        clearInterval(scrapingProgressInterval);
+                        scrapingProgressInterval = null;
                     }
                 });
             }, 2000);
         }
+
+        // In the scrape form submit handler, start polling after successful start
+        $('#scrape-form').submit(function(e) {
+            e.preventDefault();
+            const start_date = $('#start_date').val();
+            const end_date = $('#end_date').val();
+            const headless = $('#headless').is(':checked');
+            const auto_determine_jurisdiction = $('#auto_determine_jurisdiction').is(':checked');
+            // Reset progress indicators
+            $('#progress-bar').css('width', '0%').text('0%');
+            $('#progress-text').text('Starting scraper...');
+            $.ajax({
+                url: '/api/start-scraping',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    start_date: start_date,
+                    end_date: end_date,
+                    headless: headless,
+                    auto_determine_jurisdiction: auto_determine_jurisdiction
+                }),
+                success: function(response) {
+                    alert(response.message);
+                    startScrapingProgressPolling(); // Start polling only after scrape is started
+                },
+                error: function(xhr) {
+                    alert('Error: ' + (xhr.responseJSON ? xhr.responseJSON.message : 'Unknown error'));
+                }
+            });
+        });
 
         // Fix for vehicle loading by ensuring the API calls use the correct status names
         function loadVehicles(tab) {
@@ -3877,5 +4009,7 @@
         });
     </script>
     <script src="/static/js/navbar.js"></script>
+    <div id="scraping-status">Scraping not started</div>
+    <progress id="scraping-progress" value="0" max="100"></progress>
 </body>
 </html>

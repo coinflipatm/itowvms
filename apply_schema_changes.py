@@ -94,6 +94,33 @@ def add_text_column_if_not_exists(db_path, table_name, column_name, default_valu
         if conn:
             conn.close()
 
+def add_integer_column_if_not_exists(db_path, table_name, column_name, default_value=None):
+    """Adds an INTEGER column if it doesn't exist.
+       Optionally, a default value can be specified.
+    """
+    conn = None
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        if not column_exists(cursor, table_name, column_name):
+            logging.info(f"Column '{column_name}' does not exist in table '{table_name}'. Attempting to add.")
+            alter_query = f"ALTER TABLE {table_name} ADD COLUMN {column_name} INTEGER"
+            if default_value is not None:
+                alter_query += f" DEFAULT {default_value}" # No quotes for integer defaults
+            
+            cursor.execute(alter_query)
+            logging.info(f"Successfully added column '{column_name}' to table '{table_name}'" + (f" with default value {default_value}." if default_value is not None else "."))
+            conn.commit()
+        else:
+            logging.info(f"Column '{column_name}' already exists in table '{table_name}'. No action taken.")
+
+    except sqlite3.Error as e:
+        logging.error(f"SQLite error while trying to add column '{column_name}' to table '{table_name}' in database {db_path}: {e}")
+    finally:
+        if conn:
+            conn.close()
+
 def apply_schema_changes():
     """Applies the necessary schema changes to the database."""
     db_path = get_database_path()
@@ -112,6 +139,24 @@ def apply_schema_changes():
 
     # Add tow_reason to vehicles table
     add_text_column_if_not_exists(db_path, 'vehicles', 'tow_reason')
+
+    # Add new fields to vehicles table
+    add_text_column_if_not_exists(db_path, 'vehicles', 'tr52_form_sent_date')
+    add_text_column_if_not_exists(db_path, 'vehicles', 'tr208_form_sent_date')
+    add_text_column_if_not_exists(db_path, 'vehicles', 'top_form_sent_date')
+    add_integer_column_if_not_exists(db_path, 'vehicles', 'tr52_notification_sent', default_value=0)
+    add_integer_column_if_not_exists(db_path, 'vehicles', 'tr208_notification_sent', default_value=0)
+    # last_updated is typically handled by add_timestamp_column_if_not_exists or similar logic if it needs a default like CURRENT_TIMESTAMP
+    # If it's just a TEXT field updated by the app, add_text_column_if_not_exists is fine.
+    # Assuming 'last_updated' in 'vehicles' is already handled or added as TEXT. If it needs specific default, adjust.
+    add_timestamp_column_if_not_exists(db_path, 'vehicles', 'last_updated')
+
+
+    # Add new fields to documents table
+    add_text_column_if_not_exists(db_path, 'documents', 'sent_date')
+    add_text_column_if_not_exists(db_path, 'documents', 'sent_to')
+    add_text_column_if_not_exists(db_path, 'documents', 'sent_method')
+
 
     logging.info("Schema update process finished.")
 

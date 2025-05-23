@@ -1,6 +1,7 @@
-import sqlite3
-import os
-import logging
+import sqlite3 # Added: for SQLite database operations
+import os      # Added: for path operations
+import logging # Added logging import
+from flask import g, current_app # Ensure current_app is imported
 from datetime import datetime, timedelta
 import re # Added for parsing complaint numbers
 
@@ -14,10 +15,9 @@ def safe_parse_date(date_str):
         return datetime.strptime(date_str, '%Y-%m-%d').date()
     except ValueError:
         try:
-            # Try alternate format
-            return datetime.strptime(date_str, '%m/%d/%Y').date()
+            return datetime.strptime(date_str, '%m/%d/%Y').date() # Added alternative format
         except ValueError:
-            logging.warning(f"Could not parse date: {date_str}")
+            logging.warning(f"Invalid date format encountered: {date_str}") # Log warning
             return None
 
 # Make sure we have a consistent database path
@@ -28,328 +28,286 @@ def get_database_path():
     db_path = os.path.join(base_dir, 'vehicles.db')
     return db_path
 
-def get_db_connection():
+DATABASE = get_database_path() # Use the function directly to ensure consistency
+
+def get_db_connection(db_path=None):
+    db_path = db_path or DATABASE  # Default to our defined DATABASE path
+    
+    # Log the path being used for debugging
     try:
-        # Try the hardcoded path first
-        db_path = r'C:\Users\Finor\impound_lot_manager\itowvms-1\vehicles.db'
-        if not os.path.exists(db_path):
-            # Fall back to relative path if hardcoded path doesn't exist
-            db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'vehicles.db')
-            logging.info(f"Using fallback database path: {db_path}")
-        
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
-    except Exception as e:
-        logging.error(f"Database connection error: {e}")
-        # Create a more helpful error message
-        raise Exception(f"Failed to connect to database at {db_path}. Error: {str(e)}")
+        logging.debug(f"Connecting to database: {os.path.abspath(db_path)}")
+    except:
+        pass
+
+    # Check if we have an existing connection in the Flask g object
+    db = getattr(g, '_database', None)
+    
+    # Create a new connection if we don't have one or if the path has changed
+    if db is None:
+        try:
+            # Ensure the directory exists
+            db_dir = os.path.dirname(db_path)
+            if db_dir and not os.path.exists(db_dir):
+                os.makedirs(db_dir)
+                
+            # Connect to the database
+            db = sqlite3.connect(db_path)
+            db.row_factory = sqlite3.Row
+            
+            # Store in Flask g object if available
+            try:
+                g._database = db
+            except:
+                pass  # Not in a Flask context
+                
+        except Exception as e:
+            logging.error(f"Database connection error: {e}", exc_info=True)
+            raise
+    
+    return db
 
 def transaction():
     """Context manager for database transactions"""
     class Transaction:
         def __enter__(self):
             self.conn = get_db_connection()
-            return self.conn
+            self.conn.execute("BEGIN")
+            return self.conn.cursor() # Return cursor for use within 'with' block
 
         def __exit__(self, exc_type, exc_val, exc_tb):
-            if (exc_type is not None):
-                self.conn.rollback()
-            else:
+            if exc_type is None:
                 self.conn.commit()
-            self.conn.close()
+            else:
+                self.conn.rollback()
+            # The connection itself is managed by Flask's 'g' object, so usually not closed here
+            # unless it's a non-Flask context. For simplicity, relying on 'g'.
 
     return Transaction()
 
-def init_db():
-    logging.info("Initializing database...")
+def init_db(db_path=None):
+    db_path = db_path or os.environ.get('DATABASE_URL', get_database_path())
+    logger = current_app.logger if hasattr(current_app, 'logger') else logging.getLogger(__name__)
+    logger.info(f"Initializing database at {db_path}...")
+    
+    conn = get_db_connection(db_path) # Ensures connection is correctly established or reused via 'g'
     try:
-        # Ensure the database directory exists
-        db_path = get_database_path()
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Create vehicles table
-        cursor.execute('''
+        with conn: # Use connection as a context manager for commit/rollback
+            # Vehicles table
+            conn.execute("""
             CREATE TABLE IF NOT EXISTS vehicles (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 towbook_call_number TEXT UNIQUE,
-                complaint_number TEXT,
-                complaint_sequence INTEGER,
-                complaint_year TEXT,
-                vin TEXT,
+                complaint_number TEXT UNIQUE,
+                tow_date TEXT,
+                vehicle_year TEXT,
                 make TEXT,
                 model TEXT,
-                year TEXT,
+                vin TEXT,
+                license_plate TEXT,
+                license_state TEXT,
                 color TEXT,
-                plate TEXT,
-                state TEXT DEFAULT 'MI',
-                tow_date TEXT,
-                tow_time TEXT,
-                requestor TEXT,
-                location TEXT,
-                vehicle_description TEXT,
-                status TEXT DEFAULT 'New',
-                jurisdiction TEXT,
-                registered_owner TEXT,
-                registered_address TEXT,
-                lienholder TEXT,
-                abandoned BOOLEAN DEFAULT 1,
-                photo_paths TEXT,
-                top_form_sent_date TEXT,
-                top_notification_sent BOOLEAN DEFAULT 0,
-                tr52_available_date TEXT,
-                tr52_received_date TEXT,
-                tr208_eligible BOOLEAN DEFAULT 0,
-                tr208_available_date TEXT,
-                tr208_received_date TEXT,
-                paperwork_received_date TEXT,
-                decision TEXT,
-                decision_date TEXT,
-                auction_date TEXT,
-                ad_placement_date TEXT,
-                auction_ad_sent BOOLEAN DEFAULT 0,
-                storage_days INTEGER,
-                storage_fees REAL,
-                storage_fee_per_day REAL DEFAULT 25.00,
-                estimated_date TEXT,
-                days_until_auction INTEGER,
-                days_until_next_step INTEGER,
-                redemption_end_date TEXT,
-                release_date TEXT,
-                release_time TEXT,
-                release_reason TEXT,
-                recipient TEXT,
-                sale_amount REAL,
-                fees REAL,
-                net_proceeds REAL,
-                certified_mail_number TEXT,
-                certified_mail_sent_date TEXT,
-                certified_mail_received_date TEXT,
-                case_number TEXT,
-                officer_name TEXT,
-                release_notification_sent BOOLEAN DEFAULT 0,
-                inoperable BOOLEAN DEFAULT 0,
-                damage_extent TEXT,
-                condition_notes TEXT,
-                archived BOOLEAN DEFAULT 0,
-                salvage_value REAL,
-                last_updated TEXT DEFAULT CURRENT_TIMESTAMP,
+                location_from TEXT,
                 requested_by TEXT,
-                hearing_date TEXT,
-                hearing_requested INTEGER DEFAULT 0,
-                newspaper_name TEXT,
-                newspaper_contact TEXT,
-                lien_amount REAL,
-                additional_fees TEXT,
-                buyer_name TEXT,
-                buyer_id TEXT,
-                auction_price REAL,
-                vehicle_disposition TEXT
-            )
-        ''')
-        
-        # Create police logs table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS police_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                vehicle_id TEXT,
-                communication_date TEXT,
-                communication_type TEXT,
-                notes TEXT,
-                recipient TEXT,
-                contact_method TEXT,
-                attachment_path TEXT,
-                timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (vehicle_id) REFERENCES vehicles (towbook_call_number)
-            )
-        ''')
-        
-        # Create documents table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS documents (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                vehicle_id TEXT,
-                type TEXT,
-                filename TEXT,
-                upload_date TEXT,
-                generated_date TEXT,
-                sent_date TEXT,
-                sent_to TEXT,
-                sent_method TEXT,
-                delivery_status TEXT,
-                tracking_number TEXT,
-                FOREIGN KEY (vehicle_id) REFERENCES vehicles (towbook_call_number)
-            )
-        ''')
-        
-        # Create logs table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                action_type TEXT,
-                vehicle_id TEXT,
-                details TEXT,
-                timestamp TEXT
-            )
-        ''')
-        
-        # Create auctions table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS auctions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                driver TEXT,
+                reason_for_tow TEXT,
+                status TEXT DEFAULT 'New', -- e.g., New, TOP Generated, TR52 Ready, Released, Auctioned
+                owner_name TEXT,
+                owner_address TEXT,
+                owner_phone TEXT,
+                owner_email TEXT,
+                owner_known TEXT DEFAULT 'No', -- Yes, No
+                lienholder_name TEXT,
+                lienholder_address TEXT,
+                lienholder_phone TEXT,
+                lienholder_email TEXT,
+                last_updated TEXT, -- Timestamp of the last status update or significant change
+                release_date TEXT,
+                released_to TEXT,
+                release_fee REAL,
+                storage_start_date TEXT,
+                storage_end_date TEXT,
+                daily_storage_rate REAL,
+                total_storage_fees REAL,
                 auction_date TEXT,
-                status TEXT,
-                location TEXT,
-                auctioneer TEXT,
-                advertisement_date TEXT,
-                newspaper_name TEXT,
-                vin_list TEXT,
-                created_date TEXT,
-                completed_date TEXT,
-                notes TEXT
-            )
-        ''')
-        
-        # Create notifications table
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS notifications (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                vehicle_id TEXT,
-                notification_type TEXT, 
-                due_date TEXT,
-                sent_date TEXT,
-                sent_method TEXT,
-                recipient TEXT,
-                status TEXT,
-                reminder_sent INTEGER DEFAULT 0,
-                document_path TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (vehicle_id) REFERENCES vehicles (towbook_call_number)
-            )
-        ''')
-        
-        # Create contacts table
-        cursor.execute('''
+                auction_house TEXT,
+                sold_price REAL,
+                scrap_date TEXT,
+                scrap_yard TEXT,
+                scrap_value REAL,
+                notes TEXT,
+                archived INTEGER DEFAULT 0, -- 0 for not archived, 1 for archived
+                photos TEXT, -- JSON string of photo paths or comma-separated
+                documents TEXT, -- JSON string of document info {name, path, type}
+                certified_mail_number_owner TEXT,
+                certified_mail_number_lienholder TEXT,
+                newspaper_ad_date TEXT,
+                tr208_eligible INTEGER DEFAULT 0, -- 0 for No, 1 for Yes
+                tr208_filed_date TEXT,
+                tr208_approved_date TEXT,
+                tr208_status TEXT, -- e.g., Pending, Approved, Denied
+                jurisdiction TEXT -- e.g., City, County, State Police post
+            );
+            """)
+            logger.info("Table 'vehicles' checked/created.")
+
+            # Contacts table
+            conn.execute("""
             CREATE TABLE IF NOT EXISTS contacts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                jurisdiction TEXT UNIQUE,
+                jurisdiction TEXT NOT NULL UNIQUE, -- e.g., "City Police", "County Sheriff", "State Police Post 5"
                 contact_name TEXT,
-                phone TEXT,
-                email TEXT,
-                fax TEXT,
+                phone_number TEXT,
+                email_address TEXT,
+                fax_number TEXT,
                 address TEXT,
-                preferred_method TEXT,
                 notes TEXT
-            )
-        ''')
+            );
+            """)
+            logger.info("Table 'contacts' checked/created.")
 
-        # Create complaint_sequence_override table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS complaint_sequence_override (
-                year TEXT PRIMARY KEY,
-                next_sequence_number INTEGER NOT NULL
-            )
-        """)
-        logging.info("Ensured complaint_sequence_override table exists.")
+            # System Logs table
+            conn.execute("""
+            CREATE TABLE IF NOT EXISTS system_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                level TEXT NOT NULL, -- e.g., INFO, WARNING, ERROR
+                user_id TEXT, -- User performing the action, if applicable
+                action TEXT, -- e.g., "Vehicle Added", "Status Update", "Login Attempt"
+                vehicle_call_number TEXT, -- Link to vehicle if action is vehicle-related
+                details TEXT,
+                ip_address TEXT
+            );
+            """)
+            logger.info("Table 'system_logs' checked/created.")
 
-        # Add indices for performance
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_vehicles_status ON vehicles(status)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_vehicles_tow_date ON vehicles(tow_date)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_vehicles_jurisdiction ON vehicles(jurisdiction)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_police_logs_vehicle_id ON police_logs(vehicle_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_documents_vehicle_id ON documents(vehicle_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_notifications_vehicle_id ON notifications(vehicle_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_notifications_due_date ON notifications(due_date)')
-        
-        # Insert default contacts for common jurisdictions if table is empty
-        cursor.execute("SELECT COUNT(*) FROM contacts")
-        if cursor.fetchone()[0] == 0:
-            default_jurisdictions = [
-                ('Flint', 'Flint Police Department', '810-555-0100', 'flint-pd@example.com', '810-555-0101', '123 Main St, Flint, MI', 'email'),
-                ('Burton', 'Burton Police Department', '810-555-0200', 'burton-pd@example.com', '810-555-0201', '456 Oak St, Burton, MI', 'fax'),
-                ('Grand Blanc', 'Grand Blanc Police', '810-555-0300', 'grandblanc-pd@example.com', '810-555-0301', '789 Maple St, Grand Blanc, MI', 'email'),
-                ('Flushing', 'Flushing Police Department', '810-555-0400', 'flushing-pd@example.com', '810-555-0401', '101 Pine St, Flushing, MI', 'fax'),
-                ('Clio', 'Clio Police Department', '810-555-0500', 'clio-pd@example.com', '810-555-0501', '202 Elm St, Clio, MI', 'email')
-            ]
-            for jurisdiction in default_jurisdictions:
-                cursor.execute('''
-                    INSERT INTO contacts (jurisdiction, contact_name, phone, email, fax, address, preferred_method)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ''', jurisdiction)
-        
-        conn.commit()
-        conn.close()
-        logging.info("Database initialized successfully")
-    except Exception as e:
-        logging.error(f"Database initialization error: {e}")
-        raise
+            # Notifications table
+            conn.execute("""
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                vehicle_id INTEGER,
+                towbook_call_number TEXT, -- Denormalized for easier access
+                message TEXT NOT NULL,
+                type TEXT NOT NULL, -- e.g., 'Overdue TOP', 'Auction Reminder', 'TR208 Deadline'
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                due_date TEXT, -- Date when the action related to notification is due
+                status TEXT DEFAULT 'Pending', -- e.g., Pending, Sent, Dismissed
+                recipient_type TEXT, -- e.g., 'Owner', 'Lienholder', 'Internal'
+                method TEXT, -- How it was sent, e.g., 'Email', 'SMS', 'Fax', 'Certified Mail'
+                sent_at DATETIME,
+                sent_to TEXT, -- Actual recipient address/number
+                FOREIGN KEY (vehicle_id) REFERENCES vehicles(id)
+            );
+            """)
+            logger.info("Table 'notifications' checked/created.")
+
+            # Auctions table
+            conn.execute("""
+            CREATE TABLE IF NOT EXISTS auctions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                auction_date TEXT NOT NULL,
+                auction_house TEXT,
+                notes TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            """)
+            logger.info("Table 'auctions' checked/created.")
+
+            # Auction Vehicles (junction table)
+            conn.execute("""
+            CREATE TABLE IF NOT EXISTS auction_vehicles (
+                auction_id INTEGER NOT NULL,
+                vehicle_id INTEGER NOT NULL,
+                lot_number TEXT,
+                sold_price REAL,
+                status TEXT DEFAULT 'Scheduled', -- e.g., Scheduled, Sold, Not Sold
+                PRIMARY KEY (auction_id, vehicle_id),
+                FOREIGN KEY (auction_id) REFERENCES auctions(id),
+                FOREIGN KEY (vehicle_id) REFERENCES vehicles(id)
+            );
+            """)
+            logger.info("Table 'auction_vehicles' checked/created.")
+            
+            # Documents table (if not storing as JSON in vehicles.documents)
+            # This provides a more structured way to handle documents
+            conn.execute("""
+            CREATE TABLE IF NOT EXISTS documents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                vehicle_id INTEGER,
+                towbook_call_number TEXT, -- Denormalized for easier access
+                document_name TEXT NOT NULL,
+                document_type TEXT, -- e.g., 'TOP', 'TR52', 'Photo', 'Owner Letter'
+                file_path TEXT NOT NULL,
+                uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                uploaded_by TEXT, -- User ID or 'System'
+                FOREIGN KEY (vehicle_id) REFERENCES vehicles(id)
+            );
+            """)
+            logger.info("Table 'documents' checked/created.")
+
+            # Police Log table (for TR52, TR208 submissions etc.)
+            conn.execute("""
+            CREATE TABLE IF NOT EXISTS police_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                vehicle_id INTEGER NOT NULL,
+                towbook_call_number TEXT,
+                form_type TEXT NOT NULL, -- e.g., TR52, TR208
+                submission_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+                recipient_jurisdiction TEXT,
+                method TEXT, -- e.g., Email, Fax, In-Person
+                confirmation_details TEXT, -- e.g., Email ID, Fax confirmation, Officer badge
+                notes TEXT,
+                logged_by TEXT, -- User ID
+                FOREIGN KEY (vehicle_id) REFERENCES vehicles(id)
+            );
+            """)
+            logger.info("Table 'police_log' checked/created.")
+
+
+    except sqlite3.Error as e:
+        logger.error(f"Database initialization error: {e}", exc_info=True)
+    # finally:
+    #     if conn and not hasattr(g, '_database'): # Only close if not managed by g
+    #         conn.close()
+
+def get_vehicle_by_call_number(call_number):
+    conn = get_db_connection() 
+    # No close here, connection managed by g or calling context
+    vehicle = conn.execute('SELECT * FROM vehicles WHERE towbook_call_number = ?', (call_number,)).fetchone()
+    return dict(vehicle) if vehicle else None
 
 def get_vehicles_by_status(status_type, sort_column=None, sort_direction=None, include_archived=False):
-    from utils import get_status_filter
+    from utils import get_status_filter # Local import to avoid circular dependency issues
+    logger = current_app.logger if hasattr(current_app, 'logger') else logging.getLogger(__name__)
     try:
-        # Accept a list of statuses or a single status
-        if isinstance(status_type, list):
-            status_filter = status_type
-        else:
-            # Convert underscored status to space format to match database
-            original_status_type = status_type
-            if status_type == 'TOP_Generated':
-                status_type = 'TOP Generated'
-            elif status_type == 'TR52_Ready':
-                status_type = 'TR52 Ready'  
-            elif status_type == 'TR208_Ready':
-                status_type = 'TR208 Ready'
-            elif status_type == 'Ready_for_Auction':
-                status_type = 'Ready for Auction'
-            elif status_type == 'Ready_for_Scrap':
-                status_type = 'Ready for Scrap'
-            status_filter = get_status_filter(status_type)
-        
         conn = get_db_connection()
-        cursor = conn.cursor()
+        base_query = "SELECT * FROM vehicles"
+        conditions = []
+        params = []
+
+        status_conditions, status_params = get_status_filter(status_type)
+        if status_conditions:
+            conditions.append(f"({status_conditions})")
+            params.extend(status_params)
+
+        if not include_archived:
+            conditions.append("archived = 0")
         
-        query = "SELECT * FROM vehicles WHERE "
-        if include_archived:
-            query += f"status IN ({','.join(['?' for _ in status_filter])}) AND archived = 1"
-        else:
-            query += f"status IN ({','.join(['?' for _ in status_filter])}) AND archived = 0"
+        if conditions:
+            base_query += " WHERE " + " AND ".join(conditions)
         
-        # Add sort if provided
         if sort_column:
-            valid_columns = [
-                'towbook_call_number', 'complaint_number', 'vin', 'make', 'model', 
-                'year', 'color', 'tow_date', 'jurisdiction', 'status', 'last_updated'
-            ]
-            if sort_column in valid_columns:
-                sort_dir = "ASC" if sort_direction and sort_direction.lower() == 'asc' else "DESC"
-                query += f" ORDER BY {sort_column} {sort_dir}"
+            # Basic validation for sort_column to prevent SQL injection if it's too dynamic
+            # For now, assume it's from a controlled set of inputs
+            direction = 'DESC' if sort_direction and sort_direction.lower() == 'desc' else 'ASC'
+            base_query += f" ORDER BY {sort_column} {direction}"
         else:
-            query += " ORDER BY tow_date DESC"
-        
-        rows = cursor.execute(query, status_filter).fetchall()
-        vehicles = [dict(row) for row in rows]
-        
-        # Add days calculations with improved error handling
-        today = datetime.now().date()
-        for vehicle in vehicles:
-            for key in vehicle:
-                if vehicle[key] is None:
-                    vehicle[key] = 'N/A'
-            if vehicle.get('tow_date') and vehicle['tow_date'] != 'N/A':
-                tow_date = safe_parse_date(vehicle['tow_date'])
-                if tow_date:
-                    vehicle['days_since_tow'] = (today - tow_date).days
-                else:
-                    vehicle['days_since_tow'] = 0
-            # ...existing code for next step calculations...
-        conn.close()
-        return vehicles
+            base_query += " ORDER BY last_updated DESC" # Default sort
+
+        # logger.debug(f"Executing query: {base_query} with params: {params}")
+        vehicles = conn.execute(base_query, tuple(params)).fetchall()
+        return [dict(row) for row in vehicles]
     except Exception as e:
-        logging.error(f"Get vehicles error: {e}")
+        logger.error(f"Error in get_vehicles_by_status ({status_type}): {e}", exc_info=True)
         return []
 
 def update_vehicle_status(call_number, new_status, update_fields=None):
@@ -359,7 +317,7 @@ def update_vehicle_status(call_number, new_status, update_fields=None):
     if new_status == 'TOP_Generated':
         new_status = 'TOP Generated'
     elif new_status == 'TR52_Ready':
-        new_status = 'TR52 Ready'  
+        new_status = 'TR52 Ready'
     elif new_status == 'TR208_Ready':
         new_status = 'TR208 Ready'
     elif new_status == 'Ready_for_Auction':
@@ -628,127 +586,112 @@ def update_vehicle(call_number, data):
         return False, str(e)
 
 def insert_vehicle(data):
-    from utils import log_action, generate_complaint_number
+    from utils import log_action, generate_next_complaint_number # Ensure generate_next_complaint_number is correct
+    logger = current_app.logger if hasattr(current_app, 'logger') else logging.getLogger(__name__)
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Standardize 'requested_by' to 'requestor'
-        if 'requested_by' in data:
-            # If 'requestor' is not already in data or is empty/N/A,
-            # move value from 'requested_by' to 'requestor'.
-            # Otherwise, 'requestor' takes precedence if it has a value.
-            if data.get('requestor') is None or data.get('requestor') == 'N/A' or data.get('requestor') == '':
-                data['requestor'] = data.pop('requested_by')
-                logging.info("Mapped 'requested_by' to 'requestor' in input data for insert_vehicle as 'requestor' was empty/missing.")
-            else:
-                # 'requestor' has a value, so just remove 'requested_by' to avoid conflict
-                data.pop('requested_by')
-                logging.info("'requested_by' also found in input data but 'requestor' already had a value. Using 'requestor', 'requested_by' removed.")
         
-        towbook_call_number = data.get('towbook_call_number')
-        cursor.execute("SELECT COUNT(*) FROM vehicles WHERE towbook_call_number = ?", (towbook_call_number,))
-        exists = cursor.fetchone()[0] > 0
-        
-        # Clean data to prevent NULL values
-        for key in list(data.keys()): # Iterate over a copy of keys for safe deletion
-            if data[key] is None or data[key] == '':
-                # Allow complaint_sequence and complaint_year to be None/NULL if intentionally cleared
-                if key in ['complaint_sequence', 'complaint_year']:
-                    data[key] = None
-                else:
-                    data[key] = 'N/A'
-            # Ensure boolean fields are 0 or 1, not N/A
-            elif key in ['archived', 'top_notification_sent', 'tr208_eligible', 'auction_ad_sent', 'release_notification_sent', 'inoperable', 'hearing_requested'] and data[key] == 'N/A':
-                data[key] = 0 # Default to false if N/A
+        # Ensure essential fields are present or have defaults
+        data.setdefault('status', 'New')
+        data.setdefault('tow_date', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        data.setdefault('last_updated', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        data.setdefault('owner_known', 'No')
+        data.setdefault('archived', 0)
+        data.setdefault('tr208_eligible', 0)
 
-        # Handle complaints
-        # If complaint_number is not provided or is 'N/A', or if its constituent parts are missing
-        if (data.get('complaint_number') == 'N/A' or not data.get('complaint_number')) or \
-           (data.get('complaint_sequence') is None and data.get('complaint_year') is None):
-            complaint_number_val, sequence_val, year_val = generate_complaint_number()
-            data['complaint_number'] = complaint_number_val
-            data['complaint_sequence'] = sequence_val
-            data['complaint_year'] = year_val
-            logging.info(f"Generated new complaint details for {towbook_call_number}: {complaint_number_val}, seq: {sequence_val}, year: {year_val}")
-        elif data.get('complaint_number') and (data.get('complaint_sequence') is None or data.get('complaint_year') is None):
-            # Complaint number is provided, but sequence/year might be missing (e.g. manual entry)
-            match = re.fullmatch(r"IT(\d{4})-(\d{2})", data['complaint_number'])
-            if match:
-                sequence_str, year_str = match.groups()
-                data['complaint_sequence'] = int(sequence_str)
-                data['complaint_year'] = year_str
-                logging.info(f"Parsed provided complaint number {data['complaint_number']} to sequence {sequence_str} and year {year_str} for new vehicle.")
-            else:
-                data['complaint_sequence'] = None
-                data['complaint_year'] = None
-                logging.warning(f"Custom complaint number format {data['complaint_number']} for new vehicle. Sequence and year set to NULL.")
-        # If complaint_number, complaint_sequence, and complaint_year are all provided, they are assumed to be correct and will be used.
+        # Generate complaint number if not provided
+        if 'complaint_number' not in data or not data['complaint_number']:
+            data['complaint_number'] = generate_next_complaint_number(conn) # Pass conn if needed by the function
 
-        # Get existing columns from the database to filter data before insert/update
-        cursor.execute("PRAGMA table_info(vehicles)")
-        existing_columns = [row[1] for row in cursor.fetchall()]
+        # Define columns based on your table schema to avoid inserting extra keys from data
+        # This also helps in maintaining the correct order if not using named placeholders
+        columns = [
+            'towbook_call_number', 'complaint_number', 'tow_date', 'vehicle_year', 'make', 
+            'model', 'vin', 'license_plate', 'license_state', 'color', 'location_from', 
+            'requested_by', 'driver', 'reason_for_tow', 'status', 'owner_name', 
+            'owner_address', 'owner_phone', 'owner_email', 'owner_known', 'lienholder_name', 
+            'lienholder_address', 'lienholder_phone', 'lienholder_email', 'last_updated', 
+            'release_date', 'released_to', 'release_fee', 'storage_start_date', 
+            'storage_end_date', 'daily_storage_rate', 'total_storage_fees', 'auction_date', 
+            'auction_house', 'sold_price', 'scrap_date', 'scrap_yard', 'scrap_value', 
+            'notes', 'archived', 'photos', 'documents', 'certified_mail_number_owner',
+            'certified_mail_number_lienholder', 'newspaper_ad_date', 'tr208_eligible',
+            'tr208_filed_date', 'tr208_approved_date', 'tr208_status', 'jurisdiction'
+        ]
         
-        # Ensure last_updated is always set for new inserts
-        data['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        
-        filtered_data = {k: v for k, v in data.items() if k in existing_columns}
+        # Filter data to include only known columns and prepare for insertion
+        insert_data = {col: data.get(col) for col in columns}
 
-        if exists:
-            # Build update query dynamically based on provided fields
-            fields = []
-            values = []
-            for key, value in filtered_data.items(): # Use filtered_data
-                if key != 'towbook_call_number':  # Skip primary key
-                    fields.append(f"{key} = ?")
-                    values.append(value)
-            
-            # Add the WHERE condition value
-            values.append(towbook_call_number)
-            
-            # Execute the update query
-            cursor.execute(f"""
-                UPDATE vehicles SET
-                    {", ".join(fields)},
-                    last_updated = ?
-                WHERE towbook_call_number = ?
-            """, values + [datetime.now().strftime('%Y-%m-%d %H:%M:%S'), towbook_call_number])
-            
-            logging.info(f"Updated existing vehicle {towbook_call_number}")
-        else:
-            # For INSERT, we need field names and placeholders
-            field_names = list(filtered_data.keys()) # Use filtered_data
-            placeholders = ["?"] * len(field_names)
-            values = list(filtered_data.values()) # Use filtered_data
-
-            cursor.execute(f"""
-                INSERT INTO vehicles (
-                    {", ".join(field_names)}
-                ) VALUES ({", ".join(placeholders)})
-            """, values)
-            
-            logging.info(f"Inserted new vehicle {towbook_call_number} with data: {filtered_data}")
-            
-            # Create initial notification records
-            if 'tow_date' in data and data['tow_date'] != 'N/A':
-                try:
-                    tow_date = datetime.strptime(data['tow_date'], '%Y-%m-%d')
-                    top_due_date = tow_date + timedelta(days=1)
-                    cursor.execute("""
-                        INSERT INTO notifications
-                        (vehicle_id, notification_type, due_date, status)
-                        VALUES (?, ?, ?, ?)
-                    """, (towbook_call_number, 'TOP', top_due_date.strftime('%Y-%m-%d'), 'pending'))
-                except ValueError as e:
-                    logging.warning(f"Could not parse tow date '{data['tow_date']}' for {towbook_call_number}: {e}")
+        query = f"""
+            INSERT INTO vehicles ({', '.join(insert_data.keys())})
+            VALUES ({', '.join(['?'] * len(insert_data))})
+        """
         
-        conn.commit()
-        conn.close()
-        log_action("INSERT", towbook_call_number, f"Added vehicle: {data.get('make', 'N/A')} {data.get('model', 'N/A')}")
-        return True, "Vehicle added successfully"
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute(query, tuple(insert_data.values()))
+            vehicle_id = cursor.lastrowid
+        
+        logger.info(f"Vehicle inserted with ID: {vehicle_id}, Call Number: {data.get('towbook_call_number')}")
+        # log_action('Vehicle Added', data.get('towbook_call_number'), 'System', f"Vehicle {data.get('make')} {data.get('model')} added.") # User from context
+        return vehicle_id
+
+    except sqlite3.IntegrityError as e:
+        logger.error(f"Integrity error inserting vehicle (Call#: {data.get('towbook_call_number')}, Complaint#: {data.get('complaint_number')}): {e}", exc_info=True)
+        raise # Re-raise to be handled by the caller, perhaps with a user-friendly message
     except Exception as e:
-        logging.error(f"Insert error: {e}")
-        return False, str(e)
+        logger.error(f"Error inserting vehicle (Call#: {data.get('towbook_call_number')}): {e}", exc_info=True)
+        raise
+
+def get_vehicles(tab, sort_column=None, sort_direction='asc'):
+    """
+    Enhanced version of get_vehicles with improved error handling and status mapping.
+    'tab' corresponds to sidebar filters.
+    """
+    from utils import get_status_filter # Local import
+    logger = current_app.logger if hasattr(current_app, 'logger') else logging.getLogger(__name__)
+    try:
+        conn = get_db_connection()
+        
+        # Determine status conditions and parameters from the tab
+        status_conditions, status_params = get_status_filter(tab)
+        
+        query = "SELECT * FROM vehicles"
+        params = list(status_params) # Convert tuple to list for potential extension
+
+        conditions = []
+        if status_conditions:
+            conditions.append(f"({status_conditions})")
+        
+        # Always exclude archived unless 'archived' or 'all_including_archived' tab is specified
+        if tab != 'archived' and tab != 'all_including_archived': # Assuming you might add such tabs
+             conditions.append("archived = 0")
+        elif tab == 'archived':
+            conditions.append("archived = 1")
+
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+
+        # Sorting
+        valid_sort_columns = [
+            'towbook_call_number', 'complaint_number', 'tow_date', 'make', 'model', 'vin', 
+            'license_plate', 'status', 'last_updated', 'release_date', 'auction_date', 'jurisdiction'
+        ] # Add more as needed
+        
+        if sort_column and sort_column in valid_sort_columns:
+            direction = 'DESC' if sort_direction and sort_direction.lower() == 'desc' else 'ASC'
+            query += f" ORDER BY {sort_column} {direction}"
+        else:
+            # Default sort order, e.g., by last_updated or tow_date
+            query += " ORDER BY last_updated DESC, tow_date DESC"
+            
+        # logger.debug(f"Executing get_vehicles query: {query} with params: {params}")
+        vehicle_rows = conn.execute(query, tuple(params)).fetchall()
+        return [dict(row) for row in vehicle_rows]
+        
+    except Exception as e:
+        logger.error(f"Error in get_vehicles (tab: {tab}): {e}", exc_info=True)
+        return []
 
 def check_and_update_statuses():
     """Check and update vehicle statuses based on date thresholds"""
@@ -972,222 +915,22 @@ def check_and_update_statuses():
         logging.error(f"Status check error: {e}")
         return False
 
-def get_vehicles(tab, sort_column=None, sort_direction='asc'):
-    """
-    Enhanced version of get_vehicles with improved error handling
-    """
-    try:
-        # Special handling for status types that come with underscores from frontend
-        if tab == 'TOP_Generated':
-            return get_vehicles_by_status('TOP Generated', sort_column, sort_direction)
-        elif tab == 'TR52_Ready':
-            return get_vehicles_by_status('TR52 Ready', sort_column, sort_direction)
-        elif tab == 'TR208_Ready':
-            return get_vehicles_by_status('TR208 Ready', sort_column, sort_direction)
-        elif tab == 'Ready_for_Auction':
-            return get_vehicles_by_status('Ready for Auction', sort_column, sort_direction)
-        elif tab == 'Ready_for_Scrap':
-            return get_vehicles_by_status('Ready for Scrap', sort_column, sort_direction)
-        elif tab == 'active':
-            conn = get_db_connection()
-            cursor = conn.cursor()
-            sort_by = "tow_date DESC"
-            if sort_column:
-                valid_columns = [
-                    'towbook_call_number', 'complaint_number', 'vin', 'make', 'model',
-                    'year', 'color', 'tow_date', 'jurisdiction', 'status', 'last_updated'
-                ]
-                if sort_column in valid_columns:
-                    sort_dir = "ASC" if sort_direction.lower() == 'asc' else "DESC"
-                    sort_by = f"{sort_column} {sort_dir}"
-            cursor.execute(f"SELECT * FROM vehicles WHERE archived = 0 ORDER BY {sort_by}")
-            vehicles = cursor.fetchall()
-            
-            # Convert row objects to dictionaries and ensure no None values
-            result = []
-            for vehicle in vehicles:
-                vehicle_dict = dict(vehicle)
-                for key in vehicle_dict:
-                    if vehicle_dict[key] is None:
-                        vehicle_dict[key] = 'N/A'
-                result.append(vehicle_dict)
-                
-            conn.close()
-            return result
-        else:
-            return get_vehicles_by_status(tab, sort_column, sort_direction)
-    except Exception as e:
-        logging.error(f"Get vehicles error (tab={tab}): {e}")
-        return []
-
-def toggle_archive_status(call_number):
-    from utils import log_action
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # Check current archive status
-        cursor.execute("SELECT archived FROM vehicles WHERE towbook_call_number = ?", (call_number,))
-        result = cursor.fetchone()
-        if not result:
-            conn.close()
-            return False, "Vehicle not found"
-        
-        # Toggle status
-        new_archived = 1 if result['archived'] == 0 else 0
-        cursor.execute("""
-            UPDATE vehicles 
-            SET archived = ?, last_updated = ?
-            WHERE towbook_call_number = ?
-        """, (new_archived, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), call_number))
-        
-        conn.commit()
-        conn.close()
-        
-        status_text = "completed" if new_archived else "active"
-        log_action("ARCHIVE_TOGGLE", call_number, f"Status toggled to {status_text}")
-        return True, f"Vehicle {status_text} successfully"
-    except Exception as e:
-        logging.error(f"Error toggling archive status: {e}")
-        return False, str(e)
-
-def batch_update_status(vehicle_ids, new_status):
-    from utils import log_action
-    try:
-        # Convert underscored status to space format if needed
-        if new_status == 'TOP_Generated':
-            new_status = 'TOP Generated'
-        elif new_status == 'TR52_Ready':
-            new_status = 'TR52 Ready'  
-        elif new_status == 'TR208_Ready':
-            new_status = 'TR208 Ready'
-        elif new_status == 'Ready_for_Auction':
-            new_status = 'Ready for Auction'
-        elif new_status == 'Ready_for_Scrap':
-            new_status = 'Ready for Scrap'
-            
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        updated_count = 0
-        for call_number in vehicle_ids:
-            cursor.execute("UPDATE vehicles SET status = ?, last_updated = ? WHERE towbook_call_number = ?",
-                           (new_status, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), call_number))
-            if cursor.rowcount > 0:
-                updated_count += 1
-                log_action("BATCH_UPDATE", call_number, f"Status updated to {new_status}")
-        conn.commit()
-        conn.close()
-        return True, updated_count, f"Updated {updated_count} vehicles"
-    except Exception as e:
-        logging.error(f"Batch update error: {e}")
-        return False, 0, str(e)
-
-def get_logs(vehicle_id=None, limit=100):
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        if vehicle_id:
-            cursor.execute("SELECT * FROM logs WHERE vehicle_id = ? ORDER BY timestamp DESC LIMIT ?", (vehicle_id, limit))
-        else:
-            cursor.execute("SELECT * FROM logs ORDER BY timestamp DESC LIMIT ?", (limit,))
-        
-        logs = cursor.fetchall()
-        conn.close()
-        return logs
-    except Exception as e:
-        logging.error(f"Error getting logs: {e}")
-        return []
-
-def create_auction(auction_date, vehicle_ids):
-    from utils import log_action, calculate_newspaper_ad_date
-    try:
-        if not auction_date or not vehicle_ids:
-            return False, "Missing required fields"
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        cursor.execute(f"SELECT vin FROM vehicles WHERE towbook_call_number IN ({','.join(['?' for _ in vehicle_ids])})", vehicle_ids)
-        vin_list = ', '.join([row['vin'] for row in cursor.fetchall() if row['vin']])
-        
-        # Calculate ad placement date
-        auction_date_obj = datetime.strptime(auction_date, '%Y-%m-%d')
-        ad_date = calculate_newspaper_ad_date(auction_date_obj)
-        
-        cursor.execute("INSERT INTO auctions (auction_date, status, vin_list, created_date, advertisement_date) VALUES (?, 'Scheduled', ?, ?, ?)",
-                      (auction_date, vin_list, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), ad_date.strftime('%Y-%m-%d')))
-        auction_id = cursor.lastrowid
-        
-        successfully_updated = []
-        for vehicle_id in vehicle_ids:
-            # Update the vehicle record
-            cursor.execute("""
-                UPDATE vehicles 
-                SET status = 'Ready for Auction', 
-                    auction_date = ?,
-                    ad_placement_date = ?,
-                    decision = 'Auction',
-                    decision_date = ?,
-                    last_updated = ?
-                WHERE towbook_call_number = ?
-            """, (auction_date, 
-                 ad_date.strftime('%Y-%m-%d'),
-                 datetime.now().strftime('%Y-%m-%d'),
-                 datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                 vehicle_id))
-            
-            if cursor.rowcount > 0:
-                successfully_updated.append(vehicle_id)
-                
-                # Create notification for auction ad
-                cursor.execute("""
-                    INSERT INTO notifications
-                    (vehicle_id, notification_type, due_date, status)
-                    VALUES (?, ?, ?, ?)
-                """, (vehicle_id, 'Auction_Ad', ad_date.strftime('%Y-%m-%d'), 'pending'))
-                
-                # Add a log entry
-                log_action("AUCTION_SCHEDULE", vehicle_id, f"Scheduled for auction on {auction_date}")
-        
-        conn.commit()
-        conn.close()
-        
-        if not successfully_updated:
-            return False, "No eligible vehicles were updated"
-            
-        return True, f"Scheduled {len(successfully_updated)} vehicles for auction on {auction_date}"
-    except Exception as e:
-        logging.error(f"Error creating auction: {e}")
-        return False, str(e)
-
 def get_pending_notifications():
+    logger = current_app.logger if hasattr(current_app, 'logger') else logging.getLogger(__name__)
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
-        today = datetime.now().date().strftime('%Y-%m-%d')
-        
-        cursor.execute("""
-            SELECT n.*, v.jurisdiction, v.make, v.model, v.year, v.color, v.towbook_call_number, v.vin
+        # Fetch notifications that are 'Pending' and optionally order them by due_date or created_at
+        query = '''
+            SELECT n.*, v.make, v.model, v.plate as license_plate, v.vin, v.status as vehicle_status 
             FROM notifications n
-            JOIN vehicles v ON n.vehicle_id = v.towbook_call_number
-            WHERE n.status = 'pending' AND n.due_date <= ?
-            ORDER BY n.due_date
-        """, (today,))
-        
-        notifications = [dict(row) for row in cursor.fetchall()]
-        
-        # Get contact information for each jurisdiction
-        for notification in notifications:
-            cursor.execute("SELECT * FROM contacts WHERE jurisdiction = ?", (notification['jurisdiction'],))
-            contact = cursor.fetchone()
-            if contact:
-                notification['contact'] = dict(contact)
-        
-        conn.close()
-        return notifications
+            LEFT JOIN vehicles v ON n.vehicle_id = v.towbook_call_number 
+            WHERE n.status = 'Pending'
+            ORDER BY n.due_date ASC, n.created_at ASC
+        '''
+        notifications = conn.execute(query).fetchall()
+        return [dict(row) for row in notifications]
     except Exception as e:
-        logging.error(f"Error getting pending notifications: {e}")
+        logger.error(f"Error fetching pending notifications: {e}", exc_info=True)
         return []
 
 def mark_notification_sent(notification_id, method, recipient):
@@ -1292,9 +1035,9 @@ def save_contact(contact_data):
                     conn.close()
                     return False, "Jurisdiction is required"
                     
-                columns = ', '.join([key for key in contact_data.keys() if key != 'id'])
-                placeholders = ', '.join(['?' for _ in contact_data.keys() if key != 'id'])
-                values = [contact_data[key] for key in contact_data.keys() if key != 'id']
+                columns = ', '.join([k for k in contact_data.keys() if k != 'id'])
+                placeholders = ', '.join(['?' for k in contact_data.keys() if k != 'id'])
+                values = [contact_data[k] for k in contact_data.keys() if k != 'id']
                 
                 cursor.execute(f"INSERT INTO contacts ({columns}) VALUES ({placeholders})", values)
                 message = "Contact added successfully"
@@ -1320,3 +1063,151 @@ def get_contacts():
     except Exception as e:
         logging.error(f"Error getting contacts: {e}")
         return []
+
+def get_contact_by_id(contact_id):
+    conn = get_db_connection()
+    contact = conn.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,)).fetchone()
+    # conn.close() # Connection managed by g
+    return dict(contact) if contact else None
+
+def add_contact_explicit(data):
+    conn = get_db_connection()
+    # cursor = conn.cursor() # Not needed if using conn.execute directly with context manager
+    logger = current_app.logger if hasattr(current_app, 'logger') else logging.getLogger(__name__)
+    try:
+        # Ensure required fields like jurisdiction are present
+        if not data.get('jurisdiction'):
+            raise ValueError("Jurisdiction is a required field for contacts.")
+
+        query = """
+            INSERT INTO contacts (jurisdiction, contact_name, phone_number, email_address, fax_number, address, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """
+        params = (
+            data.get('jurisdiction'),
+            data.get('contact_name'),
+            data.get('phone_number'),
+            data.get('email_address'),
+            data.get('fax_number'),
+            data.get('address'),
+            data.get('notes')
+        )
+        with conn: # transactionality
+            cursor = conn.execute(query, params)
+            new_id = cursor.lastrowid
+        logger.info(f"Contact added explicitly with ID: {new_id} for jurisdiction: {data.get('jurisdiction')}")
+        return new_id
+    except sqlite3.IntegrityError as e:        
+        logger.error(f"Integrity error adding contact for jurisdiction {data.get('jurisdiction')}: {e}", exc_info=True)
+        raise ValueError(f"A contact for jurisdiction '{data.get('jurisdiction')}' already exists.") # User-friendly
+    except Exception as e:
+        logger.error(f"Error adding contact explicitly: {e}", exc_info=True)
+        raise # Re-raise for caller to handle
+
+def update_contact_explicit(contact_id, data):
+    conn = get_db_connection()
+    logger = current_app.logger if hasattr(current_app, 'logger') else logging.getLogger(__name__)
+    try:
+        # Construct SET clause dynamically for fields present in data
+        set_clauses = []
+        params = []
+        allowed_fields = ['jurisdiction', 'contact_name', 'phone_number', 'email_address', 'fax_number', 'address', 'notes']
+        for field in allowed_fields:
+            if field in data:
+                set_clauses.append(f"{field} = ?")
+                params.append(data[field])
+        
+        if not set_clauses:
+            # raise ValueError("No data provided for update.") # Or just return without error
+            return True # No changes to make
+
+        params.append(contact_id)
+        query = f"UPDATE contacts SET {', '.join(set_clauses)} WHERE id = ?"
+        
+        with conn:
+            cursor = conn.execute(query, tuple(params))
+        
+        if cursor.rowcount == 0:
+            logger.warning(f"Attempted to update contact ID {contact_id}, but it was not found.")
+            raise ValueError(f"Contact with ID {contact_id} not found.")
+            
+        logger.info(f"Contact ID {contact_id} updated successfully.")
+        return True # Indicate success
+            
+    except sqlite3.IntegrityError as e:        
+        logger.error(f"Integrity error updating contact ID {contact_id} (e.g. duplicate jurisdiction): {e}", exc_info=True)
+        # Assuming jurisdiction is unique, this error could occur if trying to change to an existing one
+        raise ValueError(f"Failed to update contact: A contact with the provided jurisdiction may already exist.")
+    except Exception as e:
+        logger.error(f"Error updating contact ID {contact_id}: {e}", exc_info=True)
+        raise
+
+def delete_contact_explicit(contact_id):
+    conn = get_db_connection()
+    logger = current_app.logger if hasattr(current_app, 'logger') else logging.getLogger(__name__)
+    try:
+        with conn:
+            cursor = conn.execute("DELETE FROM contacts WHERE id = ?", (contact_id,))
+        
+        if cursor.rowcount == 0:
+            logger.warning(f"Attempted to delete contact ID {contact_id}, but it was not found.")
+            # Depending on desired behavior, either raise an error or return False
+            return False # Or raise ValueError("Contact not found")
+            
+        logger.info(f"Contact ID {contact_id} deleted successfully.")
+        return True # Indicate success
+    except Exception as e:
+        logger.error(f"Error deleting contact ID {contact_id}: {e}", exc_info=True)
+        raise
+
+def log_police_event(vehicle_id, form_type, recipient_jurisdiction, method, logged_by, notes='', confirmation_details=''):
+    conn = get_db_connection() 
+    logger = current_app.logger if hasattr(current_app, 'logger') else logging.getLogger(__name__)
+    try:
+        # Get towbook_call_number for denormalization
+        vehicle_info = conn.execute("SELECT towbook_call_number FROM vehicles WHERE id = ?", (vehicle_id,)).fetchone()
+        towbook_call_number = vehicle_info['towbook_call_number'] if vehicle_info else None
+
+        query = """
+            INSERT INTO police_log (vehicle_id, towbook_call_number, form_type, recipient_jurisdiction, method, logged_by, notes, confirmation_details, submission_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        params = (
+            vehicle_id, towbook_call_number, form_type, recipient_jurisdiction, method, 
+            logged_by, notes, confirmation_details, datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        )
+        with conn:
+            conn.execute(query, params)
+        logger.info(f"Police event logged for vehicle ID {vehicle_id}, form {form_type} by {logged_by}.")
+    except sqlite3.Error as e:
+         logger.error(f"Error logging police event for vehicle ID {vehicle_id}: {e}", exc_info=True)
+         # Decide if to raise or handle, for now, just log
+
+def add_document(call_number, document_name, document_type, file_path, uploaded_by='System'): 
+    conn = get_db_connection()
+    logger = current_app.logger if hasattr(current_app, 'logger') else logging.getLogger(__name__)
+    try:
+        # Get vehicle_id from call_number
+        vehicle_info = conn.execute("SELECT id FROM vehicles WHERE towbook_call_number = ?", (call_number,)).fetchone()
+        if not vehicle_info:
+            logger.error(f"Cannot add document. Vehicle with call_number {call_number} not found.")
+            return None # Or raise error
+        vehicle_id = vehicle_info['id']
+
+        query = """
+            INSERT INTO documents (vehicle_id, towbook_call_number, document_name, document_type, file_path, uploaded_by, uploaded_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """
+        params = (
+            vehicle_id, call_number, document_name, document_type, 
+            file_path, uploaded_by, datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        )
+        with conn:
+            cursor = conn.execute(query, params)
+            doc_id = cursor.lastrowid
+        logger.info(f"Document '{document_name}' added for vehicle call_number {call_number} by {uploaded_by}. Doc ID: {doc_id}")
+        return doc_id
+    except sqlite3.Error as e:
+        logger.error(f"Error adding document for vehicle call_number {call_number}: {e}", exc_info=True)
+        # Decide if to raise or handle
+        return None

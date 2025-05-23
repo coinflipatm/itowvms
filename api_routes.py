@@ -1,15 +1,15 @@
 """
 API routes for enhanced features in iTow Impound Manager
 """
-import csv
-import io
-import json
-import math
 from datetime import datetime, timedelta
 from collections import defaultdict
 from flask import Blueprint, request, jsonify, send_file
-from database import get_db_connection, get_vehicles, get_logs
+from database import get_db_connection, get_vehicles, get_pending_notifications # Added get_pending_notifications
 from utils import log_action, convert_frontend_status
+from scraper import TowBookScraper # Add this import
+import logging # Added import for logging
+from io import BytesIO, StringIO # Added BytesIO import for exporting files
+import os # Added import for os
 
 # Create blueprint
 api = Blueprint('api', __name__)
@@ -57,20 +57,26 @@ def workflow_counts():
         })
     except Exception as e:
         print(f"Error getting workflow counts: {e}")
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': f'Error getting workflow counts: {str(e)}'}), 500
 
 # Reporting routes
 @api.route('/api/reports')
 def get_reports():
     """Get report data for dashboard"""
     try:
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
+        start_date_str = request.args.get('start_date')
+        end_date_str = request.args.get('end_date')
         report_type = request.args.get('type', 'summary')
         
         # Validate dates
-        if not start_date or not end_date:
-            return jsonify({'error': 'Start and end dates are required'}), 400
+        if not start_date_str or not end_date_str:
+            return jsonify({'error': 'Start date and end date are required.'}), 400
+        
+        try:
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').strftime('%Y-%m-%d')
+            end_date = datetime.strptime(end_date_str, '%Y-%m-%d').strftime('%Y-%m-%d')
+        except ValueError:
+            return jsonify({'error': 'Invalid date format. Please use YYYY-MM-DD.'}), 400
             
         # Get data from database
         conn = get_db_connection()
@@ -80,29 +86,28 @@ def get_reports():
         cursor.execute("""
             SELECT status, COUNT(*) as count
             FROM vehicles
-            WHERE (tow_date BETWEEN ? AND ?) OR release_date BETWEEN ? AND ?
+            WHERE (date(tow_date) BETWEEN ? AND ?) OR (release_date IS NOT NULL AND date(release_date) BETWEEN ? AND ?)
             GROUP BY status
         """, (start_date, end_date, start_date, end_date))
         status_data = {row[0]: row[1] for row in cursor.fetchall()}
         
-        # Revenue data
-        # In real implementation, you'd query from a revenue table
-        # This is modified to get actual data from the database
+        # Revenue data (example - adapt to your actual schema if different)
         cursor.execute("""
             SELECT 
-                strftime('%m', release_date) as month,
-                COUNT(*) as count
+                strftime('%Y-%m', release_date) as month_year,  -- Changed to YYYY-MM for better sorting
+                COUNT(*) as count 
+                -- SUM(release_fee) as total_revenue -- If you have a release_fee column
             FROM vehicles
-            WHERE release_date BETWEEN ? AND ?
-            GROUP BY month
-            ORDER BY month
+            WHERE release_date IS NOT NULL AND date(release_date) BETWEEN ? AND ?
+            GROUP BY month_year
+            ORDER BY month_year
         """, (start_date, end_date))
         
         months = []
         counts = []
         for row in cursor.fetchall():
             # Convert month number to name
-            month_name = datetime.strptime(row[0], '%m').strftime('%b')
+            month_name = datetime.strptime(row[0], '%Y-%m').strftime('%b %Y')
             months.append(month_name)
             counts.append(row[1])
             
@@ -114,9 +119,9 @@ def get_reports():
         # Processing time by status
         cursor.execute("""
             SELECT status,
-                   AVG(JULIANDAY(COALESCE(release_date, DATE('now'))) - JULIANDAY(tow_date)) as avg_days
+                   AVG(JULIANDAY(COALESCE(date(release_date), date('now'))) - JULIANDAY(date(tow_date))) as avg_days
             FROM vehicles
-            WHERE (tow_date BETWEEN ? AND ?) OR release_date BETWEEN ? AND ?
+            WHERE (date(tow_date) BETWEEN ? AND ?) OR (release_date IS NOT NULL AND date(release_date) BETWEEN ? AND ?)
             GROUP BY status
         """, (start_date, end_date, start_date, end_date))
         processing_time = {
@@ -124,152 +129,143 @@ def get_reports():
             'values': []
         }
         for row in cursor.fetchall():
-            processing_time['labels'].append(row[0])
-            processing_time['values'].append(round(row[1], 1) if row[1] else 0)
+            processing_time['labels'].append(row[0] if row[0] else 'N/A')
+            processing_time['values'].append(row[1] if row[1] is not None else 0)
         
         # Jurisdiction distribution
         cursor.execute("""
             SELECT jurisdiction, COUNT(*) as count
             FROM vehicles
-            WHERE (tow_date BETWEEN ? AND ?) OR release_date BETWEEN ? AND ?
+            WHERE (date(tow_date) BETWEEN ? AND ?) OR (release_date IS NOT NULL AND date(release_date) BETWEEN ? AND ?)
             GROUP BY jurisdiction
         """, (start_date, end_date, start_date, end_date))
-        jurisdiction_data = {row[0] if row[0] else 'Unknown': row[1] for row in cursor.fetchall()}
-        
-        # Metrics
-        cursor.execute("""
-            SELECT 
-                COUNT(*) as total_vehicles,
-                AVG(JULIANDAY(COALESCE(release_date, DATE('now'))) - JULIANDAY(tow_date)) as avg_processing_time,
-                SUM(CASE WHEN status IN ('Released', 'Auctioned', 'Scrapped') THEN 1 ELSE 0 END) * 100.0 / 
-                    CASE WHEN COUNT(*) > 0 THEN COUNT(*) ELSE 1 END as completion_rate
-            FROM vehicles
-            WHERE (tow_date BETWEEN ? AND ?) OR release_date BETWEEN ? AND ?
-        """, (start_date, end_date, start_date, end_date))
-        metrics_row = cursor.fetchone()
-        
-        # Calculate total revenue (mock data - replace with actual calculation)
-        cursor.execute("""
-            SELECT COUNT(*) FROM vehicles 
-            WHERE status IN ('Released', 'Auctioned', 'Scrapped')
-            AND (tow_date BETWEEN ? AND ?) OR release_date BETWEEN ? AND ?
-        """, (start_date, end_date, start_date, end_date))
-        completed_count = cursor.fetchone()[0]
-        # Assume average revenue of $150 per vehicle
-        total_revenue = completed_count * 150
-        
-        metrics = {
-            'totalVehicles': metrics_row[0],
-            'avgProcessingTime': f"{round(metrics_row[1], 1) if metrics_row[1] else 0} days",
-            'totalRevenue': f"${total_revenue:,}",
-            'completionRate': f"{round(metrics_row[2], 1) if metrics_row[2] else 0}%"
-        }
-        
+        jurisdiction_data = {row[0]: row[1] for row in cursor.fetchall()}
+
         conn.close()
-        
+
         return jsonify({
-            'status': status_data,
-            'revenue': revenue_data,
+            'statusDistribution': status_data,
+            'revenueData': revenue_data,
             'processingTime': processing_time,
-            'jurisdiction': jurisdiction_data,
-            'metrics': metrics
+            'jurisdictionDistribution': jurisdiction_data,
+            'reportType': report_type,
+            'startDate': start_date,
+            'endDate': end_date
         })
+
     except Exception as e:
-        print(f"Error getting report data: {e}")
-        return jsonify({'error': str(e)}), 500
+        logging.error(f"Error getting reports: {e}", exc_info=True)
+        return jsonify({'error': f'Error getting reports: {str(e)}'}), 500
 
 # Enhanced vehicle search endpoint
 @api.route('/api/vehicles/search')
 def search_vehicles():
     """Search vehicles across multiple fields"""
     try:
-        query = request.args.get('q', '').strip()
-        if not query or len(query) < 2:
-            return jsonify([])
-            
+        query = request.args.get('query', '')
+        status_filter = request.args.get('status', 'all') # Example: 'all', 'active', 'completed'
+        # Add more filters as needed: date ranges, jurisdiction, etc.
+
+        if not query and status_filter == 'all':
+            # Potentially return all vehicles or a subset if no specific query
+            # For now, let's require a query if no other filter is strong
+            # return jsonify({'error': 'Search query or specific filter required'}), 400
+            pass # Allow fetching all if that's desired, or implement pagination
+
+
         conn = get_db_connection()
-        cursor = conn.cursor()
+        # Base query
+        sql_query = "SELECT * FROM vehicles WHERE 1=1"
+        params = []
+
+        if query:
+            # Search across multiple relevant fields
+            # Ensure to adjust field names based on your 'vehicles' table schema
+            search_term = f"%{query}%"
+            sql_query += """
+                AND (
+                    towbook_call_number LIKE ? OR
+                    license_plate LIKE ? OR
+                    vin LIKE ? OR
+                    make LIKE ? OR
+                    model LIKE ? OR
+                    owner_name LIKE ? OR
+                    complaint_number LIKE ?
+                    -- Add other fields you want to search
+                )
+            """
+            params.extend([search_term] * 7) # Adjust count based on number of fields
+
+        if status_filter and status_filter != 'all':
+            # Assuming convert_frontend_status can handle this or you map it directly
+            # For simplicity, direct mapping or a helper might be better here
+            if status_filter == 'active':
+                sql_query += " AND status NOT IN (?, ?, ?, ?)"
+                params.extend(['Released', 'Auctioned', 'Scrapped', 'Transferred'])
+            elif status_filter == 'completed':
+                sql_query += " AND status IN (?, ?, ?, ?)"
+                params.extend(['Released', 'Auctioned', 'Scrapped', 'Transferred'])
+            else: # Specific status
+                sql_query += " AND status = ?"
+                params.append(status_filter)
         
-        # Search across multiple fields with LIKE queries
-        search_term = f"%{query}%"
-        cursor.execute("""
-            SELECT * FROM vehicles
-            WHERE towbook_call_number LIKE ? 
-            OR complaint_number LIKE ?
-            OR vin LIKE ?
-            OR make LIKE ?
-            OR model LIKE ?
-            OR plate LIKE ?
-            LIMIT 50
-        """, (search_term, search_term, search_term, search_term, search_term, search_term))
-        
-        vehicles = cursor.fetchall()
+        # Add sorting and pagination here if needed
+        sql_query += " ORDER BY tow_date DESC" # Example sorting
+
+        vehicles_data = [dict(row) for row in conn.execute(sql_query, tuple(params)).fetchall()]
         conn.close()
         
-        # Convert to list of dicts
-        return jsonify([dict(v) for v in vehicles])
+        return jsonify(vehicles_data)
         
     except Exception as e:
-        print(f"Error searching vehicles: {e}")
-        return jsonify({'error': str(e)}), 500
+        logging.error(f"Error searching vehicles: {e}", exc_info=True)
+        return jsonify({'error': f'Error searching vehicles: {str(e)}'}), 500
 
 # Export routes with improved error handling
-@api.route('/api/vehicles/export/<format>')
-def export_vehicles(format):
+@api.route('/api/vehicles/export/<export_format>') # Renamed 'format' to 'export_format'
+def export_vehicles(export_format):
     """Export vehicle data"""
     try:
-        tab = request.args.get('tab', 'active')
-        sort_column = request.args.get('sort')
-        sort_direction = request.args.get('direction', 'asc')
-        
-        # Get vehicles data
-        vehicles = get_vehicles(tab, sort_column, sort_direction)
-        
-        if format == 'csv':
-            # Create CSV
-            output = io.StringIO()
-            writer = csv.writer(output)
+        # Fetch all vehicles or based on some filters (similar to search)
+        conn = get_db_connection()
+        vehicles_cursor = conn.execute("SELECT * FROM vehicles ORDER BY tow_date DESC")
+        vehicles_list = [dict(row) for row in vehicles_cursor.fetchall()]
+        conn.close()
+
+        if not vehicles_list:
+            return jsonify({"message": "No vehicles to export."}), 404
+
+        if export_format.lower() == 'csv':
+            from io import StringIO
+            import csv
+            si = StringIO()
+            cw = csv.writer(si)
+            # Write header (use keys from the first vehicle dict)
+            headers = vehicles_list[0].keys()
+            cw.writerow(headers)
+            # Write rows
+            for vehicle in vehicles_list:
+                cw.writerow([vehicle.get(h, '') for h in headers]) # Use .get for safety
             
-            # Get column names from first row
-            if vehicles:
-                columns = vehicles[0].keys()
-                writer.writerow(columns)
-                
-                # Write data rows
-                for vehicle in vehicles:
-                    writer.writerow(vehicle.values())
-            
-            # Create response
-            output.seek(0)
-            filename = f"vehicles_{tab}_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
-            
+            output = si.getvalue()
             return send_file(
-                io.BytesIO(output.getvalue().encode('utf-8')),
+                BytesIO(output.encode('utf-8')),
+                mimetype='text/csv',
                 as_attachment=True,
-                download_name=filename,  # Updated parameter name
-                mimetype='text/csv'
+                download_name='vehicles_export.csv'
             )
-        elif format == 'json':
-            # Export as JSON
-            vehicle_list = [dict(v) for v in vehicles]
-            output = json.dumps(vehicle_list, indent=2, default=str)
-            filename = f"vehicles_{tab}_{datetime.now().strftime('%Y%m%d%H%M%S')}.json"
-            
-            return send_file(
-                io.BytesIO(output.encode('utf-8')),
-                as_attachment=True,
-                download_name=filename,  # Updated parameter name
-                mimetype='application/json'
-            )
-        elif format == 'pdf':
-            # For PDF, we'd need a PDF generation library
-            # This is a placeholder - in real implementation you'd use reportlab or similar
-            return jsonify({'error': 'PDF export not implemented yet'}), 501
+        elif export_format.lower() == 'json':
+            return jsonify(vehicles_list)
+        # Add other formats like Excel (xlsx) if needed, using libraries like openpyxl
+        # elif export_format.lower() == 'xlsx':
+        #     # ... implementation for Excel export ...
+        #     pass
         else:
-            return jsonify({'error': 'Invalid export format'}), 400
+            return jsonify({'error': 'Unsupported format. Use "csv" or "json".'}), 400
+        
     except Exception as e:
-        print(f"Error exporting vehicles: {e}")
-        return jsonify({'error': str(e)}), 500
+        logging.error(f"Error exporting vehicles: {e}", exc_info=True)
+        return jsonify({'error': f'Error exporting vehicles: {str(e)}'}), 500
 
 # Statistics endpoint for dashboard
 @api.route('/api/statistics')
@@ -277,62 +273,162 @@ def get_statistics():
     """Get overall statistics for dashboard"""
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
         
-        # Total vehicles
-        cursor.execute("SELECT COUNT(*) FROM vehicles")
-        total_vehicles = cursor.fetchone()[0]
+        total_vehicles = conn.execute("SELECT COUNT(*) FROM vehicles").fetchone()[0]
         
-        # Vehicles by status
-        cursor.execute("""
-            SELECT status, COUNT(*) as count
-            FROM vehicles
-            GROUP BY status
-        """)
-        status_counts = {row[0]: row[1] for row in cursor.fetchall()}
+        active_statuses = ['New', 'TOP Generated', 'TR52 Ready', 'TR208 Ready', 'Ready for Auction', 'Ready for Scrap']
+        active_vehicles_query = f"SELECT COUNT(*) FROM vehicles WHERE status IN ({','.join(['?']*len(active_statuses))})"
+        active_vehicles = conn.execute(active_vehicles_query, active_statuses).fetchone()[0]
         
+        released_vehicles = conn.execute("SELECT COUNT(*) FROM vehicles WHERE status = 'Released'").fetchone()[0]
+        
+        # Average processing time for completed vehicles (Released, Auctioned, Scrapped)
+        # Ensure tow_date and release_date are stored in a comparable format (e.g., YYYY-MM-DD or datetime)
+        avg_processing_time_query = """
+            SELECT AVG(JULIANDAY(date(release_date)) - JULIANDAY(date(tow_date))) 
+            FROM vehicles 
+            WHERE status IN ('Released', 'Auctioned', 'Scrapped', 'Transferred') AND release_date IS NOT NULL AND tow_date IS NOT NULL
+        """
+        avg_time_result = conn.execute(avg_processing_time_query).fetchone()[0]
+        avg_processing_time = round(avg_time_result, 2) if avg_time_result is not None else "N/A"
+
         # Vehicles by jurisdiction
-        cursor.execute("""
-            SELECT jurisdiction, COUNT(*) as count
-            FROM vehicles
-            WHERE jurisdiction IS NOT NULL AND jurisdiction != ''
-            GROUP BY jurisdiction
-            ORDER BY count DESC
-            LIMIT 5
-        """)
-        jurisdiction_counts = {row[0]: row[1] for row in cursor.fetchall()}
-        
-        # Vehicle processing time
-        cursor.execute("""
-            SELECT 
-                AVG(JULIANDAY(COALESCE(release_date, DATE('now'))) - JULIANDAY(tow_date)) as avg_days
-            FROM vehicles
-            WHERE tow_date IS NOT NULL
-        """)
-        avg_processing_days = cursor.fetchone()[0]
-        
-        # Recent activity
-        cursor.execute("""
-            SELECT action_type, vehicle_id, details, timestamp
-            FROM logs
-            ORDER BY timestamp DESC
-            LIMIT 5
-        """)
-        recent_activity = [dict(row) for row in cursor.fetchall()]
-        
+        jurisdiction_counts_cursor = conn.execute("SELECT jurisdiction, COUNT(*) FROM vehicles GROUP BY jurisdiction")
+        jurisdiction_stats = {row[0] if row[0] else "Unknown": row[1] for row in jurisdiction_counts_cursor.fetchall()}
+
         conn.close()
         
         return jsonify({
             'totalVehicles': total_vehicles,
-            'statusCounts': status_counts,
-            'jurisdictionCounts': jurisdiction_counts,
-            'avgProcessingDays': round(avg_processing_days, 1) if avg_processing_days else 0,
-            'recentActivity': recent_activity
+            'activeVehicles': active_vehicles,
+            'releasedVehicles': released_vehicles,
+            'averageProcessingTimeDays': avg_processing_time,
+            'vehiclesByJurisdiction': jurisdiction_stats
         })
+        
     except Exception as e:
-        print(f"Error getting statistics: {e}")
-        return jsonify({'error': str(e)}), 500
+        logging.error(f"Error getting statistics: {e}", exc_info=True)
+        return jsonify({'error': f'Error getting statistics: {str(e)}'}), 500
+
+# Scraper routes
+# TODO: Implement a more robust way to manage and access scraper instances
+# For example, using a global dictionary or a dedicated manager class
+# that can store and retrieve scraper instances based on user sessions or task IDs.
+scraper_instances = {} # Simplified: In-memory storage for scraper instances
+
+@api.route('/api/start-scraping', methods=['POST'])
+def start_scraping_route():
+    data = request.json
+    username = data.get('username')
+    password = data.get('password')
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+
+    if not all([username, password, start_date, end_date]):
+        return jsonify({'error': 'Username, password, start date, and end date are required.'}), 400
+
+    # Use a unique ID for the scraper instance, e.g., session ID or a generated UUID
+    # For simplicity, using username as a key here, but this might not be suitable for concurrent use
+    scraper_id = username 
+    if scraper_id in scraper_instances and scraper_instances[scraper_id].is_running():
+        return jsonify({'message': 'Scraping is already in progress for this user.'}), 400
+        
+    scraper = TowBookScraper(username, password)
+    scraper_instances[scraper_id] = scraper
+
+    try:
+        # Consider running this in a background thread/task if it's long-running
+        # For now, assuming it's relatively quick or the client handles the wait
+        success, message = scraper.scrape_data(start_date, end_date) 
+        if success:
+            # Optionally, trigger data import into database here or return data for client to handle
+            # For example:
+            # imported_count = scraper.import_scraped_data_to_db() # Assuming this method exists
+            # log_action('Scraping Completed', current_user.id if current_user else 'System', f"{imported_count} records imported.")
+            return jsonify({'message': message, 'scraper_id': scraper_id, 'status': 'completed'}), 200
+        else:
+            return jsonify({'error': message, 'scraper_id': scraper_id, 'status': 'failed'}), 500
+            
+    except Exception as e:
+        logging.error(f"Error starting scraping: {e}", exc_info=True)
+        # Clean up scraper instance if it failed to start properly
+        if scraper_id in scraper_instances:
+            del scraper_instances[scraper_id]
+        return jsonify({'error': f'Error starting scraping: {str(e)}', 'status': 'error'}), 500
+
+@api.route('/api/scraping-progress')
+def scraping_progress_route():
+    scraper_id = request.args.get('scraper_id') 
+
+    if scraper_id and scraper_id in scraper_instances:
+        scraper = scraper_instances[scraper_id]
+        progress = scraper.get_progress() # Assuming TowBookScraper has get_progress()
+        return jsonify({'scraper_id': scraper_id, 'progress': progress}), 200
+    elif not scraper_id and scraper_instances: # Fallback to first, not ideal for multi-user
+        # This fallback is problematic in a multi-user scenario.
+        # Consider removing it or requiring scraper_id.
+        first_scraper_key = next(iter(scraper_instances))
+        scraper = scraper_instances[first_scraper_key]
+        progress = scraper.get_progress()
+        return jsonify({'scraper_id': first_scraper_key, 'progress': progress, 'message': 'No scraper_id provided, showing first available.'}), 200
+    
+    return jsonify({'error': 'Scraper not found or no active scraping session for the given ID.'}), 404
+
+@api.route('/api/pending-notifications')
+def pending_notifications_route():
+    try:
+        notifications = get_pending_notifications() # This function is in database.py
+        # Convert Row objects to dictionaries if they are not already
+        notifications_list = [dict(n) for n in notifications]
+        return jsonify(notifications_list)
+    except Exception as e:
+        logging.error(f"Error fetching pending notifications: {e}", exc_info=True)
+        return jsonify({'error': f'Error fetching pending notifications: {str(e)}'}), 500
 
 # Register blueprint with the app
 def register_api_routes(app):
     app.register_blueprint(api)
+    
+    # Add a diagnostic route
+    @app.route('/api/diagnostic')
+    def diagnostic():
+        """Diagnostic route to check database connection and data access"""
+        try:
+            from database import DATABASE, get_database_path
+            conn = get_db_connection()
+            tables_cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table';")
+            tables = [row[0] for row in tables_cursor.fetchall()]
+            
+            vehicles_count = conn.execute("SELECT COUNT(*) FROM vehicles").fetchone()[0]
+            contacts_count = conn.execute("SELECT COUNT(*) FROM contacts").fetchone()[0] if 'contacts' in tables else 0
+            notifications_count = conn.execute("SELECT COUNT(*) FROM notifications").fetchone()[0] if 'notifications' in tables else 0
+            
+            sample_vehicle = None
+            if vehicles_count > 0:
+                vehicle_cursor = conn.execute("SELECT * FROM vehicles LIMIT 1")
+                sample_vehicle = dict(vehicle_cursor.fetchone())
+                # Convert any non-serializable types
+                for key, value in sample_vehicle.items():
+                    if not isinstance(value, (str, int, float, bool, type(None))):
+                        sample_vehicle[key] = str(value)
+            
+            conn.close()
+            
+            return jsonify({
+                'status': 'success',
+                'database_path': get_database_path(),
+                'tables': tables,
+                'counts': {
+                    'vehicles': vehicles_count,
+                    'contacts': contacts_count,
+                    'notifications': notifications_count
+                },
+                'sample_vehicle': sample_vehicle
+            })
+        except Exception as e:
+            logging.error(f"Diagnostic error: {e}", exc_info=True)
+            return jsonify({
+                'status': 'error',
+                'message': str(e),
+                'type': str(type(e))
+            }), 500

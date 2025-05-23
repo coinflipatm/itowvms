@@ -85,6 +85,18 @@ class PDFGenerator:
                 self._handle_empty_value(data.get('color', 'N/A'))
             ]))
             
+            # Combine plate number and state
+            plate_number_val = self._handle_empty_value(data.get('plate'))
+            plate_state_val = self._handle_empty_value(data.get('state'))
+            
+            combined_plate_parts = []
+            if plate_number_val != 'N/A':
+                combined_plate_parts.append(plate_number_val)
+            if plate_state_val != 'N/A':
+                combined_plate_parts.append(plate_state_val)
+            
+            final_plate_info = ' '.join(combined_plate_parts) if combined_plate_parts else 'N/A'
+
             # Create details table
             details_data = [
                 ['TO:', self._handle_empty_value(data.get('jurisdiction', 'N/A'))],
@@ -95,8 +107,7 @@ class PDFGenerator:
                 ['REQUESTED BY:', self._handle_empty_value(data.get('requestor', data.get('requested_by', 'N/A')))], # Handles both field names
                 ['VEHICLE DESCRIPTION:', vehicle_desc],
                 ['VIN:', self._handle_empty_value(data.get('vin', 'N/A'))],
-                ['PLATE NUMBER:', self._handle_empty_value(data.get('plate', 'N/A'))],
-                ['STATE:', self._handle_empty_value(data.get('state', 'N/A'))],
+                ['PLATE NUMBER:', final_plate_info], # Combined plate number and state
                 ['COMPLAINT #:', self._handle_empty_value(data.get('complaint_number', 'N/A'))],
                 ['CASE NUMBER:', self._handle_empty_value(data.get('case_number', 'N/A'))], 
                 ['OFFICER NAME:', self._handle_empty_value(data.get('officer_name', 'N/A'))]

@@ -230,6 +230,9 @@ def get_status_filter(status_type):
     This function handles the conversion between frontend status naming conventions
     (with underscores) to backend status naming (with spaces)
     """
+    if not status_type or status_type == 'all':
+        return '', []
+
     # First convert any underscored status types to spaced format
     if status_type == 'TOP_Generated':
         status_type = 'TOP Generated'

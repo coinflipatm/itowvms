@@ -16,7 +16,7 @@ def test_vehicle_visibility():
         cursor = conn.cursor()
         
         # Test 1: Count active vehicles (should appear in active tab)
-        active_statuses = ['New', 'TOP Generated', 'TR52 Ready', 'TR208 Ready', 'Ready for Auction', 'Ready for Scrap']
+        active_statuses = ['New', 'TOP Generated', 'Ready for Auction', 'Ready for Scrap']
         active_statuses_str = "', '".join(active_statuses)
         
         cursor.execute(f"""

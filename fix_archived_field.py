@@ -15,8 +15,6 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 ACTIVE_STATUSES = [
     'New', 
     'TOP Generated', 
-    'TR52 Ready', 
-    'TR208 Ready', 
     'Ready for Auction', 
     'Ready for Scrap'
 ]

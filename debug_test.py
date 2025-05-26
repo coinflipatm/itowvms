@@ -28,7 +28,7 @@ try:
         print(f"  {row['status']}: {row['count']}")
 
     # Test active statuses
-    active_statuses = ['New', 'TOP Generated', 'TR52 Ready', 'TR208 Ready', 'Ready for Auction', 'Ready for Scrap']
+    active_statuses = ['New', 'TOP Generated', 'Ready for Auction', 'Ready for Scrap']
     placeholders = ','.join(['?'] * len(active_statuses))
     cursor.execute(f'SELECT COUNT(*) FROM vehicles WHERE status IN ({placeholders})', active_statuses)
     active_count = cursor.fetchone()[0]

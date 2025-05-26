@@ -50,8 +50,7 @@ def test_pdf_endpoints():
     # Test each PDF generation endpoint
     endpoints = [
         ("TOP", f"{base_url}/api/generate-top/{call_number}"),
-        ("TR52", f"{base_url}/api/generate-tr52/{call_number}"),
-        ("TR208", f"{base_url}/api/generate-tr208/{call_number}")
+        ("Release Notice", f"{base_url}/api/generate-release-notice/{call_number}")
     ]
     
     results = []

@@ -17,8 +17,7 @@ class StatusManager:
     # Define allowed transitions
     ALLOWED_TRANSITIONS = {
         'New': ['TOP Generated'],
-        'TOP Generated': ['TR52 Ready'],
-        'TR52 Ready': ['Ready for Auction', 'Ready for Scrap'],
+        'TOP Generated': ['Ready for Auction', 'Ready for Scrap'],
         'Ready for Auction': ['Auctioned'],
         'Ready for Scrap': ['Scrapped'],
         # Special case: Any status can go to Released
@@ -29,7 +28,6 @@ class StatusManager:
     STATUS_DISPLAY_NAMES = {
         'New': 'New',
         'TOP Generated': 'TOP Generated',
-        'TR52 Ready': 'TR52 Ready',
         'Ready for Auction': 'Ready for Auction',
         'Ready for Scrap': 'Ready for Scrap',
         'Auctioned': 'Auctioned',
@@ -41,7 +39,6 @@ class StatusManager:
     FRONTEND_TO_DB_STATUS = {
         'New': 'New',
         'TOP_Generated': 'TOP Generated',
-        'TR52_Ready': 'TR52 Ready', 
         'Ready_Auction': 'Ready for Auction',
         'Ready_Scrap': 'Ready for Scrap',
         'Auctioned': 'Auctioned',
@@ -54,7 +51,6 @@ class StatusManager:
     DB_TO_FRONTEND_STATUS = {
         'New': 'New',
         'TOP Generated': 'TOP_Generated',
-        'TR52 Ready': 'TR52_Ready',
         'Ready for Auction': 'Ready_Auction',
         'Ready for Scrap': 'Ready_Scrap',
         'Auctioned': 'Completed',
@@ -126,15 +122,9 @@ class StatusManager:
                 # Add status-specific fields
                 if new_status == 'TOP Generated':
                     fields['top_form_sent_date'] = datetime.now().strftime('%Y-%m-%d')
-                    # Calculate TR-52 date (20 days after TOP generation)
-                    tr52_date = datetime.now() + timedelta(days=20)
-                    fields['tr52_available_date'] = tr52_date.strftime('%Y-%m-%d')
+                    # Calculate next potential dates (20 days after TOP generation for auction/scrap eligibility)
+                    eligibility_date = datetime.now() + timedelta(days=20)
                     fields['days_until_next_step'] = 20
-                    
-                elif new_status == 'TR52 Ready':
-                    # Set TR52 received date
-                    if 'tr52_received_date' not in update_fields:
-                        fields['tr52_received_date'] = datetime.now().strftime('%Y-%m-%d')
                     
                 elif new_status == 'Ready for Auction':
                     # Calculate next auction date

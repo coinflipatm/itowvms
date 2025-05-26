@@ -22,8 +22,6 @@
         .status-label { padding: 0.3em 0.6em; font-size: 0.85em; border-radius: 0.25rem; color: #fff; display: inline-block; white-space: nowrap; }
         .status-new { background-color: #007bff; }
         .status-top-generated, .status-top_generated { background-color: #17a2b8; } /* Adjusted for consistency */
-        .status-tr52-ready, .status-tr52_ready { background-color: #28a745; }
-        .status-tr208-ready, .status-tr208_ready { background-color: #20c997; } /* Different green for distinction */
         .status-ready-for-auction, .status-ready_for_auction { background-color: #ffc107; color: #212529; }
         .status-ready-for-scrap, .status-ready_for_scrap { background-color: #fd7e14; } /* Orange for scrap */
         .status-released { background-color: #6c757d; }
@@ -101,8 +99,6 @@
         <a href="#" data-tab="active" data-bs-toggle="tooltip" title="Vehicles currently being processed (New to Ready for Scrap/Auction)"><i class="fas fa-car"></i> Active Vehicles</a>
         <a href="#" data-tab="New"><i class="fas fa-plus-circle"></i> New</a>
         <a href="#" data-tab="TOP_Generated"><i class="fas fa-file-signature"></i> TOP Generated</a>
-        <a href="#" data-tab="TR52_Ready"><i class="fas fa-envelope-open-text"></i> TR52 Ready</a>
-        <a href="#" data-tab="TR208_Ready"><i class="fas fa-stamp"></i> TR208 Ready</a>
         <a href="#" data-tab="Ready_for_Auction"><i class="fas fa-gavel"></i> Ready for Auction</a>
         <a href="#" data-tab="Ready_for_Scrap"><i class="fas fa-recycle"></i> Ready for Scrap</a>
         <a href="#" data-tab="completed" data-bs-toggle="tooltip" title="Vehicles no longer active (Released, Auctioned, Scrapped, Transferred)"><i class="fas fa-archive"></i> Completed Vehicles</a>
@@ -204,8 +200,6 @@
                                     <select class="form-select" id="add-status" name="status">
                                         <option value="New" selected>New</option>
                                         <option value="TOP Generated">TOP Generated</option>
-                                        <option value="TR52 Ready">TR52 Ready</option>
-                                        <option value="TR208 Ready">TR208 Ready</option>
                                         <option value="Ready for Auction">Ready for Auction</option>
                                         <option value="Ready for Scrap">Ready for Scrap</option>
                                         <option value="Released">Released</option>
@@ -369,8 +363,6 @@
                                     <select class="form-select" id="edit-status" name="status">
                                         <option value="New">New</option>
                                         <option value="TOP Generated">TOP Generated</option>
-                                        <option value="TR52 Ready">TR52 Ready</option>
-                                        <option value="TR208 Ready">TR208 Ready</option>
                                         <option value="Ready for Auction">Ready for Auction</option>
                                         <option value="Ready for Scrap">Ready for Scrap</option>
                                         <option value="Released">Released</option>
@@ -543,11 +535,6 @@
         <!-- ... -->
     </div>
 
-    <!-- Upload TR52 Modal -->
-    <div class="modal fade" id="uploadTR52Modal" tabindex="-1" aria-labelledby="uploadTR52ModalLabel" aria-hidden="true">
-        <!-- ... -->
-    </div>
-
     <!-- Send Notification Modal -->
     <div class="modal fade" id="sendNotificationModal" tabindex="-1" aria-labelledby="sendNotificationModalLabel" aria-hidden="true">
         <!-- ... -->
@@ -555,16 +542,6 @@
 
     <!-- Storage Fees Modal -->
     <div class="modal fade" id="storageFeesModal" tabindex="-1" aria-labelledby="storageFeesModalLabel" aria-hidden="true">
-        <!-- ... -->
-    </div>
-
-    <!-- TR208 Eligibility Assessment Modal -->
-    <div class="modal fade" id="tr208EligibilityModal" tabindex="-1" aria-labelledby="tr208EligibilityModalLabel" aria-hidden="true">
-        <!-- ... -->
-    </div>
-
-    <!-- TR208 Status Update Modal -->
-    <div class="modal fade" id="tr208StatusModal" tabindex="-1" aria-labelledby="tr208StatusModalLabel" aria-hidden="true">
         <!-- ... -->
     </div>
 

@@ -199,8 +199,6 @@ function loadTab(tabName, forceRefresh = false) {
         case 'active': // This is a general filter, not a specific status
         case 'New':
         case 'TOP_Generated':
-        case 'TR52_Ready':
-        case 'TR208_Ready':
         case 'Ready_for_Auction':
         case 'Ready_for_Scrap':
         case 'completed': // This is also a general filter
@@ -1002,11 +1000,10 @@ function renderActionButtons(vehicle) {
     dropdownMenu.className = 'dropdown-menu';
     dropdownMenu.setAttribute('aria-labelledby', `formsDropdown-${vehicle.towbook_call_number}`);
 
-    // Define available forms and conditions (example)
+    // Define available forms (only TOP and Release Notice)
     const availableForms = [
-        { name: 'TOP', endpoint: 'generate-top', condition: true }, // Always available for simplicity, or add logic
-        { name: 'TR-52', endpoint: 'generate-tr52', condition: vehicle.status === 'TOP_Generated' || vehicle.status === 'TR52_Ready' },
-        { name: 'TR-208', endpoint: 'generate-tr208', condition: vehicle.status === 'TR52_Ready' || vehicle.status === 'TR208_Ready' || (vehicle.tr208_eligible === 1 && vehicle.status === 'TOP_Generated') }
+        { name: 'TOP', endpoint: 'generate-top', condition: true },
+        { name: 'Release Notice', endpoint: 'generate-release-notice', condition: true }
     ];
 
     availableForms.forEach(form => {
@@ -1138,12 +1135,24 @@ function viewVehicleDetails(callNumber) {
         <hr>
         <div class="row">
             <div class="col-12">
+                <h5>Form Generation History & Actions</h5>
+                ${renderFormHistory(vehicle)}
+            </div>
+        </div>
+        <hr>
+        <div class="row">
+            <div class="col-12">
                 <h5>Notes</h5>
                 <p>${vehicle.notes || 'No notes available'}</p>
             </div>
         </div>
     `;
-    
+    // Store the original status in a data attribute for comparison later
+    const statusSelect = modal.querySelector('#details-status');
+    if (statusSelect) {
+        statusSelect.setAttribute('data-original-status', vehicle.status);
+    }
+
     // Show the modal
     const bsModal = new bootstrap.Modal(modal);
     bsModal.show();
@@ -1156,8 +1165,6 @@ function getStatusClass(status) {
     switch (status) {
         case 'New': return 'status-new';
         case 'TOP Generated': return 'status-top-generated';
-        case 'TR52 Ready': return 'status-tr52-ready';
-        case 'TR208 Ready': return 'status-tr208-ready';
         case 'Ready for Auction': return 'status-ready-for-auction';
         case 'Ready for Scrap': return 'status-ready-for-scrap';
         case 'Released': return 'status-released';
@@ -1848,19 +1855,26 @@ async function openVehicleDetailsModal(callNumber) {
             <hr>
             <div class="row">
                 <div class="col-12">
+                    <h5>Form Generation History & Actions</h5>
+                    ${renderFormHistory(vehicle)}
+                </div>
+            </div>
+            <hr>
+            <div class="row">
+                <div class="col-12">
                     <h5>Notes</h5>
                     <p>${vehicle.notes || 'No notes available'}</p>
                 </div>
             </div>
         `;
         // Store the original status in a data attribute for comparison later
-        const statusSelect = modalElement.querySelector('#details-status');
+        const statusSelect = modal.querySelector('#details-status');
         if (statusSelect) {
             statusSelect.setAttribute('data-original-status', vehicle.status);
         }
 
         // Show the modal
-        const bsModal = new bootstrap.Modal(modalElement);
+        const bsModal = new bootstrap.Modal(modal);
         bsModal.show();
 
     } catch (error) {
@@ -2049,7 +2063,7 @@ function deleteVehicle(callNumber) {
 }
 
 /**
- * Calls the API to generate a document (TOP, TR52, TR208) for a vehicle.
+ * Calls the API to generate a document (TOP or Release Notice) for a vehicle.
  * @param {string} callNumber - The towbook_call_number of the vehicle.
  * @param {string} formTypeEndpoint - The API endpoint suffix (e.g., 'generate-top').
  * @param {string} formName - The user-friendly name of the form (e.g., 'TOP').
@@ -2246,11 +2260,86 @@ function convertTabNameToStatusFilter(tabName) {
     // Convert underscored tab names to space-separated status names
     const conversions = {
         'TOP_Generated': 'TOP Generated',
-        'TR52_Ready': 'TR52 Ready', 
-        'TR208_Ready': 'TR208 Ready',
         'Ready_for_Auction': 'Ready for Auction',
         'Ready_for_Scrap': 'Ready for Scrap'
     };
     
     return conversions[tabName] || tabName;
+}
+
+/**
+ * Render form generation history and regeneration options for a vehicle
+ * @param {object} vehicle - The vehicle object
+ * @returns {string} - HTML string for form history section
+ */
+function renderFormHistory(vehicle) {
+    const forms = [
+        {
+            name: 'TOP',
+            endpoint: 'generate-top',
+            generatedAt: vehicle.top_form_generated_at,
+            generatedBy: vehicle.top_form_generated_by,
+            condition: true, // TOP can always be generated/regenerated
+            badgeClass: 'bg-primary'
+        }
+    ];
+
+    let historyHtml = '<div class="form-history-container">';
+    
+    forms.forEach(form => {
+        const isGenerated = form.generatedAt && form.generatedAt !== 'N/A';
+        const canGenerate = form.condition;
+        
+        historyHtml += `
+            <div class="card mb-2">
+                <div class="card-body py-2">
+                    <div class="row align-items-center">
+                        <div class="col-md-3">
+                            <span class="badge ${form.badgeClass} me-2">${form.name}</span>
+                        </div>
+                        <div class="col-md-5">
+                            ${isGenerated ? 
+                                `<small class="text-muted">
+                                    Generated: ${formatDateTimeForDisplay(form.generatedAt)}<br>
+                                    By: ${form.generatedBy || 'Unknown'}
+                                </small>` : 
+                                '<small class="text-muted">Not generated yet</small>'
+                            }
+                        </div>
+                        <div class="col-md-4 text-end">
+                            ${canGenerate ? 
+                                `<button class="btn btn-sm ${isGenerated ? 'btn-outline-secondary' : 'btn-primary'} me-1" 
+                                    onclick="generateDocumentApiCall('${vehicle.towbook_call_number}', '${form.endpoint}', '${form.name}')">
+                                    <i class="fas ${isGenerated ? 'fa-redo' : 'fa-plus'}"></i> 
+                                    ${isGenerated ? 'Regenerate' : 'Generate'}
+                                </button>` : 
+                                `<button class="btn btn-sm btn-secondary" disabled>
+                                    <i class="fas fa-lock"></i> Not Available
+                                </button>`
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    historyHtml += '</div>';
+    return historyHtml;
+}
+
+/**
+ * Format date and time for display in form history
+ * @param {string} dateTimeStr - DateTime string
+ * @returns {string} - Formatted date time string
+ */
+function formatDateTimeForDisplay(dateTimeStr) {
+    if (!dateTimeStr || dateTimeStr === 'N/A') return 'N/A';
+    
+    try {
+        const date = new Date(dateTimeStr);
+        return date.toLocaleString();
+    } catch (error) {
+        return dateTimeStr;
+    }
 }

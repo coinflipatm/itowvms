@@ -13,7 +13,7 @@ from utils import (generate_next_complaint_number, release_vehicle, log_action, 
                    ensure_logs_table_exists, setup_logging, get_status_filter, calculate_newspaper_ad_date,
                    calculate_storage_fees, determine_jurisdiction, send_email_notification, 
                    send_sms_notification, send_fax_notification, is_valid_email, is_valid_phone,
-                   generate_certified_mail_number, is_eligible_for_tr208, calculate_tr208_timeline, get_status_list_for_filter)
+                   generate_certified_mail_number, get_status_list_for_filter)
 from flask_login import login_required, current_user
 from auth import auth_bp, login_manager, init_auth_db, User, api_login_required
 from datetime import datetime, timedelta, date # Added date here
@@ -150,8 +150,10 @@ def _perform_top_generation(call_number, username):
         data['officer_name'] = data.get('officer_name', '')
         # towbook_call_number is implicitly used for logging if present in data
         
-        is_tr208_eligible, _ = is_eligible_for_tr208(data)
-        data['tr208_eligible'] = 1 if is_tr208_eligible else 0
+        # TR-208 functionality removed
+        
+        # Add generation user info for PDF
+        data['generated_by'] = username
                 
         timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
         pdf_filename = f"TOP_{call_number}_{timestamp}.pdf"
@@ -167,8 +169,11 @@ def _perform_top_generation(call_number, username):
             
             # Automatically update vehicle status to 'TOP Generated'
             from database import update_vehicle_status
+            generation_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             status_success = update_vehicle_status(call_number, 'TOP Generated', {
-                'top_form_sent_date': datetime.now().strftime('%Y-%m-%d')
+                'top_form_sent_date': datetime.now().strftime('%Y-%m-%d'),
+                'top_form_generated_at': generation_time,
+                'top_form_generated_by': username
             })
             
             if status_success:
@@ -193,129 +198,7 @@ def _perform_top_generation(call_number, username):
             conn.close()
     return success, message, pdf_filename, vehicle_data, notification_id
 
-def _perform_tr52_generation(call_number, username):
-    """
-    Helper function to perform TR52 form generation, database updates, and logging.
-    Returns a tuple: (success, message, pdf_filename_or_error, vehicle_data)
-    """
-    logging.info(f"Starting TR-52 generation for call number: {call_number}")
-    conn = None
-    pdf_filename = None    # Initialize pdf_filename
-    vehicle_data = None    # Initialize vehicle_data
-    success = False        # Initialize success
-    message = ""           # Initialize message
-    try:
-        conn = get_db_connection()
-        vehicle = conn.execute("SELECT * FROM vehicles WHERE towbook_call_number = ?", (call_number,)).fetchone()
-        if not vehicle:
-            return False, "Vehicle not found", None, None
-        
-        data = dict(vehicle)
-        logging.debug(f"Vehicle data for TR-52 generation: {data}")
-        # Database now uses 'location' field directly
-        
-        # Explicitly populate all fields required by generator.py's generate_tr52_form
-        data['complaint_number'] = data.get('complaint_number', 'N/A')
-        data['year'] = data.get('year', 'N/A')
-        data['make'] = data.get('make', 'N/A')
-        data['model'] = data.get('model', 'N/A')
-        data['color'] = data.get('color', 'N/A')
-        data['vin'] = data.get('vin', 'N/A')
-        data['plate'] = data.get('plate', 'N/A')
-        data['state'] = data.get('state', 'N/A')
-        # Normalize tow_date to YYYY-MM-DD, handle MM/DD by assuming current year
-        raw_tow = data.get('tow_date')
-        try:
-            if raw_tow and '/' in raw_tow and len(raw_tow.split('/')) == 2:
-                tow_dt = datetime.strptime(raw_tow, '%m/%d')
-                tow_date_obj = datetime(datetime.now().year, tow_dt.month, tow_dt.day).date()
-            else:
-                tow_date_obj = safe_parse_date(raw_tow) or datetime.now().date()
-        except Exception:
-            tow_date_obj = datetime.now().date()
-        data['tow_date'] = tow_date_obj.strftime('%Y-%m-%d')
 
-        # Normalize top_form_sent_date to YYYY-MM-DD for date calculations
-        raw_top_sent = data.get('top_form_sent_date')
-        if raw_top_sent:
-            parsed_top = safe_parse_date(raw_top_sent)
-            data['top_form_sent_date'] = parsed_top.strftime('%Y-%m-%d') if parsed_top else None
-        else:
-            data['top_form_sent_date'] = None
-        data['jurisdiction'] = data.get('jurisdiction', 'N/A')
-
-        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-        pdf_filename = f"TR52_{call_number}_{timestamp}.pdf"
-        pdf_path = os.path.join(app.config['GENERATED_FOLDER'], pdf_filename)
-        os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
-
-        # Call the correct PDF generation method
-        logging.info(f"Generating TR-52 PDF at path: {pdf_path}")
-        pdf_success, pdf_message = pdf_gen.generate_tr52_form(data, pdf_path)
-        logging.info(f"TR-52 PDF generation result: success={pdf_success}, message={pdf_message}")
-
-        if pdf_success:
-            log_action('TR-52 Form Generated', username, f"{call_number}: TR-52 form generated: {pdf_filename}")
-            # update_vehicle(vehicle['id'], {'tr52_form_generated_date': datetime.now().strftime('%Y-%m-%d')})
-            success = True
-            message = "TR52 form generated successfully."
-            vehicle_data = data
-        else:
-            success = False
-            message = f"PDF generation failed: {pdf_message}"
-            pdf_filename = pdf_message
-        
-    except Exception as e:
-        logging.error(f"Error in _perform_tr52_generation for {call_number}: {e}", exc_info=True)
-        message = f"Error generating TR52 form: {e}"
-        pdf_filename = str(e)
-    finally:
-        if conn:
-            conn.close()
-    return success, message, pdf_filename, vehicle_data
-
-def _perform_tr208_generation(call_number, username):
-    """
-    Helper function to perform TR208 form generation, database updates, and logging.
-    Returns a tuple: (success, message, pdf_filename_or_error, vehicle_data)
-    """
-    logging.info(f"Starting TR208 generation for call number: {call_number}")
-    conn = None
-    pdf_filename = None    # Initialize pdf_filename
-    vehicle_data = None    # Initialize vehicle_data
-    success = False        # Initialize success
-    message = ""           # Initialize message
-    try:
-        conn = get_db_connection()
-        vehicle = conn.execute("SELECT * FROM vehicles WHERE towbook_call_number = ?", (call_number,)).fetchone()
-        if not vehicle:
-            logging.error(f"Vehicle not found for call number: {call_number}")
-            return False, "Vehicle not found", None, None
-
-        data = dict(vehicle)
-        # Database now uses 'location' field directly
-        logging.debug(f"Vehicle data for TR208 generation: {data}")
-
-        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
-        pdf_filename = f"TR208_{call_number}_{timestamp}.pdf"
-        pdf_path = os.path.join(app.config['GENERATED_FOLDER'], pdf_filename)
-        os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
-
-        pdf_success, pdf_message = pdf_gen.generate_tr208_form(data, pdf_path)
-        logging.info(f"PDF generation result: success={pdf_success}, message={pdf_message}")
-
-        if pdf_success:
-            log_action('TR-208 Form Generated', username, f"{call_number}: TR-208 form generated: {pdf_filename}")
-            return True, "TR208 form generated successfully.", pdf_filename, data
-        else:
-            return False, f"PDF generation failed: {pdf_message}", pdf_message, None
-    except Exception as e:
-        logging.error(f"Error in TR208 generation for call number {call_number}: {e}", exc_info=True)
-        return False, f"Error generating TR208 form: {e}", str(e), None
-    finally:
-        if conn:
-            conn.close()
-    return success, message, pdf_filename, vehicle_data
 
 @app.route('/api/vehicles/add', methods=['POST'])
 @api_login_required
@@ -402,44 +285,80 @@ def generate_top(call_number):
         logging.error(f"Failed to generate TOP form for call_number={call_number}: {message}")
         return jsonify({"error": message, "details": pdf_filename_or_error}), 500
 
-@app.route('/api/generate-tr52/<call_number>', methods=['POST'])
-# @login_required (disabled for testing)
-def generate_tr52_form_api(call_number):
-    logging.info(f"API called: generate_tr52_form_api for call_number={call_number}")
-    username = getattr(current_user, 'id', 'System')
-    success, message, pdf_filename_or_error, vehicle_data = _perform_tr52_generation(call_number, username)
-    if success:
-        logging.info(f"TR52 form generated successfully for call_number={call_number}")
-        # Provide URL for accessing generated PDF
-        pdf_url = url_for('static', filename=f"generated_pdfs/{pdf_filename_or_error}")
-        return jsonify({
-            "message": message, 
-            "pdf_filename": pdf_filename_or_error, 
-            "pdf_url": pdf_url,
-            "vehicle": vehicle_data
-        }), 200
-    else:
-        logging.error(f"Failed to generate TR52 form for call_number={call_number}: {message}")
-        return jsonify({"error": message, "details": pdf_filename_or_error}), 500
+def _perform_release_notice_generation(call_number, username):
+    """
+    Helper function to perform Release Notice generation, database updates, and logging.
+    Returns (success, message, pdf_filename_or_error, vehicle_data, notification_id)
+    """
+    conn = None
+    notification_id = None
+    pdf_filename = None
+    vehicle_data = None
+    success = False
+    message = ""
+    try:
+        conn = get_db_connection()
+        vehicle = conn.execute("SELECT * FROM vehicles WHERE towbook_call_number = ?", (call_number,)).fetchone()
+        if not vehicle:
+            return False, "Vehicle not found", None, None, None
+        data = dict(vehicle)
+        # Prepare data fields for release notice
+        data['jurisdiction'] = data.get('jurisdiction', 'N/A')
+        data['tow_date'] = data.get('tow_date') or datetime.now().strftime('%Y-%m-%d')
+        data['release_date'] = datetime.now().strftime('%Y-%m-%d')
+        data['release_time'] = datetime.now().strftime('%H:%M:%S')
+        data['recipient'] = data.get('released_to', 'N/A')
+        data['release_reason'] = data.get('release_reason', 'Released')
+        data['compliance_text'] = data.get('compliance_text', 'This notice is for vehicle release.')
+        data['generated_by'] = username
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        pdf_filename = f"ReleaseNotice_{call_number}_{timestamp}.pdf"
+        pdf_path = os.path.join(app.config['GENERATED_FOLDER'], pdf_filename)
+        os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+        pdf_success, pdf_message = pdf_gen.generate_release_notice(data, pdf_path)
+        if pdf_success:
+            # Log and update vehicle status to 'Released'
+            log_action('Release Notice Generated', username, f"{call_number}: Release notice generated: {pdf_filename}")
+            from database import update_vehicle_status
+            status_success = update_vehicle_status(call_number, 'Released', {
+                'release_date': data['release_date'],
+                'released_to': data['recipient']
+            })
+            if not status_success:
+                logging.warning(f"Failed to update status for vehicle {call_number} after release notice generation")
+            success = True
+            message = "Release notice generated successfully."
+            vehicle_data = data
+        else:
+            success = False
+            message = f"PDF generation failed: {pdf_message}"
+            pdf_filename = pdf_message
+    except Exception as e:
+        logging.error(f"Error in _perform_release_notice_generation for {call_number}: {e}", exc_info=True)
+        message = f"Error generating release notice: {e}"
+        pdf_filename = str(e)
+    finally:
+        if conn:
+            conn.close()
+    return success, message, pdf_filename, vehicle_data, notification_id
 
-@app.route('/api/generate-tr208/<call_number>', methods=['POST'])
+@app.route('/api/generate-release-notice/<call_number>', methods=['POST'])
 # @login_required (disabled for testing)
-def generate_tr208_form_api(call_number):
-    logging.info(f"API called: generate_tr208_form_api for call_number={call_number}")
+def generate_release_notice(call_number):
+    logging.info(f"API called: generate_release_notice for call_number={call_number}")
     username = getattr(current_user, 'id', 'System')
-    success, message, pdf_filename_or_error, vehicle_data = _perform_tr208_generation(call_number, username)
+    success, message, pdf_filename_or_error, vehicle_data, notification_id = _perform_release_notice_generation(call_number, username)
     if success:
-        logging.info(f"TR208 form generated successfully for call_number={call_number}")
-        # Provide URL for accessing generated PDF
         pdf_url = url_for('static', filename=f"generated_pdfs/{pdf_filename_or_error}")
         return jsonify({
-            "message": message, 
-            "pdf_filename": pdf_filename_or_error, 
+            "message": message,
+            "pdf_filename": pdf_filename_or_error,
             "pdf_url": pdf_url,
-            "vehicle": vehicle_data
+            "vehicle": vehicle_data,
+            "notification_id": notification_id
         }), 200
     else:
-        logging.error(f"Failed to generate TR208 form for call_number={call_number}: {message}")
+        logging.error(f"Failed to generate release notice for call_number={call_number}: {message}")
         return jsonify({"error": message, "details": pdf_filename_or_error}), 500
 
 @app.route('/')

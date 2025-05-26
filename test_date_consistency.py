@@ -133,42 +133,20 @@ def test_pdf_date_formatting():
             except:
                 pass
         
-        # Test TR52 form generation
+        # Test Release Notice generation
         with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_file:
-            tr52_success, tr52_message = pdf_gen.generate_tr52_form(test_vehicle, tmp_file.name)
+            release_success, release_message = pdf_gen.generate_release_notice(test_vehicle, tmp_file.name)
             
-            if tr52_success:
-                print("✅ TR52 form generated successfully")
+            if release_success:
+                print("✅ Release Notice generated successfully")
                 # Check if file was created
                 if os.path.exists(tmp_file.name) and os.path.getsize(tmp_file.name) > 0:
-                    print(f"   TR52 PDF file created: {os.path.getsize(tmp_file.name)} bytes")
+                    print(f"   Release Notice PDF file created: {os.path.getsize(tmp_file.name)} bytes")
                 else:
-                    print("❌ TR52 PDF file not created or empty")
+                    print("❌ Release Notice PDF file not created or empty")
                     return False
             else:
-                print(f"❌ TR52 form generation failed: {tr52_message}")
-                return False
-            
-            # Clean up
-            try:
-                os.unlink(tmp_file.name)
-            except:
-                pass
-        
-        # Test TR208 form generation
-        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_file:
-            tr208_success, tr208_message = pdf_gen.generate_tr208_form(test_vehicle, tmp_file.name)
-            
-            if tr208_success:
-                print("✅ TR208 form generated successfully")
-                # Check if file was created
-                if os.path.exists(tmp_file.name) and os.path.getsize(tmp_file.name) > 0:
-                    print(f"   TR208 PDF file created: {os.path.getsize(tmp_file.name)} bytes")
-                else:
-                    print("❌ TR208 PDF file not created or empty")
-                    return False
-            else:
-                print(f"❌ TR208 form generation failed: {tr208_message}")
+                print(f"❌ Release Notice generation failed: {release_message}")
                 return False
             
             # Clean up

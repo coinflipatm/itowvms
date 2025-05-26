@@ -152,7 +152,6 @@ def convert_frontend_status(frontend_status):
     status_map = {
         'New': 'New',
         'TOP_Generated': 'TOP Generated',
-        'TR52_Ready': 'TR52 Ready',
         'Ready_Auction': 'Ready for Auction',
         'Ready_Scrap': 'Ready for Scrap',
         'Auction': 'Auction',
@@ -160,7 +159,6 @@ def convert_frontend_status(frontend_status):
         'Released': 'Released',
         'Completed': 'Released',
         'TOP Generated': 'TOP Generated',
-        'TR52 Ready': 'TR52 Ready',
         'Ready for Auction': 'Ready for Auction',
         'Ready for Scrap': 'Ready for Scrap',
         'Auctioned': 'Auctioned'
@@ -236,10 +234,6 @@ def get_status_filter(status_type):
     # First convert any underscored status types to spaced format
     if status_type == 'TOP_Generated':
         status_type = 'TOP Generated'
-    elif status_type == 'TR52_Ready':
-        status_type = 'TR52 Ready'
-    elif status_type == 'TR208_Ready':
-        status_type = 'TR208 Ready'
     elif status_type == 'Ready_for_Auction':
         status_type = 'Ready for Auction'
     elif status_type == 'Ready_for_Scrap':
@@ -256,8 +250,6 @@ def get_status_filter(status_type):
     filters = {
         'New': ['New'],
         'TOP Generated': ['TOP Generated'],
-        'TR52 Ready': ['TR52 Ready'],
-        'TR208 Ready': ['TR208 Ready'],
         'Ready for Auction': ['Ready for Auction'],
         'Ready for Scrap': ['Ready for Scrap'],
         'Auction': ['Auction'],
@@ -266,7 +258,7 @@ def get_status_filter(status_type):
     
     # Backward compatibility mappings
     backward_compat = {
-        'Ready': ['TR52 Ready', 'Ready for Auction', 'Ready for Scrap'],
+        'Ready': ['Ready for Auction', 'Ready for Scrap'],
         'Scheduled': ['Scheduled for Release']
     }
     
@@ -299,25 +291,6 @@ def safe_parse_date(date_str):
             pass
     # Could not parse date
     return None
-
-def calculate_tr52_countdown(top_sent_date):
-    if not top_sent_date or top_sent_date == 'N/A':
-        return None
-    try:
-        if isinstance(top_sent_date, str):
-            top_date = datetime.strptime(top_sent_date, '%Y-%m-%d').date()
-        elif hasattr(top_sent_date, 'date'):  # Check if it's a datetime object
-            top_date = top_sent_date.date()
-        else:
-            top_date = top_sent_date  # Assume it's already a date object
-            
-        tr52_date = top_date + timedelta(days=20)
-        today = datetime.now().date()
-        days_left = (tr52_date - today).days
-        return max(0, days_left)
-    except Exception as e:
-        logging.error(f"Error calculating TR52 countdown: {e}")
-        return None
 
 def send_email_notification(to_email, subject, body, attachment_path=None):
     """Send an email notification with optional attachment"""
@@ -493,14 +466,10 @@ def update_vehicle_status(towbook_call_number, new_status, update_fields=None):
         
         if new_status == 'TOP Generated':
             update_fields['top_form_sent_date'] = datetime.now().strftime('%Y-%m-%d')
-            tr52_date = datetime.now() + timedelta(days=20)
-            update_fields['tr52_available_date'] = tr52_date.strftime('%Y-%m-%d')
+            # Redemption period is 20 days for property recovery
+            redemption_date = datetime.now() + timedelta(days=20)
             update_fields['days_until_next_step'] = 20
-            update_fields['redemption_end_date'] = tr52_date.strftime('%Y-%m-%d')
-        
-        elif new_status == 'TR52 Ready':
-            if 'tr52_received_date' not in update_fields:
-                update_fields['tr52_received_date'] = datetime.now().strftime('%Y-%m-%d')
+            update_fields['redemption_end_date'] = redemption_date.strftime('%Y-%m-%d')
         
         elif new_status == 'Ready for Auction':
             auction_date = calculate_next_auction_date()
@@ -619,101 +588,6 @@ def map_field_names(data):
     
     return result
 
-def is_eligible_for_tr208(vehicle_data):
-    """
-    Determine if a vehicle is eligible for TR208 (scrap) processing
-    based on Michigan requirements:
-    1. 7+ years old
-    2. Inoperable
-    3. Extensively damaged
-    
-    Returns: (bool, dict) - eligible status and reasons
-    """
-    eligible = True
-    reasons = {}
-    
-    # Check vehicle age (7+ years old)
-    current_year = datetime.now().year
-    try:
-        if vehicle_data.get('year') and vehicle_data['year'] != 'N/A':
-            vehicle_year = int(vehicle_data['year'])
-            age = current_year - vehicle_year
-            eligible = eligible and age >= 7
-            reasons['age'] = f"{age} years old" if age >= 7 else f"Only {age} years old (must be 7+)"
-        else:
-            eligible = False
-            reasons['age'] = "Unknown year"
-    except (ValueError, TypeError):
-        eligible = False
-        reasons['age'] = f"Invalid year format: {vehicle_data.get('year')}"
-    
-    # Check operability status (assume stored in a field like 'inoperable' or 'condition')
-    if vehicle_data.get('inoperable') == 1 or vehicle_data.get('condition') == 'Inoperable':
-        reasons['operable'] = "Inoperable"
-    else:
-        eligible = False
-        reasons['operable'] = "Vehicle appears operable or status unknown"
-    
-    # Check damage extent (assume stored in a field like 'damage' or 'condition_notes')
-    if vehicle_data.get('damage') == 'Extensive' or 'extensive damage' in str(vehicle_data.get('condition_notes', '')).lower():
-        reasons['damage'] = "Extensively damaged"
-    else:
-        eligible = False
-        reasons['damage'] = "Not extensively damaged or damage status unknown"
-    
-    return eligible, reasons
-
-def generate_tr208_form(vehicle_data, output_path):
-    """
-    Generate a TR208 form for scrapping a vehicle
-    
-    Args:
-        vehicle_data (dict): Vehicle information
-        output_path (str): Path to save the PDF
-        
-    Returns:
-        (bool, str): Success status and error message if any
-    """
-    from generator import PDFGenerator  # Assuming PDFGenerator is your PDF generation class
-    
-    try:
-        pdf_gen = PDFGenerator()
-        # You may need to customize the PDF generation for TR208
-        # This assumes your PDFGenerator class has a method for TR208 forms
-        success, error = pdf_gen.generate_tr208_form(vehicle_data, output_path)
-        
-        if success:
-            # Log the action
-            log_action("GENERATE_TR208", vehicle_data['towbook_call_number'], "TR208 form generated for scrap vehicle")
-            
-        return success, error
-    except Exception as e:
-        logging.error(f"Error generating TR208: {e}")
-        return False, str(e)
-
-def calculate_tr208_timeline(tow_date):
-    """
-    Calculate the TR208 timeline (27 days from tow)
-    
-    Args:
-        tow_date (str or datetime): Tow date
-        
-    Returns:
-        (datetime.date): Date when TR208 can be processed
-    """
-    try:
-        if isinstance(tow_date, str):
-            tow_date = datetime.strptime(tow_date, '%Y-%m-%d').date()
-        elif hasattr(tow_date, 'date'):  # Check if it's a datetime object
-            tow_date = tow_date.date()
-        # If it's already a date object, use it directly
-            
-        # 27 days from tow (7 for police notification + 20 for owner redemption)
-        return tow_date + timedelta(days=27)
-    except Exception as e:
-        logging.error(f"Error calculating TR208 timeline: {e}")
-        return datetime.now().date() + timedelta(days=27)
-
 def setup_logging():
     """Configure application logging"""
     log_dir = 'logs'
@@ -749,25 +623,6 @@ def get_notification_templates():
                 <p><strong>VIN:</strong> {vin}</p>
                 <p><strong>Plate:</strong> {plate} ({state})</p>
                 <p>Please see attached TOP form for complete details.</p>
-                <p>Sincerely,<br>iTow Management</p>
-                </body>
-                </html>
-            """
-        },
-        'TR52': {
-            'subject': 'TR52 Notification - {complaint_number}',
-            'body': """
-                <html>
-                <body>
-                <h2>TR52 Notification</h2>
-                <p>The 20-day redemption period has expired for the following vehicle:</p>
-                <p><strong>Complaint #:</strong> {complaint_number}</p>
-                <p><strong>Date of Tow:</strong> {tow_date}</p>
-                <p><strong>TOP Sent Date:</strong> {top_form_sent_date}</p>
-                <p><strong>Vehicle Description:</strong> {vehicle_description}</p>
-                <p><strong>VIN:</strong> {vin}</p>
-                <p><strong>Plate:</strong> {plate} ({state})</p>
-                <p>The vehicle is now eligible for TR52 processing.</p>
                 <p>Sincerely,<br>iTow Management</p>
                 </body>
                 </html>
@@ -1121,7 +976,7 @@ def get_status_list_for_filter(filter_name):
     Returns a list of vehicle statuses based on a general filter name.
     """
     if filter_name == 'active':
-        return ['New', 'TOP Generated', 'TR52 Ready', 'TR208 Ready', 'Ready for Auction', 'Ready for Scrap']
+        return ['New', 'TOP Generated', 'Ready for Auction', 'Ready for Scrap']
     elif filter_name == 'completed':
         return ['Released', 'Auctioned', 'Scrapped', 'Transferred']
     # If a specific status is passed (e.g., "New"), the caller can handle it directly.

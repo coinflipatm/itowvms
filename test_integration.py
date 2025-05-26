@@ -139,20 +139,20 @@ def test_form_generation():
         test_vehicle = vehicles_data['data'][0]
         vehicle_id = test_vehicle.get('towbook_call_number')
         
-        # Test TR52 generation
-        response = requests.get(f"{base_url}/generate/tr52/{vehicle_id}", timeout=10)
+        # Test TOP generation
+        response = requests.post(f"{base_url}/api/generate-top/{vehicle_id}", timeout=10)
         if response.status_code == 200:
-            print("✓ TR52 form generation works")
+            print("✓ TOP form generation works")
         else:
-            print(f"✗ TR52 form generation failed: {response.status_code}")
+            print(f"✗ TOP form generation failed: {response.status_code}")
             return False
         
-        # Test TR208 generation
-        response = requests.get(f"{base_url}/generate/tr208/{vehicle_id}", timeout=10)
+        # Test Release Notice generation
+        response = requests.post(f"{base_url}/api/generate-release-notice/{vehicle_id}", timeout=10)
         if response.status_code == 200:
-            print("✓ TR208 form generation works")
+            print("✓ Release Notice generation works")
         else:
-            print(f"✗ TR208 form generation failed: {response.status_code}")
+            print(f"✗ Release Notice generation failed: {response.status_code}")
             return False
         
         return True

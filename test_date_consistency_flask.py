@@ -112,39 +112,22 @@ def test_pdf_generation():
         print(f"❌ TOP form generation failed: {e}")
         results.append(("TOP", False, str(e)))
     
-    # Test TR52 form
+    # Test Release Notice
     try:
         with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
-            success, error = pdf_gen.generate_tr52_form(test_data, tmp.name)
+            success, error = pdf_gen.generate_release_notice(test_data, tmp.name)
             if success:
                 size = os.path.getsize(tmp.name)
-                print(f"✅ TR52 form generated successfully")
-                print(f"   TR52 PDF file created: {size} bytes")
-                results.append(("TR52", True, None))
+                print(f"✅ Release Notice generated successfully")
+                print(f"   Release Notice PDF file created: {size} bytes")
+                results.append(("Release Notice", True, None))
             else:
-                print(f"❌ TR52 form generation failed: {error}")
-                results.append(("TR52", False, error))
+                print(f"❌ Release Notice generation failed: {error}")
+                results.append(("Release Notice", False, error))
             os.unlink(tmp.name)  # Clean up
     except Exception as e:
-        print(f"❌ TR52 form generation failed: {e}")
-        results.append(("TR52", False, str(e)))
-    
-    # Test TR208 form
-    try:
-        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
-            success, error = pdf_gen.generate_tr208_form(test_data, tmp.name)
-            if success:
-                size = os.path.getsize(tmp.name)
-                print(f"✅ TR208 form generated successfully")
-                print(f"   TR208 PDF file created: {size} bytes")
-                results.append(("TR208", True, None))
-            else:
-                print(f"❌ TR208 form generation failed: {error}")
-                results.append(("TR208", False, error))
-            os.unlink(tmp.name)  # Clean up
-    except Exception as e:
-        print(f"❌ TR208 form generation failed: {e}")
-        results.append(("TR208", False, str(e)))
+        print(f"❌ Release Notice generation failed: {e}")
+        results.append(("Release Notice", False, str(e)))
     
     # Summary
     successful = [r for r in results if r[1]]

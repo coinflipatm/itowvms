@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Date Fix Test</title>
+</head>
+<body>
+    <h1>Date Formatting Fix Test</h1>
+    <div id="results"></div>
+    
+    <script>
+        // Copy the fixed function here for testing
+        function formatDateForDisplay(dateStr) {
+            if (!dateStr || dateStr === 'N/A' || dateStr === '') {
+                return 'N/A';
+            }
+            
+            try {
+                // Handle YYYY-MM-DD format specifically to avoid timezone issues
+                if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                    const [year, month, day] = dateStr.split('-');
+                    // Create date object using local timezone by specifying components
+                    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                    
+                    // Check if date is valid
+                    if (isNaN(date.getTime())) {
+                        return dateStr; // Return original if can't parse
+                    }
+                    
+                    // Format as MM/DD/YYYY for display
+                    return date.toLocaleDateString('en-US', {
+                        month: '2-digit',
+                        day: '2-digit',
+                        year: 'numeric'
+                    });
+                }
+                
+                // For other date formats, use the original parsing method
+                const date = new Date(dateStr);
+                
+                // Check if date is valid
+                if (isNaN(date.getTime())) {
+                    return dateStr; // Return original if can't parse
+                }
+                
+                // Format as MM/DD/YYYY for display
+                return date.toLocaleDateString('en-US', {
+                    month: '2-digit',
+                    day: '2-digit',
+                    year: 'numeric'
+                });
+            } catch (error) {
+                console.warn('Date formatting error:', error, 'for date:', dateStr);
+                return dateStr; // Return original string if error
+            }
+        }
+        
+        function testDateFormatting() {
+            const testDates = ['2025-03-04', '2023-11-13', '2024-07-13', '2025-01-01', '2024-12-31'];
+            const results = document.getElementById('results');
+            
+            testDates.forEach(dateStr => {
+                const formatted = formatDateForDisplay(dateStr);
+                
+                results.innerHTML += `
+                    <p><strong>Original date:</strong> ${dateStr}</p>
+                    <p><strong>Formatted display:</strong> ${formatted}</p>
+                    <p><strong>Expected:</strong> ${dateStr.split('-')[1]}/${dateStr.split('-')[2]}/${dateStr.split('-')[0]}</p>
+                    <hr>
+                `;
+            });
+        }
+        
+        testDateFormatting();
+    </script>
+</body>
+</html>

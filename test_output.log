@@ -1,0 +1,57 @@
+INFO:root:===== iTow Impound Manager Started =====
+INFO:root:Using database at: /workspaces/itowvms/vehicles.db
+INFO:root:Initializing application components...
+INFO:root:Database path from environment: /workspaces/itowvms/vehicles.db
+INFO:root:Database exists: True
+INFO:root:Database size: 290816 bytes
+INFO:app:Initializing database at /workspaces/itowvms/vehicles.db...
+INFO:app:Table 'vehicles' checked/created.
+INFO:app:Table 'contacts' checked/created.
+INFO:app:Table 'system_logs' checked/created.
+INFO:app:Table 'notifications' checked/created.
+INFO:app:Table 'auctions' checked/created.
+INFO:app:Table 'auction_vehicles' checked/created.
+INFO:app:Table 'documents' checked/created.
+INFO:app:Table 'police_log' checked/created.
+INFO:auth:Auth database tables initialized
+INFO:root:Successfully generated TOP form for TEST001-25 at /tmp/tmpdm22igju.pdf
+🚀 Starting Comprehensive Date Consistency Test for iTow VMS
+============================================================
+=== Testing Database Date Consistency ===
+✅ Database connection successful
+📊 Date Format Distribution:
+   OTHER: 2 records
+   YYYY-MM-DD: 61 records
+
+📋 Sample Date Records:
+   0: 4/9 (OTHER)
+   16474: N/A (OTHER)
+   10306: 2025-05-10 (YYYY-MM-DD)
+   11195: 2025-04-30 (YYYY-MM-DD)
+   11227: 2024-10-04 (YYYY-MM-DD)
+
+=== Testing PDF Date Formatting ===
+✅ TOP form generated successfully
+   TOP PDF file created: 159245 bytes
+✅ TR52 form generated successfully
+   TR52 PDF file created: 160434 bytes
+✅ TR208 form generated successfully
+   TR208 PDF file created: 2800 bytes
+
+✅ PDF Generation Results: All 3 forms generated successfully
+
+=== Testing Frontend Date Functions ===
+✅ formatDateForDisplay function: Found
+✅ formatDateForInput function: Found
+✅ Vehicle table date usage: Found
+✅ Vehicle modal date usage: Found
+
+============================================================
+📊 TEST RESULTS SUMMARY
+============================================================
+Database Date Consistency: ✅ PASSED
+PDF Date Formatting: ✅ PASSED
+Frontend Date Functions: ✅ PASSED
+
+Overall Result: 3/3 tests passed
+🎉 All tests passed! Date consistency fixes are working correctly.

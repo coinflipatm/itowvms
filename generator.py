@@ -39,7 +39,7 @@ class PDFGenerator:
                 logging.error(f"Error adding logo to PDF: {e}")
         
         # More concise header
-        header_text = '<para alignment="center"><b>iTow</b> | 205 W Johnson St, Clio, MI 48420 | Phone: 810-394-5937 | itow2017@gmail.com</para>'
+        header_text = '<para alignment="center"><b>iTow</b> | 5265 Pierson Rd, Flushing, MI 48433, STE 6 | 810-394-5937 | itow2017@gmail.com</para>'
         elements.append(Paragraph(header_text, self.styles['Normal'])) # Using Normal style, adjust if needed
         elements.append(Spacer(1, 12))
 
@@ -48,6 +48,35 @@ class PDFGenerator:
         if value is None or value == '' or value == 'None':
             return 'N/A'
         return value
+    
+    def _format_date_for_pdf(self, date_value):
+        """Format date consistently for PDF display as MM/DD/YYYY"""
+        if not date_value or date_value == 'N/A' or date_value == '':
+            return 'N/A'
+        
+        try:
+            # Handle various date formats
+            if isinstance(date_value, str):
+                # Try to parse different formats
+                if '/' in date_value:
+                    # MM/DD/YYYY format - already correct
+                    return date_value
+                elif '-' in date_value:
+                    # YYYY-MM-DD format - convert to MM/DD/YYYY
+                    date_obj = datetime.strptime(date_value, '%Y-%m-%d')
+                    return date_obj.strftime('%m/%d/%Y')
+                else:
+                    # Try parsing as date object
+                    date_obj = datetime.strptime(date_value, '%Y-%m-%d')
+                    return date_obj.strftime('%m/%d/%Y')
+            elif hasattr(date_value, 'strftime'):
+                # If it's already a datetime object
+                return date_value.strftime('%m/%d/%Y')
+            else:
+                return str(date_value)
+        except Exception as e:
+            logging.warning(f"Date formatting error in PDF: {e}, returning original value: {date_value}")
+            return str(date_value)
 
     def generate_top(self, data, pdf_path): # Removed tow_reason parameter
         try:
@@ -59,13 +88,13 @@ class PDFGenerator:
             self._add_header(elements)
 
             # Add title
-            elements.append(Paragraph("Michigan Private Property Vehicle Tow Notification Form", self.title_style))
+            elements.append(Paragraph("Abandoned Vehicle Tow-Off-Property Notification Form", self.title_style))
             elements.append(Spacer(1, 12))
 
             # Add description
             description_text = """
             <para fontSize="10">
-            This form notifies the local police agency of a vehicle towed from private property under MCL 257.252a et seq., 
+            This form notifies the local police agency of an abandoned vehicle towed from private property under MCL 257.252a et seq., 
             providing vehicle and towing details for processing in the LEIN system.
             </para>
             """
@@ -82,7 +111,8 @@ class PDFGenerator:
                 self._handle_empty_value(data.get('year', 'N/A')), 
                 self._handle_empty_value(data.get('make', 'N/A')), 
                 self._handle_empty_value(data.get('model', 'N/A')), 
-                self._handle_empty_value(data.get('color', 'N/A'))
+                self._handle_empty_value(data.get('color', 'N/A')), 
+                self._handle_empty_value(data.get('vehicle_type', 'N/A'))
             ]))
             
             # Combine plate number and state
@@ -100,7 +130,7 @@ class PDFGenerator:
             # Create details table
             details_data = [
                 ['TO:', self._handle_empty_value(data.get('jurisdiction', 'N/A'))],
-                ['DATE OF TOW:', self._handle_empty_value(data.get('tow_date', 'N/A'))],
+                ['DATE OF TOW:', self._format_date_for_pdf(data.get('tow_date', 'N/A'))],
                 ['TIME OF TOW:', self._handle_empty_value(data.get('tow_time', 'N/A'))],
                 ['TOWED FROM:', self._handle_empty_value(data.get('location', 'N/A'))],
                 # Removed REASON FOR TOW from here
@@ -173,7 +203,7 @@ class PDFGenerator:
                 ['VIN:', self._handle_empty_value(data.get('vin', 'N/A'))],
                 ['PLATE NUMBER:', self._handle_empty_value(data.get('plate', 'N/A'))],
                 ['STATE:', self._handle_empty_value(data.get('state', 'N/A'))],
-                ['TOW DATE:', self._handle_empty_value(data.get('tow_date', 'N/A'))]
+                ['TOW DATE:', self._format_date_for_pdf(data.get('tow_date', 'N/A'))]
             ]
             
             # Add financial details if it's an auction release
@@ -261,9 +291,9 @@ class PDFGenerator:
                 ['VIN:', self._handle_empty_value(data.get('vin', 'N/A'))],
                 ['PLATE NUMBER:', self._handle_empty_value(data.get('plate', 'N/A'))],
                 ['STATE:', self._handle_empty_value(data.get('state', 'N/A'))],
-                ['TOW DATE:', tow_date.strftime('%Y-%m-%d')],
-                ['TOP NOTIFICATION DATE:', top_sent_date.strftime('%Y-%m-%d')],
-                ['REDEMPTION END DATE:', redemption_end_date.strftime('%Y-%m-%d')],
+                ['TOW DATE:', self._format_date_for_pdf(tow_date)],
+                ['TOP NOTIFICATION DATE:', self._format_date_for_pdf(top_sent_date)],
+                ['REDEMPTION END DATE:', self._format_date_for_pdf(redemption_end_date)],
                 ['LOCATION TOWED FROM:', self._handle_empty_value(data.get('location', 'N/A'))],
                 ['JURISDICTION:', self._handle_empty_value(data.get('jurisdiction', 'N/A'))]
             ]
@@ -280,18 +310,22 @@ class PDFGenerator:
             
             # Add legal text
             elements.append(Spacer(1, 24))
-            legal_text = """
+            legal_text1 = """
             <para fontSize="10">
             This vehicle was towed from private property at the request of the property owner or agent. 
             A Temporary Ownership Permit (TOP) notification was sent on the date indicated above. 
             The 20-day redemption period has now expired without the vehicle being claimed.
             </para>
+            """
+            elements.append(Paragraph(legal_text1, self.small_style))
+            
+            legal_text2 = """
             <para fontSize="10">
             Per MCL 257.252a, this vehicle may now be considered abandoned for disposition purposes.
             We are requesting a TR-52 form to be issued so that this vehicle can be:
             </para>
             """
-            elements.append(Paragraph(legal_text, self.small_style))
+            elements.append(Paragraph(legal_text2, self.small_style))
             
             # Add disposition options
             elements.append(Spacer(1, 12))
@@ -329,129 +363,134 @@ class PDFGenerator:
             logging.error(f"Error generating TR52 form: {e}")
             return False, str(e)
         
-def generate_tr208_form(self, vehicle_data, output_path):
-    """
-    Generate a TR208 form for scrappable vehicles
-    
-    Args:
-        vehicle_data (dict): Vehicle information
-        output_path (str): Path to save the PDF
+    def generate_tr208_form(self, vehicle_data, output_path):
+        """
+        Generate a TR208 form for scrappable vehicles
         
-    Returns:
-        (bool, str): Success status and error message if any
-    """
-    try:
-        from reportlab.pdfgen import canvas
-        from reportlab.lib.pagesizes import letter
-        from reportlab.lib import colors
-        from reportlab.platypus import Table, TableStyle
-        import os
-        
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        
-        # Create canvas
-        c = canvas.Canvas(output_path, pagesize=letter)
-        width, height = letter
-        
-        # Add form title
-        c.setFont("Helvetica-Bold", 16)
-        c.drawCentredString(width/2, height - 50, "TR-208 ABANDONED SCRAP VEHICLE CERTIFICATION")
-        
-        # Add subtitle
-        c.setFont("Helvetica", 12)
-        c.drawCentredString(width/2, height - 70, "Michigan Department of State")
-        
-        # Add date
-        c.setFont("Helvetica", 10)
-        c.drawString(width - 150, height - 30, f"Date: {datetime.now().strftime('%m/%d/%Y')}")
-        
-        # Add towing agency info
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(50, height - 100, "TOWING AGENCY INFORMATION")
-        c.setFont("Helvetica", 10)
-        c.drawString(50, height - 120, "Agency Name: iTow Towing & Recovery")
-        c.drawString(50, height - 135, "Address: 205 W Johnson St, Clio, MI 48420")
-        c.drawString(50, height - 150, "Phone: (810) 553-2800")
-        c.drawString(50, height - 165, f"Complaint #: {vehicle_data.get('complaint_number', 'N/A')}")
-        
-        # Add vehicle information
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(50, height - 195, "VEHICLE INFORMATION")
-        c.setFont("Helvetica", 10)
-        c.drawString(50, height - 215, f"Year: {vehicle_data.get('year', 'N/A')}")
-        c.drawString(250, height - 215, f"Make: {vehicle_data.get('make', 'N/A')}")
-        c.drawString(400, height - 215, f"Model: {vehicle_data.get('model', 'N/A')}")
-        c.drawString(50, height - 230, f"VIN: {vehicle_data.get('vin', 'N/A')}")
-        c.drawString(250, height - 230, f"License Plate: {vehicle_data.get('plate', 'N/A')}")
-        c.drawString(400, height - 230, f"State: {vehicle_data.get('state', 'N/A')}")
-        c.drawString(50, height - 245, f"Color: {vehicle_data.get('color', 'N/A')}")
-        
-        # Add tow information
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(50, height - 275, "TOW INFORMATION")
-        c.setFont("Helvetica", 10)
-        c.drawString(50, height - 295, f"Date of Tow: {vehicle_data.get('tow_date', 'N/A')}")
-        c.drawString(250, height - 295, f"Time of Tow: {vehicle_data.get('tow_time', 'N/A')}")
-        c.drawString(50, height - 310, f"Location: {vehicle_data.get('location', 'N/A')}")
-        c.drawString(50, height - 325, f"Police Agency: {vehicle_data.get('jurisdiction', 'N/A')}")
-        c.drawString(250, height - 325, f"Case #: {vehicle_data.get('case_number', 'N/A')}")
-        
-        # Add TR-208 qualification criteria
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(50, height - 355, "QUALIFICATION CRITERIA")
-        c.setFont("Helvetica", 10)
-        
-        vehicle_year = int(vehicle_data.get('year', 0))
-        current_year = datetime.now().year
-        vehicle_age = current_year - vehicle_year if vehicle_year > 0 else "Unknown"
-        
-        c.drawString(50, height - 375, f"1. Vehicle Age: {vehicle_age} years (must be 7+ years old)")
-        c.drawString(50, height - 390, "2. Vehicle is inoperable")
-        c.drawString(50, height - 405, "3. Vehicle is extensively damaged")
-        
-        # Add checkbox indicators
-        c.drawString(350, height - 375, "✓" if vehicle_age != "Unknown" and vehicle_age >= 7 else "□")
-        c.drawString(350, height - 390, "✓" if vehicle_data.get('inoperable', 0) == 1 else "□")
-        c.drawString(350, height - 405, "✓" if vehicle_data.get('damage_extent') == 'Extensive' else "□")
-        
-        # Add damage description
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(50, height - 435, "DAMAGE DESCRIPTION")
-        c.setFont("Helvetica", 10)
-        c.drawString(50, height - 455, f"Condition Notes: {vehicle_data.get('condition_notes', 'N/A')}")
-        
-        # Add certification
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(50, height - 485, "CERTIFICATION")
-        c.setFont("Helvetica", 10)
-        c.drawString(50, height - 505, "I certify that this vehicle meets all requirements for disposal as a scrap vehicle:")
-        c.drawString(50, height - 520, "1. It is at least 7 years old")
-        c.drawString(50, height - 535, "2. It is inoperable")
-        c.drawString(50, height - 550, "3. It has extensive damage")
-        c.drawString(50, height - 565, "4. The 20-day owner redemption period has passed")
-        c.drawString(50, height - 580, "5. All applicable notifications have been made to police and the Secretary of State")
-        
-        # Add signature line
-        c.line(50, height - 620, 250, height - 620)
-        c.drawString(50, height - 635, "Authorized Signature")
-        
-        c.line(300, height - 620, 500, height - 620)
-        c.drawString(300, height - 635, "Date")
-        
-        # Add footer
-        c.setFont("Helvetica", 8)
-        c.drawCentredString(width/2, 30, "TR-208 ABANDONED SCRAP VEHICLE CERTIFICATION")
-        c.drawCentredString(width/2, 15, f"Generated on {datetime.now().strftime('%m/%d/%Y %H:%M:%S')}")
-        
-        # Save the PDF
-        c.save()
-        return True, "TR208 form generated successfully"
-    except Exception as e:
-        import traceback
-        error_msg = traceback.format_exc()
-        logging.error(f"Error generating TR208 form: {error_msg}")
-        return False, str(e)
+        Args:
+            vehicle_data (dict): Vehicle information
+            output_path (str): Path to save the PDF
+            
+        Returns:
+            (bool, str): Success status and error message if any
+        """
+        try:
+            from reportlab.pdfgen import canvas
+            from reportlab.lib.pagesizes import letter
+            from reportlab.lib import colors
+            from reportlab.platypus import Table, TableStyle
+            import os
+            
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            
+            # Create canvas
+            c = canvas.Canvas(output_path, pagesize=letter)
+            width, height = letter
+            
+            # Add form title
+            c.setFont("Helvetica-Bold", 16)
+            c.drawCentredString(width/2, height - 50, "TR-208 ABANDONED SCRAP VEHICLE CERTIFICATION")
+            
+            # Add subtitle
+            c.setFont("Helvetica", 12)
+            c.drawCentredString(width/2, height - 70, "Michigan Department of State")
+            
+            # Add date
+            c.setFont("Helvetica", 10)
+            c.drawString(width - 150, height - 30, f"Date: {datetime.now().strftime('%m/%d/%Y')}")
+            
+            # Add towing agency info
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(50, height - 100, "TOWING AGENCY INFORMATION")
+            c.setFont("Helvetica", 10)
+            c.drawString(50, height - 120, "Agency Name: iTow Towing & Recovery")
+            c.drawString(50, height - 135, "Address: 205 W Johnson St, Clio, MI 48420")
+            c.drawString(50, height - 150, "Phone: (810) 553-2800")
+            c.drawString(50, height - 165, f"Complaint #: {vehicle_data.get('complaint_number', 'N/A')}")
+            
+            # Add vehicle information
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(50, height - 195, "VEHICLE INFORMATION")
+            c.setFont("Helvetica", 10)
+            c.drawString(50, height - 215, f"Year: {vehicle_data.get('year', 'N/A')}")
+            c.drawString(250, height - 215, f"Make: {vehicle_data.get('make', 'N/A')}")
+            c.drawString(400, height - 215, f"Model: {vehicle_data.get('model', 'N/A')}")
+            c.drawString(50, height - 230, f"VIN: {vehicle_data.get('vin', 'N/A')}")
+            c.drawString(250, height - 230, f"License Plate: {vehicle_data.get('plate', 'N/A')}")
+            c.drawString(400, height - 230, f"State: {vehicle_data.get('state', 'N/A')}")
+            c.drawString(50, height - 245, f"Color: {vehicle_data.get('color', 'N/A')}")
+            
+            # Add tow information
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(50, height - 275, "TOW INFORMATION")
+            c.setFont("Helvetica", 10)
+            c.drawString(50, height - 295, f"Date of Tow: {self._format_date_for_pdf(vehicle_data.get('tow_date', 'N/A'))}")
+            c.drawString(250, height - 295, f"Time of Tow: {vehicle_data.get('tow_time', 'N/A')}")
+            c.drawString(50, height - 310, f"Location: {vehicle_data.get('location', 'N/A')}")
+            c.drawString(50, height - 325, f"Police Agency: {vehicle_data.get('jurisdiction', 'N/A')}")
+            c.drawString(250, height - 325, f"Case #: {vehicle_data.get('case_number', 'N/A')}")
+            
+            # Add TR-208 qualification criteria
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(50, height - 355, "QUALIFICATION CRITERIA")
+            c.setFont("Helvetica", 10)
+            
+            # Safely parse vehicle year, default to 0 if missing or invalid
+            vehicle_year_value = vehicle_data.get('year')
+            try:
+                vehicle_year = int(vehicle_year_value) if vehicle_year_value is not None and str(vehicle_year_value).isdigit() else 0
+            except:
+                vehicle_year = 0
+            current_year = datetime.now().year
+            vehicle_age = current_year - vehicle_year if vehicle_year > 0 else "Unknown"
+            
+            c.drawString(50, height - 375, f"1. Vehicle Age: {vehicle_age} years (must be 7+ years old)")
+            c.drawString(50, height - 390, "2. Vehicle is inoperable")
+            c.drawString(50, height - 405, "3. Vehicle is extensively damaged")
+            
+            # Add checkbox indicators
+            c.drawString(350, height - 375, "✓" if vehicle_age != "Unknown" and vehicle_age >= 7 else "□")
+            c.drawString(350, height - 390, "✓" if vehicle_data.get('inoperable', 0) == 1 else "□")
+            c.drawString(350, height - 405, "✓" if vehicle_data.get('damage_extent') == 'Extensive' else "□")
+            
+            # Add damage description
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(50, height - 435, "DAMAGE DESCRIPTION")
+            c.setFont("Helvetica", 10)
+            c.drawString(50, height - 455, f"Condition Notes: {vehicle_data.get('condition_notes', 'N/A')}")
+            
+            # Add certification
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(50, height - 485, "CERTIFICATION")
+            c.setFont("Helvetica", 10)
+            c.drawString(50, height - 505, "I certify that this vehicle meets all requirements for disposal as a scrap vehicle:")
+            c.drawString(50, height - 520, "1. It is at least 7 years old")
+            c.drawString(50, height - 535, "2. It is inoperable")
+            c.drawString(50, height - 550, "3. It has extensive damage")
+            c.drawString(50, height - 565, "4. The 20-day owner redemption period has passed")
+            c.drawString(50, height - 580, "5. All applicable notifications have been made to police and the Secretary of State")
+            
+            # Add signature line
+            c.line(50, height - 620, 250, height - 620)
+            c.drawString(50, height - 635, "Authorized Signature")
+            
+            c.line(300, height - 620, 500, height - 620)
+            c.drawString(300, height - 635, "Date")
+            
+            # Add footer
+            c.setFont("Helvetica", 8)
+            c.drawCentredString(width/2, 30, "TR-208 ABANDONED SCRAP VEHICLE CERTIFICATION")
+            c.drawCentredString(width/2, 15, f"Generated on {datetime.now().strftime('%m/%d/%Y %H:%M:%S')}")
+            
+            # Save the PDF
+            c.save()
+            return True, "TR208 form generated successfully"
+        except Exception as e:
+            import traceback
+            error_msg = traceback.format_exc()
+            logging.error(f"Error generating TR208 form: {error_msg}")
+            return False, str(e)
     
     def generate_auction_notice(self, data, pdf_path):
         try:
@@ -634,8 +673,8 @@ def generate_tr208_form(self, vehicle_data, output_path):
                 ['VEHICLE DESCRIPTION:', vehicle_desc],
                 ['VIN:', self._handle_empty_value(data.get('vin', 'N/A'))],
                 ['PLATE NUMBER:', self._handle_empty_value(data.get('plate', 'N/A'))],
-                ['TOW DATE:', self._handle_empty_value(data.get('tow_date', 'N/A'))],
-                ['LEGAL SCRAP DATE:', self._handle_empty_value(data.get('estimated_date', 'N/A'))],
+                ['TOW DATE:', self._format_date_for_pdf(data.get('tow_date', 'N/A'))],
+                ['LEGAL SCRAP DATE:', self._format_date_for_pdf(data.get('estimated_date', 'N/A'))],
                 ['SALVAGE VALUE:', f"${float(data.get('salvage_value', 0)):.2f}"]
             ]
             
@@ -709,11 +748,11 @@ def generate_tr208_form(self, vehicle_data, output_path):
                     self._handle_empty_value(vehicle.get('towbook_call_number', 'N/A')),
                     self._handle_empty_value(vehicle.get('complaint_number', 'N/A')),
                     self._handle_empty_value(vehicle.get('status', 'N/A')),
-                    self._handle_empty_value(vehicle.get('tow_date', 'N/A')),
-                    self._handle_empty_value(vehicle.get('top_form_sent_date', 'N/A')),
-                    self._handle_empty_value(vehicle.get('tr52_available_date', 'N/A')),
-                    self._handle_empty_value(vehicle.get('auction_date', 'N/A')),
-                    self._handle_empty_value(vehicle.get('release_date', 'N/A'))
+                    self._format_date_for_pdf(vehicle.get('tow_date', 'N/A')),
+                    self._format_date_for_pdf(vehicle.get('top_form_sent_date', 'N/A')),
+                    self._format_date_for_pdf(vehicle.get('tr52_available_date', 'N/A')),
+                    self._format_date_for_pdf(vehicle.get('auction_date', 'N/A')),
+                    self._format_date_for_pdf(vehicle.get('release_date', 'N/A'))
                 ])
             
             # Create the table with specific column widths

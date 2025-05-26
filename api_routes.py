@@ -3,13 +3,14 @@ API routes for enhanced features in iTow Impound Manager
 """
 from datetime import datetime, timedelta
 from collections import defaultdict
-from flask import Blueprint, request, jsonify, send_file
+from flask import Blueprint, request, jsonify, send_file, current_app
 from database import get_db_connection, get_vehicles, get_pending_notifications # Added get_pending_notifications
 from utils import log_action, convert_frontend_status
 from scraper import TowBookScraper # Add this import
 import logging # Added import for logging
 from io import BytesIO, StringIO # Added BytesIO import for exporting files
 import os # Added import for os
+from threading import Thread  # Added for background scraping
 
 # Create blueprint
 api = Blueprint('api', __name__)
@@ -323,6 +324,7 @@ def start_scraping_route():
     password = data.get('password')
     start_date = data.get('start_date')
     end_date = data.get('end_date')
+    test_mode = data.get('test_mode', False)  # Add test mode support
 
     if not all([username, password, start_date, end_date]):
         return jsonify({'error': 'Username, password, start date, and end date are required.'}), 400
@@ -333,46 +335,29 @@ def start_scraping_route():
     if scraper_id in scraper_instances and scraper_instances[scraper_id].is_running():
         return jsonify({'message': 'Scraping is already in progress for this user.'}), 400
         
-    scraper = TowBookScraper(username, password)
+    scraper = TowBookScraper(username, password, test_mode=test_mode)  # Pass test_mode to scraper
     scraper_instances[scraper_id] = scraper
 
-    try:
-        # Consider running this in a background thread/task if it's long-running
-        # For now, assuming it's relatively quick or the client handles the wait
-        success, message = scraper.scrape_data(start_date, end_date) 
-        if success:
-            # Optionally, trigger data import into database here or return data for client to handle
-            # For example:
-            # imported_count = scraper.import_scraped_data_to_db() # Assuming this method exists
-            # log_action('Scraping Completed', current_user.id if current_user else 'System', f"{imported_count} records imported.")
-            return jsonify({'message': message, 'scraper_id': scraper_id, 'status': 'completed'}), 200
-        else:
-            return jsonify({'error': message, 'scraper_id': scraper_id, 'status': 'failed'}), 500
-            
-    except Exception as e:
-        logging.error(f"Error starting scraping: {e}", exc_info=True)
-        # Clean up scraper instance if it failed to start properly
-        if scraper_id in scraper_instances:
-            del scraper_instances[scraper_id]
-        return jsonify({'error': f'Error starting scraping: {str(e)}', 'status': 'error'}), 500
+    # Capture the current app instance before starting the background thread
+    app = current_app._get_current_object()
 
-@api.route('/api/scraping-progress')
-def scraping_progress_route():
-    scraper_id = request.args.get('scraper_id') 
+    # Run scraper in background to immediately return control to client
+    def run_scraper():
+        # Use Flask application context for database operations
+        with app.app_context():
+            scraper.scrape_data(start_date, end_date)
+    Thread(target=run_scraper, daemon=True).start()
 
-    if scraper_id and scraper_id in scraper_instances:
-        scraper = scraper_instances[scraper_id]
-        progress = scraper.get_progress() # Assuming TowBookScraper has get_progress()
-        return jsonify({'scraper_id': scraper_id, 'progress': progress}), 200
-    elif not scraper_id and scraper_instances: # Fallback to first, not ideal for multi-user
-        # This fallback is problematic in a multi-user scenario.
-        # Consider removing it or requiring scraper_id.
-        first_scraper_key = next(iter(scraper_instances))
-        scraper = scraper_instances[first_scraper_key]
-        progress = scraper.get_progress()
-        return jsonify({'scraper_id': first_scraper_key, 'progress': progress, 'message': 'No scraper_id provided, showing first available.'}), 200
-    
-    return jsonify({'error': 'Scraper not found or no active scraping session for the given ID.'}), 404
+    return jsonify({'message': 'Scraper started', 'scraper_id': scraper_id, 'status': 'started', 'test_mode': test_mode}), 202
+
+# New route to fetch scraping progress
+@api.route('/api/scraping-progress/<scraper_id>', methods=['GET'])
+def scraping_progress_route(scraper_id):
+    """Get current progress of an active scraper instance"""
+    scraper = scraper_instances.get(scraper_id)
+    if not scraper:
+        return jsonify({'error': 'Scraper not found.'}), 404
+    return jsonify(scraper.get_progress()), 200
 
 @api.route('/api/pending-notifications')
 def pending_notifications_route():

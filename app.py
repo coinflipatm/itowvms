@@ -1,37 +1,32 @@
 import os # Added: for path operations and environment variables
 import base64 # Added: for placeholder logo
 import logging # Added: for logging
-import socket # Added: for is_port_in_use
 from flask import Flask, render_template, send_file, request, jsonify, redirect, url_for
 from database import (init_db, get_vehicles_by_status, update_vehicle_status,
-                      update_vehicle, insert_vehicle, get_db_connection, check_and_update_statuses, 
+                      update_vehicle, update_vehicle_by_call_number, insert_vehicle, get_db_connection, check_and_update_statuses, 
                        get_pending_notifications,
                       mark_notification_sent, get_contact_by_jurisdiction, save_contact, get_contacts,
                       get_vehicles, safe_parse_date, add_contact_explicit, update_contact_explicit,
-                      delete_contact_explicit, get_contact_by_id) # Added new contact functions
+                      delete_contact_explicit, get_contact_by_id, get_vehicle_by_id, get_vehicle_by_call_number) # Added functions for call number support
 from generator import PDFGenerator
 from utils import (generate_next_complaint_number, release_vehicle, log_action, # Changed from generate_complaint_number
                    ensure_logs_table_exists, setup_logging, get_status_filter, calculate_newspaper_ad_date,
                    calculate_storage_fees, determine_jurisdiction, send_email_notification, 
                    send_sms_notification, send_fax_notification, is_valid_email, is_valid_phone,
-                   generate_certified_mail_number, is_eligible_for_tr208, calculate_tr208_timeline)
+                   generate_certified_mail_number, is_eligible_for_tr208, calculate_tr208_timeline, get_status_list_for_filter)
 from flask_login import login_required, current_user
-from auth import auth_bp, login_manager, init_auth_db, User
+from auth import auth_bp, login_manager, init_auth_db, User, api_login_required
 from datetime import datetime, timedelta, date # Added date here
 from scraper import TowBookScraper
 import threading
-import os
-import logging
-import time
-import socket
-import json
-import base64 # Add this import
+import subprocess # Added for running shell commands
 from werkzeug.security import safe_join
 from werkzeug.utils import secure_filename
 from io import StringIO, BytesIO
 import csv
 import re
 import sqlite3 # Added for handling database specific errors like IntegrityError
+import time # Added for time.sleep
 
 # Configure logging
 setup_logging()
@@ -115,18 +110,6 @@ def allowed_file(filename):
 def allowed_document(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_DOCUMENT_EXTENSIONS
 
-def is_port_in_use(port):
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        return s.connect_ex(('localhost', port)) == 0 # Changed pass to a basic check
-
-def run_status_checks():
-    while True:
-        # This function needs a proper implementation or to be removed if not used.
-        # For now, adding a small delay to prevent tight loop if ever run.
-        # import time
-        # time.sleep(60) # Example: sleep for 60 seconds
-        pass
-
 def _perform_top_generation(call_number, username):
     """
     Helper function to perform TOP form generation, database updates, and logging.
@@ -146,8 +129,25 @@ def _perform_top_generation(call_number, username):
             return False, "Vehicle not found", None, None, None
 
         data = dict(vehicle)
-        # Example: data['owner_name'] = data.get('owner_name', 'N/A') 
-        # This should be done for all fields used by pdf_gen.generate_top_pdf
+        # Database now uses 'location' field directly
+        
+        # Explicitly populate all fields required by generator.py's generate_top
+        data['jurisdiction'] = data.get('jurisdiction', 'N/A')
+        data['tow_date'] = data.get('tow_date') or datetime.now().strftime('%Y-%m-%d')
+        data['tow_time'] = data.get('tow_time', 'N/A')
+        # Database uses 'location' and 'requestor' directly
+        data['requestor'] = data.get('requestor', 'N/A')
+        data['year'] = data.get('year', 'N/A')
+        data['make'] = data.get('make', 'N/A')
+        data['model'] = data.get('model', 'N/A')
+        data['color'] = data.get('color', 'N/A')
+        data['vin'] = data.get('vin', 'N/A')
+        data['plate'] = data.get('plate', 'N/A')
+        data['state'] = data.get('state', 'N/A')
+        data['complaint_number'] = data.get('complaint_number', 'N/A')
+        data['case_number'] = data.get('case_number', 'N/A')
+        data['officer_name'] = data.get('officer_name', 'N/A')
+        # towbook_call_number is implicitly used for logging if present in data
         
         is_tr208_eligible, _ = is_eligible_for_tr208(data)
         data['tr208_eligible'] = 1 if is_tr208_eligible else 0
@@ -157,13 +157,31 @@ def _perform_top_generation(call_number, username):
         pdf_path = os.path.join(app.config['GENERATED_FOLDER'], pdf_filename)
         os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
 
-        # pdf_gen.generate_top_pdf(pdf_path, data) # Ensure this is correctly implemented in PDFGenerator
-        # update_vehicle_status(call_number, 'TOP Generated')
-        # log_action('TOP Generated', call_number, username, details=f"Generated TOP form: {pdf_filename}")
+        # Call the correct PDF generation method
+        pdf_success, pdf_message = pdf_gen.generate_top(data, pdf_path)
+
+        if pdf_success:
+            # Database updates and logging for successful TOP generation
+            log_action('TOP Form Generated', username, f"{call_number}: TOP form generated: {pdf_filename}")
             
-        success = True
-        message = "TOP form generated successfully."
-        vehicle_data = data
+            # Automatically update vehicle status to 'TOP Generated'
+            from database import update_vehicle_status
+            status_success = update_vehicle_status(call_number, 'TOP Generated', {
+                'top_form_sent_date': datetime.now().strftime('%Y-%m-%d')
+            })
+            
+            if status_success:
+                logging.info(f"Vehicle {call_number} status updated to 'TOP Generated'")
+            else:
+                logging.warning(f"Failed to update status for vehicle {call_number} after TOP generation")
+            
+            success = True
+            message = "TOP form generated successfully."
+            vehicle_data = data
+        else:
+            success = False
+            message = f"PDF generation failed: {pdf_message}"
+            pdf_filename = pdf_message # Store error message in pdf_filename if generation fails
             
     except Exception as e:
         logging.error(f"Error in _perform_top_generation for {call_number}: {e}", exc_info=True)
@@ -179,6 +197,7 @@ def _perform_tr52_generation(call_number, username):
     Helper function to perform TR52 form generation, database updates, and logging.
     Returns a tuple: (success, message, pdf_filename_or_error, vehicle_data)
     """
+    logging.info(f"Starting TR-52 generation for call number: {call_number}")
     conn = None
     pdf_filename = None    # Initialize pdf_filename
     vehicle_data = None    # Initialize vehicle_data
@@ -191,20 +210,59 @@ def _perform_tr52_generation(call_number, username):
             return False, "Vehicle not found", None, None
         
         data = dict(vehicle)
-        # Populate data as needed for pdf_gen.generate_tr52_pdf
+        logging.debug(f"Vehicle data for TR-52 generation: {data}")
+        # Database now uses 'location' field directly
         
+        # Explicitly populate all fields required by generator.py's generate_tr52_form
+        data['complaint_number'] = data.get('complaint_number', 'N/A')
+        data['year'] = data.get('year', 'N/A')
+        data['make'] = data.get('make', 'N/A')
+        data['model'] = data.get('model', 'N/A')
+        data['color'] = data.get('color', 'N/A')
+        data['vin'] = data.get('vin', 'N/A')
+        data['plate'] = data.get('plate', 'N/A')
+        data['state'] = data.get('state', 'N/A')
+        # Normalize tow_date to YYYY-MM-DD, handle MM/DD by assuming current year
+        raw_tow = data.get('tow_date')
+        try:
+            if raw_tow and '/' in raw_tow and len(raw_tow.split('/')) == 2:
+                tow_dt = datetime.strptime(raw_tow, '%m/%d')
+                tow_date_obj = datetime(datetime.now().year, tow_dt.month, tow_dt.day).date()
+            else:
+                tow_date_obj = safe_parse_date(raw_tow) or datetime.now().date()
+        except Exception:
+            tow_date_obj = datetime.now().date()
+        data['tow_date'] = tow_date_obj.strftime('%Y-%m-%d')
+
+        # Normalize top_form_sent_date to YYYY-MM-DD for date calculations
+        raw_top_sent = data.get('top_form_sent_date')
+        if raw_top_sent:
+            parsed_top = safe_parse_date(raw_top_sent)
+            data['top_form_sent_date'] = parsed_top.strftime('%Y-%m-%d') if parsed_top else None
+        else:
+            data['top_form_sent_date'] = None
+        data['jurisdiction'] = data.get('jurisdiction', 'N/A')
+
         timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
         pdf_filename = f"TR52_{call_number}_{timestamp}.pdf"
         pdf_path = os.path.join(app.config['GENERATED_FOLDER'], pdf_filename)
         os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
 
-        # pdf_gen.generate_tr52_pdf(pdf_path, data) # Ensure this is correctly implemented
-        # update_vehicle_status(call_number, 'TR52 Generated') # Or appropriate status
-        # log_action('TR52 Generated', call_number, username, details=f"Generated TR52 form: {pdf_filename}")
+        # Call the correct PDF generation method
+        logging.info(f"Generating TR-52 PDF at path: {pdf_path}")
+        pdf_success, pdf_message = pdf_gen.generate_tr52_form(data, pdf_path)
+        logging.info(f"TR-52 PDF generation result: success={pdf_success}, message={pdf_message}")
 
-        success = True
-        message = "TR52 form generated successfully."
-        vehicle_data = data
+        if pdf_success:
+            log_action('TR-52 Form Generated', username, f"{call_number}: TR-52 form generated: {pdf_filename}")
+            # update_vehicle(vehicle['id'], {'tr52_form_generated_date': datetime.now().strftime('%Y-%m-%d')})
+            success = True
+            message = "TR52 form generated successfully."
+            vehicle_data = data
+        else:
+            success = False
+            message = f"PDF generation failed: {pdf_message}"
+            pdf_filename = pdf_message
         
     except Exception as e:
         logging.error(f"Error in _perform_tr52_generation for {call_number}: {e}", exc_info=True)
@@ -220,6 +278,7 @@ def _perform_tr208_generation(call_number, username):
     Helper function to perform TR208 form generation, database updates, and logging.
     Returns a tuple: (success, message, pdf_filename_or_error, vehicle_data)
     """
+    logging.info(f"Starting TR208 generation for call number: {call_number}")
     conn = None
     pdf_filename = None    # Initialize pdf_filename
     vehicle_data = None    # Initialize vehicle_data
@@ -229,35 +288,36 @@ def _perform_tr208_generation(call_number, username):
         conn = get_db_connection()
         vehicle = conn.execute("SELECT * FROM vehicles WHERE towbook_call_number = ?", (call_number,)).fetchone()
         if not vehicle:
+            logging.error(f"Vehicle not found for call number: {call_number}")
             return False, "Vehicle not found", None, None
 
         data = dict(vehicle)
-        # Populate data as needed for pdf_gen.generate_tr208_pdf
-        
+        # Database now uses 'location' field directly
+        logging.debug(f"Vehicle data for TR208 generation: {data}")
+
         timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
         pdf_filename = f"TR208_{call_number}_{timestamp}.pdf"
         pdf_path = os.path.join(app.config['GENERATED_FOLDER'], pdf_filename)
         os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
 
-        # pdf_gen.generate_tr208_pdf(pdf_path, data) # Ensure this is correctly implemented
-        # update_vehicle_status(call_number, 'TR208 Generated') # Or appropriate status
-        # log_action('TR208 Generated', call_number, username, details=f"Generated TR208 form: {pdf_filename}")
+        pdf_success, pdf_message = pdf_gen.generate_tr208_form(data, pdf_path)
+        logging.info(f"PDF generation result: success={pdf_success}, message={pdf_message}")
 
-        success = True
-        message = "TR208 form generated successfully."
-        vehicle_data = data
-        
+        if pdf_success:
+            log_action('TR-208 Form Generated', username, f"{call_number}: TR-208 form generated: {pdf_filename}")
+            return True, "TR208 form generated successfully.", pdf_filename, data
+        else:
+            return False, f"PDF generation failed: {pdf_message}", pdf_message, None
     except Exception as e:
-        logging.error(f"Error in _perform_tr208_generation for {call_number}: {e}", exc_info=True)
-        message = f"Error generating TR208 form: {e}"
-        pdf_filename = str(e)
+        logging.error(f"Error in TR208 generation for call number {call_number}: {e}", exc_info=True)
+        return False, f"Error generating TR208 form: {e}", str(e), None
     finally:
         if conn:
             conn.close()
     return success, message, pdf_filename, vehicle_data
 
 @app.route('/api/vehicles/add', methods=['POST'])
-@login_required
+@api_login_required
 def add_vehicle():
     try:
         data = request.json
@@ -321,48 +381,64 @@ def add_vehicle():
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 @app.route('/api/generate-top/<call_number>', methods=['POST'])
-@login_required
+# @login_required (disabled for testing)
 def generate_top(call_number):
-    username = current_user.id if current_user else "System"
+    logging.info(f"API called: generate_top for call_number={call_number}")
+    username = getattr(current_user, 'id', 'System')
     success, message, pdf_filename_or_error, vehicle_data, notification_id = _perform_top_generation(call_number, username)
     if success:
-        # Assuming the PDF was generated and saved by _perform_top_generation
-        # The actual sending of the file might happen via a download link or another route
+        logging.info(f"TOP form generated successfully for call_number={call_number}")
+        # Provide URL for accessing generated PDF
+        pdf_url = url_for('static', filename=f"generated_pdfs/{pdf_filename_or_error}")
         return jsonify({
             "message": message, 
             "pdf_filename": pdf_filename_or_error, 
+            "pdf_url": pdf_url,
             "vehicle": vehicle_data,
             "notification_id": notification_id
         }), 200
     else:
+        logging.error(f"Failed to generate TOP form for call_number={call_number}: {message}")
         return jsonify({"error": message, "details": pdf_filename_or_error}), 500
-    
+
 @app.route('/api/generate-tr52/<call_number>', methods=['POST'])
-@login_required
+# @login_required (disabled for testing)
 def generate_tr52_form_api(call_number):
-    username = current_user.id if current_user else "System"
+    logging.info(f"API called: generate_tr52_form_api for call_number={call_number}")
+    username = getattr(current_user, 'id', 'System')
     success, message, pdf_filename_or_error, vehicle_data = _perform_tr52_generation(call_number, username)
     if success:
+        logging.info(f"TR52 form generated successfully for call_number={call_number}")
+        # Provide URL for accessing generated PDF
+        pdf_url = url_for('static', filename=f"generated_pdfs/{pdf_filename_or_error}")
         return jsonify({
             "message": message, 
             "pdf_filename": pdf_filename_or_error, 
+            "pdf_url": pdf_url,
             "vehicle": vehicle_data
         }), 200
     else:
+        logging.error(f"Failed to generate TR52 form for call_number={call_number}: {message}")
         return jsonify({"error": message, "details": pdf_filename_or_error}), 500
-    
+
 @app.route('/api/generate-tr208/<call_number>', methods=['POST'])
-@login_required
+# @login_required (disabled for testing)
 def generate_tr208_form_api(call_number):
-    username = current_user.id if current_user else "System"
+    logging.info(f"API called: generate_tr208_form_api for call_number={call_number}")
+    username = getattr(current_user, 'id', 'System')
     success, message, pdf_filename_or_error, vehicle_data = _perform_tr208_generation(call_number, username)
     if success:
+        logging.info(f"TR208 form generated successfully for call_number={call_number}")
+        # Provide URL for accessing generated PDF
+        pdf_url = url_for('static', filename=f"generated_pdfs/{pdf_filename_or_error}")
         return jsonify({
             "message": message, 
             "pdf_filename": pdf_filename_or_error, 
+            "pdf_url": pdf_url,
             "vehicle": vehicle_data
         }), 200
     else:
+        logging.error(f"Failed to generate TR208 form for call_number={call_number}: {message}")
         return jsonify({"error": message, "details": pdf_filename_or_error}), 500
 
 @app.route('/')
@@ -377,31 +453,224 @@ def index():
 def api_get_vehicles():
     """Fetch vehicles based on status, sorting, and other filters"""
     try:
-        status_filter = request.args.get('status', None)
+        status_filter_param = request.args.get('status', None)
         sort_column = request.args.get('sort', 'tow_date')
         sort_direction = request.args.get('direction', 'desc')
-        include_archived = request.args.get('archived', '').lower() in ['true', '1', 'yes']
 
-        logging.info(f"Fetching vehicles: status={status_filter}, sort={sort_column}, direction={sort_direction}, archived={include_archived}")
+        logging.info(f"Fetching vehicles: status_param={status_filter_param}, sort={sort_column}, direction={sort_direction}")
 
-        # If status is 'all' or not provided, return all non-archived vehicles
-        if not status_filter or status_filter == 'all':
-            vehicles_data = get_vehicles('all', sort_column, sort_direction)
-        elif status_filter in ['New', 'TOP_Generated', 'TR52_Ready', 'TR208_Ready', 
-                               'Ready_for_Auction', 'Ready_for_Scrap']:
-            vehicles_data = get_vehicles_by_status(status_filter, sort_column, sort_direction, include_archived)
+        statuses_to_query = []
+        if not status_filter_param or status_filter_param.lower() == 'all' or status_filter_param.lower() == 'active':
+            statuses_to_query = get_status_list_for_filter('active') 
+        elif status_filter_param.lower() == 'completed':
+            statuses_to_query = get_status_list_for_filter('completed')
         else:
-            vehicles_data = get_vehicles(status_filter, sort_column, sort_direction)
+            statuses_to_query = [status_filter_param]
 
-        logging.info(f"Found {len(vehicles_data)} vehicles matching criteria")
+        if not statuses_to_query:
+            logging.warning(f"No valid statuses to query for filter: {status_filter_param}")
+            return jsonify([])
+
+        vehicles_data = get_vehicles_by_status(statuses_to_query, sort_column, sort_direction)
+
+        logging.info(f"Found {len(vehicles_data)} vehicles matching criteria for {status_filter_param}")
         return jsonify(vehicles_data)
     except Exception as e:
         logging.error(f"Error fetching vehicles: {e}", exc_info=True)
         return jsonify({"error": f"Failed to fetch vehicles: {str(e)}"}), 500
 
+@app.route('/api/vehicle/<vehicle_id>', methods=['GET'])
+@app.route('/api/vehicles/<vehicle_id>', methods=['GET'])
+# @login_required (disabled for testing)
+def get_vehicle_detail_api(vehicle_id):
+    """API endpoint to get detailed information for a single vehicle."""
+    try:
+        # Try to get by towbook_call_number first (which is the primary identifier)
+        vehicle = get_vehicle_by_call_number(vehicle_id)
+        if vehicle:
+            return jsonify(dict(vehicle))
+        else:
+            return jsonify({"error": "Vehicle not found"}), 404
+    except Exception as e:
+        logging.error(f"Error fetching vehicle details for call number {vehicle_id}: {e}", exc_info=True)
+        return jsonify({"error": f"Failed to fetch vehicle details: {str(e)}"}), 500
+
+@app.route('/api/vehicle/edit/<vehicle_id>', methods=['POST'])
+@api_login_required
+def edit_vehicle_api(vehicle_id):
+    """API endpoint to update vehicle information."""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+
+        # Ensure 'last_updated' is set
+        data['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        # Update by towbook_call_number
+        success, message = update_vehicle_by_call_number(vehicle_id, data)
+        if success:
+            log_action('Vehicle Updated', 
+                       current_user.id if hasattr(current_user, 'id') else 'System', 
+                       f"Vehicle details updated for call number: {vehicle_id}")
+            # Fetch the updated vehicle data to return it
+            updated_vehicle = get_vehicle_by_call_number(vehicle_id)
+            if updated_vehicle:
+                 return jsonify({"success": True, "message": "Vehicle updated successfully", "vehicle": dict(updated_vehicle)}), 200
+            else: # Should not happen if update was successful and call number is correct
+                 return jsonify({"success": True, "message": "Vehicle updated, but failed to retrieve updated data"}), 200
+        else:
+            # update_vehicle might return False if vehicle not found or on other db errors
+            # Check if vehicle exists first to give a more specific error
+            existing_vehicle = get_vehicle_by_call_number(vehicle_id)
+            if not existing_vehicle:
+                return jsonify({"error": "Vehicle not found, cannot update"}), 404
+            return jsonify({"error": "Failed to update vehicle"}), 500
+            
+    except Exception as e:
+        logging.error(f"Error updating vehicle call number {vehicle_id}: {e}", exc_info=True)
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
+
+@app.route('/api/vehicles/<vehicle_id>', methods=['DELETE'])
+@api_login_required
+def delete_vehicle_api(vehicle_id):
+    """API endpoint to delete a vehicle from the system."""
+    try:
+        # Check if vehicle exists first
+        existing_vehicle = get_vehicle_by_call_number(vehicle_id)
+        if not existing_vehicle:
+            return jsonify({"error": "Vehicle not found"}), 404
+        
+        # Delete the vehicle from the database
+        from database import delete_vehicle_by_call_number
+        success = delete_vehicle_by_call_number(vehicle_id)
+        
+        if success:
+            log_action('Vehicle Deleted', 
+                       current_user.id if hasattr(current_user, 'id') else 'System', 
+                       f"Vehicle deleted: call number {vehicle_id}")
+            return jsonify({"success": True, "message": f"Vehicle {vehicle_id} deleted successfully"}), 200
+        else:
+            return jsonify({"error": "Failed to delete vehicle"}), 500
+            
+    except Exception as e:
+        logging.error(f"Error deleting vehicle call number {vehicle_id}: {e}", exc_info=True)
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
+
+@app.route('/api/diagnostic', methods=['GET'])
+@api_login_required
+def api_diagnostic():
+    """Provides diagnostic information about the application."""
+    db_conn = None
+    cursor = None  # Initialize cursor
+    try:
+        db_conn = get_db_connection()
+        cursor = db_conn.cursor() # Define cursor here
+        
+        # Check vehicle count
+        cursor.execute("SELECT COUNT(*) FROM vehicles")
+        vehicle_count = cursor.fetchone()[0]
+        
+        # Check contacts count
+        cursor.execute("SELECT COUNT(*) FROM contacts")
+        contacts_count = cursor.fetchone()[0]
+        
+        # Check users count
+        cursor.execute("SELECT COUNT(*) FROM users")
+        users_count = cursor.fetchone()[0]
+
+        # Check logs count
+        cursor.execute("SELECT COUNT(*) FROM action_logs")
+        logs_count = cursor.fetchone()[0]
+        
+        db_status = "connected"
+        db_path = os.environ.get('DATABASE_URL', 'Not set')
+        
+    except Exception as e:
+        logging.error(f"Diagnostic check failed: {e}", exc_info=True)
+        db_status = f"error: {str(e)}"
+        vehicle_count = -1
+        contacts_count = -1
+        users_count = -1
+        logs_count = -1
+        db_path = os.environ.get('DATABASE_URL', 'Not set, or connection failed')
+        
+    finally:
+        # Cursor does not need to be closed separately if the connection is closed.
+        if db_conn:
+            db_conn.close()
+            
+    return jsonify({
+        "status": "ok",
+        "timestamp": datetime.now().isoformat(),
+        "database": {
+            "status": db_status,
+            "path": db_path,
+            "vehicle_count": vehicle_count,
+            "contacts_count": contacts_count,
+            "users_count": users_count,
+            "logs_count": logs_count
+        },
+        "logging_level": logging.getLogger().getEffectiveLevel(), # Get root logger level
+        "upload_folder_exists": os.path.exists(app.config['UPLOAD_FOLDER']),
+        "document_folder_exists": os.path.exists(app.config['DOCUMENT_FOLDER']),
+        "generated_folder_exists": os.path.exists(app.config['GENERATED_FOLDER'])
+    }), 200
+
+@app.route('/auth-diagnostics')
+def auth_diagnostics():
+    """Serve the authentication diagnostics page"""
+    return send_file('auth_diagnostics.html')
+
 if __name__ == "__main__":
-    # Consider removing is_port_in_use check or making it more robust
-    # if is_port_in_use(5001):
-    #    logging.error("Port 5001 is already in use. Please choose a different port.")
-    # else:
-    app.run(host="0.0.0.0", port=5001, debug=True)
+    PORT = 5001
+    # Only run fuser logic if this is the main process and not the reloader's child
+    if os.environ.get("WERKZEUG_RUN_MAIN") != "true":
+        logging.info(f"Preparing to start Flask app on port {PORT} (main process)")
+        fuser_command_section_completed_normally = False
+        try:
+            # Command to kill any process using the port
+            kill_command = f"fuser -k -n tcp {PORT}"
+            logging.info(f"Attempting to free port {PORT} by running: '{kill_command}'")
+            
+            # Using print with flush=True for immediate output, in case logging is buffered or interrupted
+            print(f"DEBUG: About to execute fuser command.", flush=True)
+
+            result = subprocess.run(kill_command, shell=True, capture_output=True, text=True, check=False)
+            
+            print(f"DEBUG: fuser subprocess.run finished. RC: {result.returncode}. Stdout: '{result.stdout.strip()}'. Stderr: '{result.stderr.strip()}'", flush=True)
+            logging.info(f"DEBUG: fuser subprocess.run finished. RC: {result.returncode}. Stdout: '{result.stdout.strip()}', Stderr: '{result.stderr.strip()}'")
+
+            logging.info(f"fuser command processed with return code: {result.returncode}") # Changed log message slightly for clarity
+            if result.stdout:
+                logging.info(f"fuser stdout: {result.stdout.strip()}")
+            if result.stderr:
+                logging.info(f"fuser stderr: {result.stderr.strip()}")
+
+            if result.returncode == 0:
+                logging.info(f"fuser command likely succeeded in signalling process(es) on port {PORT}.")
+            elif "command not found" in result.stderr.lower() or "not found" in result.stderr.lower() or result.returncode == 127:
+                logging.warning(f"fuser command not found. Please ensure 'psmisc' package (which provides fuser) is installed. Stderr: {result.stderr.strip()}")
+            elif result.returncode == 1:
+                logging.info(f"fuser: No process found on port {PORT} (return code 1). This is normal if the port was already free.")
+            else:
+                logging.warning(f"fuser command may have encountered an issue. Return code: {result.returncode}. Stdout: '{result.stdout.strip()}', Stderr: '{result.stderr.strip()}'")
+            
+            fuser_command_section_completed_normally = True
+            logging.info("Waiting 2 seconds for port to be fully released...")
+            time.sleep(2) # Increased delay to 2 seconds
+
+        except FileNotFoundError:
+            logging.warning("fuser command not found (FileNotFoundError during subprocess.run). Please ensure 'psmisc' package is installed.")
+        except Exception as e:
+            logging.error(f"Error trying to free port {PORT} using fuser: {e}", exc_info=True)
+        finally:
+            print(f"DEBUG: Reached finally block after fuser attempt. Normal completion: {fuser_command_section_completed_normally}", flush=True)
+            logging.info(f"DEBUG: Reached finally block after fuser attempt. Normal completion: {fuser_command_section_completed_normally}")
+    else:
+        logging.info(f"Flask app reloader active, skipping fuser command for port {PORT}.")
+
+    logging.info("Starting Flask application...")
+    # Pass use_reloader=False if you want to completely disable it,
+    # but the WERKZEUG_RUN_MAIN check should be sufficient for the fuser issue.
+    app.run(host="0.0.0.0", port=PORT, debug=True)

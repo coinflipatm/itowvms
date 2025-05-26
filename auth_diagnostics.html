@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iTow Authentication Diagnostics</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .success { color: green; }
+        .error { color: red; }
+        .warning { color: orange; }
+        .info { color: blue; }
+        .test-result { margin: 10px 0; padding: 10px; border-left: 4px solid #ccc; }
+        .success-result { border-left-color: green; background: #f0fff0; }
+        .error-result { border-left-color: red; background: #fff0f0; }
+        .warning-result { border-left-color: orange; background: #fff8f0; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>iTow Authentication Diagnostics</h1>
+    <p>This page helps diagnose authentication issues with the iTow Vehicle Management System.</p>
+    
+    <div id="results"></div>
+    
+    <button onclick="runAllTests()">Run All Tests</button>
+    <button onclick="clearSession()">Clear Session & Reload</button>
+    <button onclick="testLogin()">Test Login</button>
+    
+    <script>
+        const results = document.getElementById('results');
+        
+        function addResult(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `test-result ${type}-result`;
+            div.innerHTML = `<strong>${type.toUpperCase()}:</strong> ${message}`;
+            results.appendChild(div);
+        }
+        
+        function clearResults() {
+            results.innerHTML = '';
+        }
+        
+        async function runAllTests() {
+            clearResults();
+            addResult('Starting authentication diagnostics...', 'info');
+            
+            // Test 1: Check if we can reach the server
+            try {
+                const response = await fetch('/');
+                if (response.ok) {
+                    addResult('✅ Server is reachable', 'success');
+                } else {
+                    addResult(`❌ Server returned ${response.status}`, 'error');
+                }
+            } catch (error) {
+                addResult(`❌ Cannot reach server: ${error.message}`, 'error');
+                return;
+            }
+            
+            // Test 2: Check current authentication status
+            try {
+                const response = await fetch('/api/vehicles?limit=1', {
+                    credentials: 'include'
+                });
+                
+                if (response.ok) {
+                    addResult('✅ Currently authenticated - API call successful', 'success');
+                } else if (response.status === 401) {
+                    addResult('⚠️ Not currently authenticated - need to login', 'warning');
+                } else {
+                    addResult(`❌ Unexpected API response: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                addResult(`❌ API test failed: ${error.message}`, 'error');
+            }
+            
+            // Test 3: Check cookies
+            const cookies = document.cookie;
+            if (cookies.includes('session=')) {
+                addResult('✅ Session cookie found', 'success');
+            } else {
+                addResult('⚠️ No session cookie found - may need to login', 'warning');
+            }
+            
+            // Test 4: Check browser settings
+            if (navigator.cookieEnabled) {
+                addResult('✅ Cookies are enabled in browser', 'success');
+            } else {
+                addResult('❌ Cookies are disabled in browser', 'error');
+            }
+            
+            // Test 5: Test vehicle edit endpoint specifically
+            try {
+                const testData = {
+                    make: 'DIAG TEST',
+                    model: 'DIAG TEST',
+                    year: '2023',
+                    color: 'DIAG TEST',
+                    notes: 'Diagnostic test - ' + new Date().toISOString()
+                };
+                
+                const response = await fetch('/api/vehicle/edit/17643', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(testData)
+                });
+                
+                if (response.ok) {
+                    addResult('✅ Vehicle edit endpoint working correctly', 'success');
+                } else if (response.status === 401) {
+                    addResult('❌ Vehicle edit failed: Authentication required', 'error');
+                    addResult('Solution: Try logging out and logging back in', 'info');
+                } else {
+                    const text = await response.text();
+                    addResult(`❌ Vehicle edit failed: ${response.status} - ${text}`, 'error');
+                }
+            } catch (error) {
+                addResult(`❌ Vehicle edit test failed: ${error.message}`, 'error');
+            }
+            
+            addResult('Diagnostics complete!', 'info');
+        }
+        
+        async function testLogin() {
+            const username = prompt('Enter username:', 'admin');
+            const password = prompt('Enter password:');
+            
+            if (!username || !password) {
+                addResult('Login test cancelled', 'info');
+                return;
+            }
+            
+            try {
+                const formData = new FormData();
+                formData.append('username', username);
+                formData.append('password', password);
+                
+                const response = await fetch('/login', {
+                    method: 'POST',
+                    credentials: 'include',
+                    body: formData
+                });
+                
+                if (response.ok || response.status === 302) {
+                    addResult('✅ Login successful!', 'success');
+                    setTimeout(() => {
+                        addResult('Running tests again to verify authentication...', 'info');
+                        runAllTests();
+                    }, 1000);
+                } else {
+                    addResult(`❌ Login failed: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                addResult(`❌ Login error: ${error.message}`, 'error');
+            }
+        }
+        
+        function clearSession() {
+            // Clear all cookies for this domain
+            document.cookie.split(";").forEach(function(c) { 
+                document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/"); 
+            });
+            
+            addResult('Session cleared, reloading page...', 'info');
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        }
+        
+        // Auto-run tests on page load
+        window.addEventListener('load', runAllTests);
+    </script>
+</body>
+</html>

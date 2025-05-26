@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Date Issue Test</title>
+</head>
+<body>
+    <h1>Date Parsing Test</h1>
+    <div id="results"></div>
+    
+    <script>
+        function testDateParsing() {
+            const testDates = ['2025-03-04', '2023-11-13', '2024-07-13'];
+            const results = document.getElementById('results');
+            
+            testDates.forEach(dateStr => {
+                const date = new Date(dateStr);
+                const localString = date.toLocaleDateString('en-US', {
+                    month: '2-digit',
+                    day: '2-digit',
+                    year: 'numeric'
+                });
+                
+                const utcString = date.toLocaleDateString('en-US', {
+                    month: '2-digit',
+                    day: '2-digit',
+                    year: 'numeric',
+                    timeZone: 'UTC'
+                });
+                
+                results.innerHTML += `
+                    <p><strong>Original:</strong> ${dateStr}</p>
+                    <p><strong>Local time:</strong> ${localString}</p>
+                    <p><strong>UTC time:</strong> ${utcString}</p>
+                    <p><strong>Date object:</strong> ${date.toString()}</p>
+                    <p><strong>UTC string:</strong> ${date.toUTCString()}</p>
+                    <hr>
+                `;
+            });
+        }
+        
+        testDateParsing();
+    </script>
+</body>
+</html>

@@ -1,72 +1,57 @@
-2025-04-01 00:33:28,321 - INFO - Database initialized
-2025-04-01 00:33:28,325 - WARNING - Port 5000 is in use. Trying port 5001
-2025-04-01 00:33:28,345 - WARNING -  * Debugger is active!
-2025-04-01 00:33:28,350 - INFO -  * Debugger PIN: 518-802-754
-2025-04-01 00:33:29,011 - INFO - 127.0.0.1 - - [01/Apr/2025 00:33:29] "GET / HTTP/1.1" 200 -
-2025-04-01 00:33:29,115 - INFO - 127.0.0.1 - - [01/Apr/2025 00:33:29] "GET /api/vehicles?status_type=New HTTP/1.1" 200 -
-2025-04-01 00:33:41,238 - INFO - WebDriver initialized
-2025-04-01 00:33:41,240 - INFO - 127.0.0.1 - - [01/Apr/2025 00:33:41] "POST /api/start-scraping HTTP/1.1" 200 -
-2025-04-01 00:33:42,257 - INFO - 127.0.0.1 - - [01/Apr/2025 00:33:42] "GET /scraping-progress HTTP/1.1" 200 -
-2025-04-01 00:33:43,257 - INFO - 127.0.0.1 - - [01/Apr/2025 00:33:43] "GET /scraping-progress HTTP/1.1" 200 -
-2025-04-01 00:33:44,253 - INFO - 127.0.0.1 - - [01/Apr/2025 00:33:44] "GET /scraping-progress HTTP/1.1" 200 -
-2025-04-01 00:33:45,273 - INFO - 127.0.0.1 - - [01/Apr/2025 00:33:45] "GET /scraping-progress HTTP/1.1" 200 -
-2025-04-01 00:33:46,257 - INFO - 127.0.0.1 - - [01/Apr/2025 00:33:46] "GET /scraping-progress HTTP/1.1" 200 -
-2025-04-01 00:33:47,259 - INFO - 127.0.0.1 - - [01/Apr/2025 00:33:47] "GET /scraping-progress HTTP/1.1" 200 -
-2025-04-01 00:33:48,259 - INFO - 127.0.0.1 - - [01/Apr/2025 00:33:48] "GET /scraping-progress HTTP/1.1" 200 -
-2025-04-01 00:33:49,257 - INFO - 127.0.0.1 - - [01/Apr/2025 00:33:49] "GET /scraping-progress HTTP/1.1" 200 -
-2025-04-01 00:33:50,251 - INFO - 127.0.0.1 - - [01/Apr/2025 00:33:50] "GET /scraping-progress HTTP/1.1" 200 -
-2025-04-01 00:33:51,248 - INFO - 127.0.0.1 - - [01/Apr/2025 00:33:51] "GET /scraping-progress HTTP/1.1" 200 -
-2025-04-01 00:33:52,257 - INFO - 127.0.0.1 - - [01/Apr/2025 00:33:52] "GET /scraping-progress HTTP/1.1" 200 -
-2025-04-01 00:33:52,708 - ERROR - Login failed: Message: 
-Stacktrace:
-	GetHandleVerifier [0x00007FF71F9E4C25+3179557]
-	(No symbol) [0x00007FF71F6488A0]
-	(No symbol) [0x00007FF71F4D91CA]
-	(No symbol) [0x00007FF71F52FA67]
-	(No symbol) [0x00007FF71F52FC9C]
-	(No symbol) [0x00007FF71F583627]
-	(No symbol) [0x00007FF71F557C6F]
-	(No symbol) [0x00007FF71F5802F3]
-	(No symbol) [0x00007FF71F557A03]
-	(No symbol) [0x00007FF71F5206D0]
-	(No symbol) [0x00007FF71F521983]
-	GetHandleVerifier [0x00007FF71FA467CD+3579853]
-	GetHandleVerifier [0x00007FF71FA5D1D2+3672530]
-	GetHandleVerifier [0x00007FF71FA52153+3627347]
-	GetHandleVerifier [0x00007FF71F7B092A+868650]
-	(No symbol) [0x00007FF71F652FFF]
-	(No symbol) [0x00007FF71F64F4A4]
-	(No symbol) [0x00007FF71F64F646]
-	(No symbol) [0x00007FF71F63EAA9]
-	BaseThreadInitThunk [0x00007FF92223259D+29]
-	RtlUserThreadStart [0x00007FF922EEAF38+40]
-
-2025-04-01 00:33:52,711 - ERROR - Scraping error: Message: 
-Stacktrace:
-	GetHandleVerifier [0x00007FF71F9E4C25+3179557]
-	(No symbol) [0x00007FF71F6488A0]
-	(No symbol) [0x00007FF71F4D91CA]
-	(No symbol) [0x00007FF71F52FA67]
-	(No symbol) [0x00007FF71F52FC9C]
-	(No symbol) [0x00007FF71F583627]
-	(No symbol) [0x00007FF71F557C6F]
-	(No symbol) [0x00007FF71F5802F3]
-	(No symbol) [0x00007FF71F557A03]
-	(No symbol) [0x00007FF71F5206D0]
-	(No symbol) [0x00007FF71F521983]
-	GetHandleVerifier [0x00007FF71FA467CD+3579853]
-	GetHandleVerifier [0x00007FF71FA5D1D2+3672530]
-	GetHandleVerifier [0x00007FF71FA52153+3627347]
-	GetHandleVerifier [0x00007FF71F7B092A+868650]
-	(No symbol) [0x00007FF71F652FFF]
-	(No symbol) [0x00007FF71F64F4A4]
-	(No symbol) [0x00007FF71F64F646]
-	(No symbol) [0x00007FF71F63EAA9]
-	BaseThreadInitThunk [0x00007FF92223259D+29]
-	RtlUserThreadStart [0x00007FF922EEAF38+40]
-
-2025-04-01 00:33:53,250 - INFO - 127.0.0.1 - - [01/Apr/2025 00:33:53] "GET /scraping-progress HTTP/1.1" 200 -
-2025-04-01 00:33:53,260 - INFO - 127.0.0.1 - - [01/Apr/2025 00:33:53] "GET /api/vehicles?status_type=New HTTP/1.1" 200 -
-2025-04-01 00:33:54,810 - INFO - WebDriver closed
-2025-04-01 00:37:30,681 - INFO -  * Detected change in 'c:\\Users\\Finor\\itowvms\\itowvms\\scraper.py', reloading
-2025-04-01 00:37:30,682 - INFO -  * Detected change in 'c:\\Users\\Finor\\itowvms\\itowvms\\scraper.py', reloading
+INFO:root:===== iTow Impound Manager Started =====
+INFO:root:Using database at: /workspaces/itowvms/vehicles.db
+INFO:root:Initializing application components...
+INFO:root:Database path from environment: /workspaces/itowvms/vehicles.db
+INFO:root:Database exists: True
+INFO:root:Database size: 290816 bytes
+INFO:app:Initializing database at /workspaces/itowvms/vehicles.db...
+INFO:app:Table 'vehicles' checked/created.
+INFO:app:Table 'contacts' checked/created.
+INFO:app:Table 'system_logs' checked/created.
+INFO:app:Table 'notifications' checked/created.
+INFO:app:Table 'auctions' checked/created.
+INFO:app:Table 'auction_vehicles' checked/created.
+INFO:app:Table 'documents' checked/created.
+INFO:app:Table 'police_log' checked/created.
+INFO:auth:Auth database tables initialized
+INFO:root:Preparing to start Flask app on port 5001 (main process)
+INFO:root:Attempting to free port 5001 by running: 'fuser -k -n tcp 5001'
+DEBUG: About to execute fuser command.
+DEBUG: fuser subprocess.run finished. RC: 0. Stdout: '11337 11366'. Stderr: '5001/tcp:'
+INFO:root:DEBUG: fuser subprocess.run finished. RC: 0. Stdout: '11337 11366', Stderr: '5001/tcp:'
+INFO:root:fuser command processed with return code: 0
+INFO:root:fuser stdout: 11337 11366
+INFO:root:fuser stderr: 5001/tcp:
+INFO:root:fuser command likely succeeded in signalling process(es) on port 5001.
+INFO:root:Waiting 2 seconds for port to be fully released...
+DEBUG: Reached finally block after fuser attempt. Normal completion: True
+INFO:root:DEBUG: Reached finally block after fuser attempt. Normal completion: True
+INFO:root:Starting Flask application...
+ * Serving Flask app 'app'
+ * Debug mode: on
+INFO:werkzeug:[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5001
+ * Running on http://10.0.1.40:5001
+INFO:werkzeug:[33mPress CTRL+C to quit[0m
+INFO:werkzeug: * Restarting with stat
+INFO:root:===== iTow Impound Manager Started =====
+INFO:root:Using database at: /workspaces/itowvms/vehicles.db
+INFO:root:Initializing application components...
+INFO:root:Database path from environment: /workspaces/itowvms/vehicles.db
+INFO:root:Database exists: True
+INFO:root:Database size: 290816 bytes
+INFO:app:Initializing database at /workspaces/itowvms/vehicles.db...
+INFO:app:Table 'vehicles' checked/created.
+INFO:app:Table 'contacts' checked/created.
+INFO:app:Table 'system_logs' checked/created.
+INFO:app:Table 'notifications' checked/created.
+INFO:app:Table 'auctions' checked/created.
+INFO:app:Table 'auction_vehicles' checked/created.
+INFO:app:Table 'documents' checked/created.
+INFO:app:Table 'police_log' checked/created.
+INFO:auth:Auth database tables initialized
+INFO:root:Flask app reloader active, skipping fuser command for port 5001.
+INFO:root:Starting Flask application...
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 930-841-162

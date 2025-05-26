@@ -26,10 +26,11 @@ from utils import generate_next_complaint_number # Import the centralized functi
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class TowBookScraper:
-    def __init__(self, username, password, database='vehicles.db'):
+    def __init__(self, username, password, database='vehicles.db', test_mode=False):
         self.username = username
         self.password = password
         self.database = database
+        self.test_mode = test_mode  # Add test mode flag
         self.driver = None
         self.wait = None
         self.short_wait = None
@@ -50,16 +51,29 @@ class TowBookScraper:
             return self.driver
 
         chrome_options = Options()
-        chrome_options.add_argument('--disable-gpu')
+        
+        # Stable options for containerized environments
         chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+        chrome_options.add_argument('--disable-gpu')
+        chrome_options.add_argument('--disable-extensions')
         chrome_options.add_argument('--window-size=1920,1080')
-        chrome_options.add_argument('--disable-dev-shm-usage')  # Prevent crashes in low-memory environments
+        chrome_options.add_argument('--disable-web-security')
+        chrome_options.add_argument('--disable-features=VizDisplayCompositor')
+        chrome_options.add_argument('--disable-background-timer-throttling')
+        chrome_options.add_argument('--disable-renderer-backgrounding')
+        chrome_options.add_argument('--disable-backgrounding-occluded-windows')
+        # User agent to avoid detection
+        chrome_options.add_argument('--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.7103.113 Safari/537.36')
 
         if headless:
-            chrome_options.add_argument('--headless')
+            chrome_options.add_argument('--headless=new')  # Use new headless mode
 
         try:
-            self.driver = webdriver.Chrome(service=Service(), options=chrome_options)
+            # Use the local ChromeDriver
+            chromedriver_path = os.path.join(os.path.dirname(__file__), 'chromedriver')
+            service = Service(executable_path=chromedriver_path)
+            self.driver = webdriver.Chrome(service=service, options=chrome_options)
             self.wait = WebDriverWait(self.driver, 30)
             self.short_wait = WebDriverWait(self.driver, 5)
             logging.info(f"WebDriver initialized (headless: {headless})")
@@ -71,33 +85,70 @@ class TowBookScraper:
 
     def login(self):
         """Login to TowBook"""
-        try:
-            self.progress['status'] = "Logging in to TowBook"
-            if not self.driver:
-                self._init_driver()
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                self.progress['status'] = f"Logging in to TowBook (attempt {attempt + 1})"
+                if not self.driver:
+                    self._init_driver()
 
-            self.driver.get('https://app.towbook.com/Security/Login.aspx')
+                # Navigate to login page
+                logging.info("Navigating to TowBook login page...")
+                self.driver.get('https://app.towbook.com/Security/Login.aspx')
+                
+                # Wait for page to load
+                time.sleep(2)
+                
+                # Check if login form is present
+                try:
+                    username_field = self.wait.until(EC.element_to_be_clickable((By.NAME, 'Username')))
+                except TimeoutException:
+                    logging.warning("Login form not found, trying alternative selectors...")
+                    # Try alternative selectors
+                    username_field = self.wait.until(EC.element_to_be_clickable((By.ID, 'Username')))
+                
+                username_field.clear()
+                username_field.send_keys(self.username)
+                time.sleep(1)
 
-            username_field = self.wait.until(EC.element_to_be_clickable((By.NAME, 'Username')))
-            username_field.clear()
-            username_field.send_keys(self.username)
-            time.sleep(1)
+                password_field = self.driver.find_element(By.NAME, 'Password')
+                password_field.clear()
+                password_field.send_keys(self.password)
+                time.sleep(1)
 
-            password_field = self.driver.find_element(By.NAME, 'Password')
-            password_field.clear()
-            password_field.send_keys(self.password)
-            time.sleep(1)
+                submit_button = self.driver.find_element(By.CSS_SELECTOR, "input[type='submit']")
+                self.robust_click(submit_button)
 
-            submit_button = self.driver.find_element(By.CSS_SELECTOR, "input[type='submit']")
-            self.robust_click(submit_button)
-
-            self.wait.until(EC.presence_of_element_located((By.XPATH, "//a[contains(text(), 'Reports')]")))
-            logging.info("Login successful")
-            return True
-        except Exception as e:
-            logging.error(f"Login failed: {str(e)}")
-            self.progress['error'] = f"Login failed: {str(e)}"
-            return False
+                # Wait for either successful login or error message
+                try:
+                    # Check for successful login (Reports link appears)
+                    self.wait.until(EC.presence_of_element_located((By.XPATH, "//a[contains(text(), 'Reports')]")))
+                    logging.info("Login successful")
+                    return True
+                except TimeoutException:
+                    # Check for error messages
+                    error_elements = self.driver.find_elements(By.CSS_SELECTOR, ".error, .alert-danger, #ErrorLabel")
+                    if error_elements:
+                        error_text = error_elements[0].text
+                        logging.error(f"Login error: {error_text}")
+                        if "invalid" in error_text.lower() or "incorrect" in error_text.lower():
+                            self.progress['error'] = f"Invalid credentials: {error_text}"
+                            return False
+                    
+                    # If no specific error, continue to next attempt
+                    logging.warning(f"Login attempt {attempt + 1} failed, retrying...")
+                    time.sleep(2)
+                    
+            except Exception as e:
+                logging.error(f"Login attempt {attempt + 1} failed: {str(e)}")
+                if attempt == max_attempts - 1:
+                    self.progress['error'] = f"Login failed: {str(e)}"
+                    return False
+                time.sleep(2)
+        
+        logging.error("Login failed after multiple attempts")
+        self.progress['error'] = "Login failed after multiple attempts"
+        return False
 
     def navigate_to_call_analysis(self):
         """Navigate to Call Analysis report"""
@@ -209,7 +260,7 @@ class TowBookScraper:
                     self.progress['status'] = f"Processing vehicle {index}/{self.progress['total']} (Call #: {call_number})"
                     logging.info(f"Processing call {index}/{self.progress['total']}: Call #: {call_number}")
                     
-                    # Initialize vehicle with call number 
+                    # Initialize vehicle with call number - using current field mapping
                     vehicle_data = {
                         'towbook_call_number': call_number,
                         'jurisdiction': "", 'tow_date': "", 'tow_time': "", 'location': "",
@@ -310,145 +361,66 @@ class TowBookScraper:
     # Removed _get_initial_complaint_sequence method as it's replaced by utils.generate_next_complaint_number
 
     def store_vehicles(self, vehicles):
-        """Store vehicle data in the database"""
+        """Store vehicle data in the database using the current database.py insert_vehicle function"""
         try:
+            from database import insert_vehicle
+            from utils import generate_next_complaint_number
+            
             self.progress['status'] = "Storing vehicle data"
-            conn = sqlite3.connect(self.database)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            
-            # Create vehicles table if it doesn't exist
-            cursor.execute("CREATE TABLE IF NOT EXISTS vehicles (towbook_call_number TEXT PRIMARY KEY)")
-            
-            # Get existing columns
-            cursor.execute("PRAGMA table_info(vehicles)")
-            existing_columns = [col[1] for col in cursor.fetchall()]
-            
-            # Add 'complaint_number', 'complaint_sequence', 'complaint_year' if they don't exist
-            # These should exist based on the database schema, but this is a safeguard.
-            complaint_cols = [
-                ('complaint_number', 'TEXT'),
-                ('complaint_sequence', 'INTEGER'),
-                ('complaint_year', 'TEXT')
-            ]
-            for col_name, col_type in complaint_cols:
-                if col_name not in existing_columns:
-                    cursor.execute(f"ALTER TABLE vehicles ADD COLUMN {col_name} {col_type}")
-                    existing_columns.append(col_name)
-                    logging.info(f"Added column {col_name}")
-
-            required_columns = [
-                ('status', 'TEXT'),
-                ('archived', 'INTEGER'),
-                ('last_updated', 'TEXT'),
-                ('top_form_sent_date', 'TEXT'),
-                ('tr52_available_date', 'TEXT'),
-                ('days_until_next_step', 'INTEGER'),
-                ('days_until_auction', 'INTEGER'),
-                ('auction_date', 'TEXT'),
-                ('release_date', 'TEXT'),
-                ('release_time', 'TEXT'),
-                ('release_reason', 'TEXT'),
-                ('decision', 'TEXT'),
-                ('decision_date', 'TEXT'),
-                ('estimated_date', 'TEXT'),
-                ('vin', 'TEXT'),
-                ('make', 'TEXT'),
-                ('model', 'TEXT'),
-                ('year', 'TEXT'),
-                ('color', 'TEXT'),
-                ('jurisdiction', 'TEXT'),
-                ('location', 'TEXT'),
-                ('plate', 'TEXT'),
-                ('tow_date', 'TEXT'),
-                ('tow_time', 'TEXT')
-                # complaint_number is handled above or assumed to exist
-            ]
-            
-            for col_name, col_type in required_columns:
-                if col_name not in existing_columns:
-                    cursor.execute(f"ALTER TABLE vehicles ADD COLUMN {col_name} {col_type}")
-                    existing_columns.append(col_name)
-                    logging.info(f"Added column {col_name}")
-            
-            # Check for any other columns from vehicle data
-            for vehicle in vehicles:
-                for field in vehicle.keys():
-                    if field not in existing_columns:
-                        cursor.execute(f"ALTER TABLE vehicles ADD COLUMN {field} TEXT")
-                        existing_columns.append(field)
-                        logging.info(f"Added dynamic column {field}")
-
-            # Get existing vehicles to check for duplicates
-            cursor.execute("SELECT towbook_call_number, status FROM vehicles")
-            existing_vehicles = {row[0]: row[1] for row in cursor.fetchall()}
             
             new_count = 0
             updated_count = 0
             skipped_count = 0
-
-            # Insert vehicles
+            
             for vehicle in vehicles:
-                # Generate and assign the ITXXXX-YY complaint number using the utility function
-                # The utility function now directly queries the database, so no need to pass cursor or year
-                complaint_full_number, complaint_seq, complaint_yr = generate_next_complaint_number(db_path=self.database)
-                vehicle['complaint_number'] = complaint_full_number
-                vehicle['complaint_sequence'] = complaint_seq
-                vehicle['complaint_year'] = complaint_yr
-
-                call_number = vehicle['towbook_call_number']
-                if call_number:
-                    fields = list(vehicle.keys())
-                    placeholders = ','.join(['?'] * len(fields))
-                    values = [vehicle[field] for field in fields]
+                try:
+                    call_number = vehicle.get('towbook_call_number')
+                    if not call_number:
+                        skipped_count += 1
+                        continue
                     
-                    # Check if this vehicle already exists and has a non-New status
-                    exists = call_number in existing_vehicles
-                    existing_status = existing_vehicles.get(call_number, '')
+                    # Check if vehicle already exists
+                    from database import get_vehicle_by_call_number
+                    existing_vehicle = get_vehicle_by_call_number(call_number)
                     
-                    # Don't change the status if it's already been processed
-                    if exists and existing_status and existing_status != 'New':
-                        # Skip updating the status
-                        if 'status' in fields:
-                            status_index = fields.index('status')
-                            values[status_index] = existing_status
-                    
-                    if exists:
-                        # Update existing vehicle - only update non-null values
-                        non_null_fields = []
-                        non_null_values = []
+                    if existing_vehicle:
+                        # For scraped vehicles, always reset to 'New' status since this constitutes a new entry
+                        # This ensures freshly scraped vehicles appear in the 'active' tab for management
+                        vehicle['status'] = 'New'
                         
-                        for i, field in enumerate(fields):
-                            # Skip status field if already set to something other than New
-                            if field == 'status' and existing_status and existing_status != 'New':
-                                continue
-                                
-                            # Only update non-empty values
-                            if values[i] is not None and values[i] != '':
-                                non_null_fields.append(field)
-                                non_null_values.append(values[i])
+                        # Filter out empty values to avoid overwriting existing data
+                        update_data = {k: v for k, v in vehicle.items() 
+                                     if v is not None and v != '' and v != 'N/A'}
                         
-                        if non_null_fields:
-                            set_clause = ', '.join([f"{f} = ?" for f in non_null_fields])
-                            cursor.execute(f"UPDATE vehicles SET {set_clause} WHERE towbook_call_number = ?", 
-                                        non_null_values + [call_number])
+                        from database import update_vehicle
+                        success = update_vehicle(call_number, update_data)
+                        if success:
                             updated_count += 1
                         else:
                             skipped_count += 1
                     else:
-                        # Insert new vehicle
-                        cursor.execute(f"INSERT INTO vehicles ({','.join(fields)}) VALUES ({placeholders})", values)
-                        new_count += 1
-                else:
+                        # Insert new vehicle - set status to 'New' for freshly scraped vehicles
+                        vehicle['status'] = 'New'
+                        
+                        # Generate complaint number if not provided
+                        if 'complaint_number' not in vehicle or not vehicle['complaint_number']:
+                            vehicle['complaint_number'] = generate_next_complaint_number()
+                        
+                        vehicle_id = insert_vehicle(vehicle)
+                        if vehicle_id:
+                            new_count += 1
+                        else:
+                            skipped_count += 1
+                            
+                except Exception as e:
+                    logging.error(f"Error storing vehicle {call_number}: {e}")
                     skipped_count += 1
-            
-            conn.commit()
-            conn.close()
             
             result_msg = f"Added {new_count} new vehicles, updated {updated_count} existing vehicles, skipped {skipped_count}"
             logging.info(result_msg)
             self.progress['status'] = result_msg
             return True
+            
         except Exception as e:
             logging.error(f"Error storing vehicles: {e}")
             self.progress['error'] = f"Storage failed: {str(e)}"
@@ -867,3 +839,130 @@ class TowBookScraper:
             logging.error(f"Geocoding error for address '{address_clean}': {str(e)}")
             self.geocode_cache[address_clean] = "" # Cache other errors
             return ""
+
+    def scrape_data(self, start_date, end_date):
+        """Main scraping method called by API routes - wrapper for start_scraping_with_date_range"""
+        try:
+            if self.test_mode:
+                return self._run_test_mode(start_date, end_date)
+            
+            self.start_scraping_with_date_range(start_date, end_date, headless=True)
+            
+            # Check if scraping completed successfully
+            if self.progress['error']:
+                return False, self.progress['error']
+            elif self.progress['status'] and 'Completed' in self.progress['status']:
+                return True, self.progress['status']
+            else:
+                return False, "Scraping completed but with unknown status"
+                
+        except Exception as e:
+            logging.error(f"Error in scrape_data: {str(e)}")
+            return False, f"Scraping failed: {str(e)}"
+    
+    def _run_test_mode(self, start_date, end_date):
+        """Run scraper in test mode with simulated data"""
+        logging.info("Running scraper in test mode...")
+        
+        self.progress['is_running'] = True
+        self.progress['status'] = "Running in test mode"
+        self.progress['total'] = 5
+        
+        # Import database functions
+        from database import insert_vehicle, get_vehicle_by_call_number, update_vehicle
+        
+        # Create test vehicles
+        test_vehicles = [
+            {
+                'towbook_call_number': 'TEST001',
+                'jurisdiction': 'Burton',
+                'tow_date': '2024-01-15',
+                'tow_time': '14:30',
+                'location': '123 Test Street',
+                'requestor': 'PROPERTY OWNER',
+                'vin': 'TEST1234567890001',
+                'year': '2020',  # Use correct database field name
+                'make': 'Honda',
+                'model': 'Civic',
+                'color': 'Blue',
+                'plate': 'TEST123',
+                'state': 'MI',
+                'status': 'New',
+                'archived': 0,
+                'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            },
+            {
+                'towbook_call_number': 'TEST002',
+                'jurisdiction': 'Flint',
+                'tow_date': '2024-01-16',
+                'tow_time': '09:15',
+                'location': '456 Demo Avenue',
+                'requestor': 'POLICE',
+                'vin': 'TEST1234567890002',
+                'year': '2019',  # Use correct database field name
+                'make': 'Toyota',
+                'model': 'Camry',
+                'color': 'Red',
+                'plate': 'TEST456',
+                'state': 'MI',
+                'status': 'New',
+                'archived': 0,
+                'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+        ]
+        
+        # Process test vehicles
+        for i, vehicle in enumerate(test_vehicles):
+            self.progress['processed'] = i + 1
+            self.progress['percentage'] = int((i + 1) / len(test_vehicles) * 100)
+            self.progress['status'] = f"Processing test vehicle {i + 1} of {len(test_vehicles)}"
+            
+            # Check for existing vehicle
+            existing = get_vehicle_by_call_number(vehicle['towbook_call_number'])
+            if existing:
+                # Preserve original status unless it's archived
+                if existing.get('archived', 0) == 0:
+                    vehicle['status'] = existing.get('status', 'New')
+                    vehicle['complaint_number'] = existing.get('complaint_number', '')
+                
+                update_vehicle(vehicle['towbook_call_number'], vehicle)
+                logging.info(f"Updated test vehicle: {vehicle['towbook_call_number']}")
+            else:
+                # Generate complaint number for new vehicles
+                vehicle['complaint_number'] = generate_next_complaint_number()
+                insert_vehicle(vehicle)
+                logging.info(f"Inserted test vehicle: {vehicle['towbook_call_number']}")
+            
+            time.sleep(0.5)  # Simulate processing time
+        
+        self.progress['is_running'] = False
+        self.progress['status'] = "Test mode completed"
+        self.progress['percentage'] = 100
+        
+        logging.info("Test mode completed successfully")
+        return True, "Test mode completed successfully"
+    
+    def is_running(self):
+        """Check if scraper is currently running"""
+        return self.progress.get('is_running', False)
+    
+    def is_alert_present(self):
+        """Check if an alert is present"""
+        try:
+            self.driver.switch_to.alert
+            return True
+        except:
+            return False
+    
+    def handle_alert(self):
+        """Handle any present alert"""
+        try:
+            if self.is_alert_present():
+                alert = self.driver.switch_to.alert
+                alert_text = alert.text
+                logging.info(f"Handling alert: {alert_text}")
+                alert.accept()
+                return True
+        except Exception as e:
+            logging.warning(f"Error handling alert: {e}")
+        return False

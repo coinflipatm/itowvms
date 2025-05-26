@@ -27,15 +27,41 @@ document.addEventListener('DOMContentLoaded', function() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password, start_date: startDate, end_date: endDate })
         })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'completed') {
+        .then(response => response.json().then(data => ({ status: response.status, data })))
+        .then(({ status, data }) => {
+            if (status === 202 && data.scraper_id) {
+                const scraperId = data.scraper_id;
+                const poll = setInterval(() => {
+                    fetch(`/api/scraping-progress/${scraperId}`)
+                    .then(res => res.json())
+                    .then(progress => {
+                        statusText.textContent = progress.status;
+                        progressBar.value = progress.percentage;
+                        if (!progress.is_running) {
+                            clearInterval(poll);
+                            if (progress.error) {
+                                statusText.textContent = 'Import failed.';
+                                messageDiv.textContent = progress.error;
+                            } else {
+                                statusText.textContent = 'Import complete!';
+                                progressBar.value = 100;
+                                messageDiv.textContent = data.message || 'Import finished.';
+                            }
+                        }
+                    })
+                    .catch(err => {
+                        clearInterval(poll);
+                        statusText.textContent = 'Import failed.';
+                        messageDiv.textContent = err.message || 'Error fetching progress.';
+                    });
+                }, 1000);
+            } else if (data.status === 'completed') {
                 statusText.textContent = 'Import complete!';
                 progressBar.value = 100;
                 messageDiv.textContent = data.message || 'Import finished.';
             } else {
                 statusText.textContent = 'Import failed.';
-                messageDiv.textContent = data.error || 'Unknown error.';
+                messageDiv.textContent = data.error || data.message || 'Unknown error.';
             }
         })
         .catch(error => {

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Date Display Test - iTow VMS</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-case { margin: 10px 0; padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
+        .pass { background-color: #d4edda; border-color: #c3e6cb; }
+        .fail { background-color: #f8d7da; border-color: #f5c6cb; }
+    </style>
+</head>
+<body>
+    <h1>Date Display Test - iTow VMS</h1>
+    <p>Testing the fixed date formatting function:</p>
+    
+    <div id="test-results"></div>
+    
+    <script>
+        // Copy the fixed function from main.js
+        function formatDateForDisplay(dateStr) {
+            if (!dateStr || dateStr === 'N/A' || dateStr === '') {
+                return 'N/A';
+            }
+            
+            try {
+                // Handle YYYY-MM-DD format specifically to avoid timezone issues
+                if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                    const [year, month, day] = dateStr.split('-');
+                    // Create date object using local timezone by specifying components
+                    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                    
+                    // Check if date is valid
+                    if (isNaN(date.getTime())) {
+                        return dateStr; // Return original if can't parse
+                    }
+                    
+                    // Format as MM/DD/YYYY for display
+                    return date.toLocaleDateString('en-US', {
+                        month: '2-digit',
+                        day: '2-digit',
+                        year: 'numeric'
+                    });
+                }
+                
+                // For other date formats, use the original parsing method
+                const date = new Date(dateStr);
+                
+                // Check if date is valid
+                if (isNaN(date.getTime())) {
+                    return dateStr; // Return original if can't parse
+                }
+                
+                // Format as MM/DD/YYYY for display
+                return date.toLocaleDateString('en-US', {
+                    month: '2-digit',
+                    day: '2-digit',
+                    year: 'numeric'
+                });
+            } catch (error) {
+                console.warn('Date formatting error:', error, 'for date:', dateStr);
+                return dateStr; // Return original string if error
+            }
+        }
+        
+        // Test cases based on actual database data
+        const testCases = [
+            { input: '2025-03-04', expected: '03/04/2025', description: 'Database format: 2025-03-04' },
+            { input: '2023-11-13', expected: '11/13/2023', description: 'Database format: 2023-11-13' },
+            { input: '2024-07-13', expected: '07/13/2024', description: 'Database format: 2024-07-13' },
+            { input: '2025-01-01', expected: '01/01/2025', description: 'New Year date' },
+            { input: '2024-12-31', expected: '12/31/2024', description: 'End of year date' },
+            { input: '', expected: 'N/A', description: 'Empty string' },
+            { input: 'N/A', expected: 'N/A', description: 'N/A string' },
+            { input: null, expected: 'N/A', description: 'Null value' }
+        ];
+        
+        const resultsDiv = document.getElementById('test-results');
+        let passCount = 0;
+        let failCount = 0;
+        
+        testCases.forEach((testCase, index) => {
+            const result = formatDateForDisplay(testCase.input);
+            const passed = result === testCase.expected;
+            
+            if (passed) passCount++;
+            else failCount++;
+            
+            const testDiv = document.createElement('div');
+            testDiv.className = `test-case ${passed ? 'pass' : 'fail'}`;
+            testDiv.innerHTML = `
+                <strong>Test ${index + 1}:</strong> ${testCase.description}<br>
+                <strong>Input:</strong> "${testCase.input}"<br>
+                <strong>Expected:</strong> "${testCase.expected}"<br>
+                <strong>Actual:</strong> "${result}"<br>
+                <strong>Result:</strong> ${passed ? '✅ PASS' : '❌ FAIL'}
+            `;
+            resultsDiv.appendChild(testDiv);
+        });
+        
+        // Summary
+        const summaryDiv = document.createElement('div');
+        summaryDiv.style.marginTop = '20px';
+        summaryDiv.style.fontSize = '18px';
+        summaryDiv.style.fontWeight = 'bold';
+        summaryDiv.innerHTML = `
+            <p>Test Summary: ${passCount} passed, ${failCount} failed</p>
+            ${failCount === 0 ? '<p style="color: green;">🎉 All tests passed! Date formatting fix is working correctly.</p>' : '<p style="color: red;">❌ Some tests failed. Please check the implementation.</p>'}
+        `;
+        resultsDiv.appendChild(summaryDiv);
+    </script>
+</body>
+</html>

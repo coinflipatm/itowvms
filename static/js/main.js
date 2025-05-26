@@ -3,6 +3,55 @@
  * Handles tab switching, data loading, and basic UI interactions
  */
 
+// Global authentication error handler
+function handleAuthenticationError(response, error) {
+    if (response && response.status === 401) {
+        console.warn('Authentication error detected:', response.status);
+        showToast('Your session has expired. Please log in again.', 'warning');
+        
+        // Show authentication help after a delay
+        setTimeout(() => {
+            if (confirm('Your session has expired. Would you like to reload the page to log in again?')) {
+                window.location.reload();
+            } else {
+                showToast('You can also try refreshing the page (Ctrl+F5) or visit /auth-diagnostics for help', 'info');
+            }
+        }, 2000);
+        return true;
+    }
+    
+    if (error && (error.message.includes('Authentication required') || error.message.includes('401'))) {
+        console.warn('Authentication error in message:', error.message);
+        showToast('Authentication error. Please refresh the page and log in again.', 'warning');
+        return true;
+    }
+    
+    return false;
+}
+
+// Global fetch wrapper with authentication handling
+async function authenticatedFetch(url, options = {}) {
+    // Ensure credentials are included
+    options.credentials = options.credentials || 'include';
+    
+    try {
+        const response = await fetch(url, options);
+        
+        // Check for authentication errors
+        if (response.status === 401) {
+            handleAuthenticationError(response);
+            throw new Error('Authentication required');
+        }
+        
+        return response;
+    } catch (error) {
+        if (handleAuthenticationError(null, error)) {
+            throw error;
+        }
+        throw error;
+    }
+}
+
 // Global error handlers
 window.addEventListener('error', function(event) {
     console.error('Global unhandled error:', event.message, event.filename, event.lineno, event.colno, event.error);
@@ -167,7 +216,7 @@ function loadTab(tabName, forceRefresh = false) {
             loadReports();
             break;
         case 'statistics':
-            loadStatistics();
+            loadStatistics(); // Ensure this calls the new rendering logic
             break;
         case 'compliance':
             loadCompliance();
@@ -301,22 +350,31 @@ function initializeTooltips() {
 /**
  * Check for pending notifications
  */
-function checkNotifications() {
-    fetch('/api/pending-notifications')
-        .then(response => response.json())
-        .then(data => {
-            const count = data.length;
-            const badge = document.getElementById('notification-count');
-            if (badge) {
-                if (count > 0) {
-                    badge.textContent = count;
-                    badge.classList.remove('d-none');
-                } else {
-                    badge.classList.add('d-none');
-                }
+async function checkNotifications() { // Made async
+    try {
+        const response = await fetch('/api/notifications/pending-count'); // Changed endpoint
+        if (!response.ok) {
+            console.error('Error fetching notification count:', response.status, response.statusText);
+            const errorData = await response.json().catch(() => null); // Try to get error details
+            showToast(`Error fetching notifications: ${errorData?.error || response.statusText}`, 'error');
+            return;
+        }
+        const data = await response.json();
+        const count = data.pending_count; // Assuming the API returns { pending_count: X }
+        const badge = document.getElementById('notification-count');
+        if (badge) {
+            if (count > 0) {
+                badge.textContent = count;
+                badge.classList.remove('d-none');
+            } else {
+                badge.textContent = '0'; // Show 0 instead of hiding
+                badge.classList.add('d-none'); // Or keep it hidden if 0
             }
-        })
-        .catch(error => console.error('Error fetching notifications:', error));
+        }
+    } catch (error) {
+        console.error('Error in checkNotifications:', error);
+        showToast('Could not check for new notifications.', 'error');
+    }
 }
 
 /**
@@ -378,8 +436,8 @@ function loadDashboard() {
 /**
  * Render the dashboard with workflow counts and statistics
  */
-function renderDashboard(workflowCounts, pendingNotifications, statisticsData) {
-    console.log('renderDashboard called with data:', { workflowCounts, pendingNotifications, statisticsData });
+function renderDashboard(workflowCounts, statisticsData) { // Removed pendingNotifications as it's not directly used here
+    console.log('renderDashboard called with data:', { workflowCounts, statisticsData });
     const dynamicContentArea = document.getElementById('dynamic-content-area');
     if (!dynamicContentArea) {
         console.error('renderDashboard: Dynamic content area not found!');
@@ -674,319 +732,326 @@ function renderLogs() {
 /**
  * Load vehicles data for the specified status tab
  */
-function loadVehicles(tabName, forceRefresh = false) {
-    console.log(`loadVehicles: Called for tab '${tabName}', forceRefresh: ${forceRefresh}`); // Added log
-    // Determine the actual status filter to send to the API
-    // 'active' and 'completed' are categories, not direct statuses.
-    // The backend /api/vehicles endpoint expects specific statuses or 'all' / 'active_or_pending' / 'completed_states'
-    let apiStatusFilter = tabName;
-    if (tabName === 'active') {
-        apiStatusFilter = 'active_or_pending'; // Tells backend to get all non-completed
-    } else if (tabName === 'completed') {
-        apiStatusFilter = 'completed_states'; // Tells backend to get all completed
-    }
-    // For specific statuses like 'New', 'TOP_Generated', etc., tabName is the status.
+function loadVehicles(statusFilter = 'active', forceRefresh = false) {
+    console.log(`loadVehicles called with statusFilter: ${statusFilter}, forceRefresh: ${forceRefresh}`);
+    showLoading('Loading vehicles...');
 
-    // Only reload if forceRefresh is true, or if the current vehicle tab is different from the new one.
-    if (forceRefresh || appState.lastVehicleTab !== tabName || !appState.vehiclesData.length) {
-        appState.lastVehicleTab = tabName; // Update the last loaded vehicle tab
-        
-        let endpoint = `/api/vehicles?status=${apiStatusFilter}`;
-        if (appState.sortColumn) {
-            endpoint += `&sort=${appState.sortColumn}&direction=${appState.sortDirection}`;
-        }
-        console.log(`loadVehicles: Fetching endpoint: ${endpoint}`); // Added log
-        
-        fetch(endpoint)
-            .then(response => {
-                console.log(`loadVehicles: Received response for ${endpoint}, status: ${response.status}`); // Added log
-                if (!response.ok) {
-                    // Try to get text for more context, especially for non-JSON errors
-                    return response.text().then(text => {
-                        console.error(`loadVehicles: HTTP error! Status: ${response.status}. Response text: ${text}`);
-                        throw new Error(`HTTP error! Status: ${response.status}. Details: ${text}`);
-                    });
-                }
-                return response.json().catch(jsonError => {
-                    console.error(`loadVehicles: Failed to parse JSON for endpoint ${endpoint}:`, jsonError);
-                    // It's hard to get response.text() here if .json() already consumed or failed.
-                    // The browser might show the raw response in network tab if it wasn't valid JSON.
-                    throw new Error(`Invalid JSON response from vehicles API for ${apiStatusFilter}. Check network tab for raw response.`);
-                });
-            })
-            .then(data => {
-                console.log(`loadVehicles: Data received successfully for tab '${tabName}'. Vehicle count: ${data ? data.length : 'null'}. Calling renderVehiclesTable.`); // Added log
-                appState.vehiclesData = data;
-                renderVehiclesTable(data, tabName);
-            })
-            .catch(error => {
-                console.error(`loadVehicles: Error loading vehicles for tab '${tabName}':`, error); // Enhanced log
-                const dynamicContentArea = document.getElementById('dynamic-content-area');
-                if (dynamicContentArea) {
-                    dynamicContentArea.innerHTML = `
-                        <div class="alert alert-danger">
-                            <h4>Error Loading Data for ${tabName}</h4>
-                            <p>${error.message || 'Could not load vehicles data'}</p>
-                            <p>Please check the browser console for more details or try again. If the problem persists, contact support.</p>
-                            <button class="btn btn-primary" onclick="loadTab('${tabName}', true)">Try Again</button>
-                        </div>
-                    `;
-                } else {
-                    console.error("loadVehicles: dynamic-content-area not found to display error.");
-                }
-            })
-            .finally(() => {
-                console.log(`loadVehicles: Finally block for tab '${tabName}'. Calling hideLoading().`); // Added log
-                hideLoading();
-            });
-    } else {
-        console.log(`loadVehicles: Using cached data for tab '${tabName}'. Calling renderVehiclesTable.`); // Added log
-        renderVehiclesTable(appState.vehiclesData, tabName);
-        hideLoading(); // Ensure loading is hidden if using cache and render is synchronous
+    // If data for this specific filter is already loaded and not forcing refresh, use it.
+    // This simple cache assumes `appState.vehiclesData` holds data for the *last loaded* filter.
+    // A more sophisticated cache would store data per filter.
+    if (appState.vehiclesData.length > 0 && appState.lastVehicleTab === statusFilter && !forceRefresh) {
+        console.log(`Using cached vehicle data for ${statusFilter}.`);
+        renderVehicleTable(appState.vehiclesData, statusFilter);
+        hideLoading();
+        return;
     }
+
+    let apiUrl = '/api/vehicles';
+    // Construct the API URL with the status filter
+    // 'active' can be the default or explicitly passed
+    // 'completed' should be explicitly passed
+    // Specific statuses (New, TOP_Generated, etc.) are passed directly
+    if (statusFilter) {
+        apiUrl += `?status=${encodeURIComponent(statusFilter)}`;
+    }
+    // Add sorting parameters
+    apiUrl += `${statusFilter ? '&' : '?'}sort=${appState.sortColumn}&direction=${appState.sortDirection}`;
+
+
+    fetch(apiUrl)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log(`Fetched ${data.length} vehicles for filter '${statusFilter}'.`);
+            appState.vehiclesData = data;
+            appState.lastVehicleTab = statusFilter; // Update the last loaded vehicle tab
+            renderVehicleTable(data, statusFilter);
+        })
+        .catch(error => {
+            console.error(`Error loading vehicles for filter '${statusFilter}':`, error);
+            document.getElementById('dynamic-content-area').innerHTML = 
+                `<div class="alert alert-danger">Failed to load vehicles: ${error.message}</div>`;
+        })
+        .finally(() => {
+            hideLoading();
+        });
 }
 
 /**
- * Render the vehicles table with the provided data
+ * Render the vehicle table
+ * @param {Array} vehicles - Array of vehicle objects
+ * @param {string} currentFilterName - The name of the current filter/tab
  */
-function renderVehiclesTable(vehicles, tabName) {
-    console.log(`renderVehiclesTable: Called for tab '${tabName}'. Number of vehicles: ${vehicles ? vehicles.length : 'null/undefined'}`); // Added log
+function renderVehicleTable(vehicles, currentFilterName) {
+    console.log(`renderVehicleTable called for filter: ${currentFilterName} with ${vehicles.length} vehicles.`);
     const dynamicContentArea = document.getElementById('dynamic-content-area');
     if (!dynamicContentArea) {
-        console.error("renderVehiclesTable: CRITICAL - dynamic-content-area not found!");
-        hideLoading(); // Attempt to hide loading if it was shown
+        console.error('Dynamic content area not found for rendering vehicle table.');
         return;
     }
 
-    try {
-        if (!vehicles || vehicles.length === 0) {
-            console.log(`renderVehiclesTable: No vehicles found for tab '${tabName}'.`); // Added log
-            dynamicContentArea.innerHTML = `
-                <div class="alert alert-info">
-                    <h4>No Vehicles Found</h4>
-                    <p>There are no vehicles with status "${tabName}".</p>
-                    <button class="btn btn-primary" id="add-vehicle-btn">
-                        <i class="fas fa-plus"></i> Add Vehicle
-                    </button>
-                </div>
-            `;
-            return;
-        }
-        
-        // Build table HTML
-        let content = `
-            <div class="mb-3 d-flex justify-content-between align-items-center">
-                <button class="btn btn-primary" id="add-vehicle-btn">
-                    <i class="fas fa-plus"></i> Add Vehicle
-                </button>
-                <div class="input-group" style="width: 300px;">
-                    <input type="text" class="form-control" id="vehicle-search" placeholder="Search vehicles...">
-                    <button class="btn btn-outline-secondary" type="button" id="btn-vehicle-search">
-                        <i class="fas fa-search"></i>
-                    </button>
-                </div>
-            </div>
+    // Clear previous content
+    dynamicContentArea.innerHTML = ''; 
 
-            <div class="table-responsive">
-                <table class="table table-striped table-hover vehicle-table">
-                    <thead>
-                        <tr>
-                            <th data-sort="towbook_call_number">Call #</th>
-                            <th data-sort="tow_date">Tow Date</th>
-                            <th data-sort="make">Vehicle</th>
-                            <th data-sort="license_plate">License</th>
-                            <th data-sort="status">Status</th>
-                            <th data-sort="jurisdiction">Jurisdiction</th>
-                            <th data-sort="last_updated">Last Updated</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-        `;
-        
-        // Add rows for each vehicle
-        vehicles.forEach((vehicle, index) => {
-            // console.log(`renderVehiclesTable: Processing vehicle index ${index}, ID: ${vehicle.towbook_call_number || vehicle.call_number}`); // Optional: very verbose log for per-vehicle processing
-            // Format the status for display
-            let statusClass = '';
-            let statusDisplay = vehicle.status;
-            
-            // Map status to CSS classes
-            switch (vehicle.status) {
-                case 'New':
-                    statusClass = 'status-new';
-                    break;
-                case 'TOP Generated':
-                    statusClass = 'status-top-generated';
-                    break;
-                case 'TR52 Ready':
-                    statusClass = 'status-tr52-ready';
-                    break;
-                case 'TR208 Ready':
-                    statusClass = 'status-tr208-ready';
-                    break;
-                case 'Ready for Auction':
-                    statusClass = 'status-ready-for-auction';
-                    break;
-                case 'Ready for Scrap':
-                    statusClass = 'status-ready-for-scrap';
-                    break;
-                case 'Released':
-                    statusClass = 'status-released';
-                    break;
-                case 'Auctioned':
-                    statusClass = 'status-auctioned';
-                    break;
-                case 'Scrapped':
-                    statusClass = 'status-scrapped';
-                    break;
-                case 'Transferred':
-                    statusClass = 'status-transferred';
-                    break;
-                default:
-                    statusClass = '';
-            }
-            
-            // Format dates
-            const towDate = vehicle.tow_date ? new Date(vehicle.tow_date).toLocaleDateString() : 'N/A';
-            const lastUpdated = vehicle.last_updated ? new Date(vehicle.last_updated).toLocaleDateString() : 'N/A';
-            
-            // Vehicle details
-            const vehicleInfo = `${vehicle.make || ''} ${vehicle.model || ''} ${vehicle.vehicle_year || ''}`.trim() || 'N/A';
-            
-            content += `
-                <tr data-call-number="${vehicle.towbook_call_number}">
-                    <td>${vehicle.towbook_call_number || vehicle.call_number || 'N/A'}</td>
-                    <td>${towDate}</td>
-                    <td>${vehicleInfo}</td>
-                    <td>${vehicle.license_plate || 'N/A'}</td>
-                    <td><span class="status-label ${statusClass}">${statusDisplay}</span></td>
-                    <td>${vehicle.jurisdiction || 'N/A'}</td>
-                    <td>${lastUpdated}</td>
-                    <td>
-                        <div class="btn-group">
-                            <button type="button" class="btn btn-sm btn-info view-vehicle" data-call="${vehicle.towbook_call_number}">
-                                <i class="fas fa-eye"></i>
-                            </button>
-                            <button type="button" class="btn btn-sm btn-primary edit-vehicle" data-call="${vehicle.towbook_call_number}">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            <button type="button" class="btn btn-sm btn-secondary dropdown-toggle" data-bs-toggle="dropdown">
-                                <i class="fas fa-ellipsis-v"></i>
-                            </button>
-                            <ul class="dropdown-menu">
-                                <li><a class="dropdown-item generate-top" href="#" data-call="${vehicle.towbook_call_number}">Generate TOP</a></li>
-                                <li><a class="dropdown-item generate-tr52" href="#" data-call="${vehicle.towbook_call_number}">Generate TR52</a></li>
-                                <li><a class="dropdown-item generate-tr208" href="#" data-call="${vehicle.towbook_call_number}">Generate TR208</a></li>
-                                <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item release-vehicle" href="#" data-call="${vehicle.towbook_call_number}">Release Vehicle</a></li>
-                                <li><a class="dropdown-item auction-vehicle" href="#" data-call="${vehicle.towbook_call_number}">Add to Auction</a></li>
-                                <li><a class="dropdown-item scrap-vehicle" href="#" data-call="${vehicle.towbook_call_number}">Mark for Scrap</a></li>
-                            </ul>
-                        </div>
-                    </td>
-                </tr>
-            `;
-        });
-        
-        content += `
-                    </tbody>
-                </table>
-            </div>
-        `;
-        
-        document.getElementById('dynamic-content-area').innerHTML = content;
-        
-        console.log(`renderVehiclesTable: Finished rendering table for tab '${tabName}'. Setting up event handlers.`); // Added log
-        // Set up table sorting
-        setupTableSorting();
-        
-        // Set up action button handlers
-        document.querySelectorAll('.view-vehicle').forEach(button => {
-            button.addEventListener('click', function() {
-                const callNumber = this.getAttribute('data-call');
-                viewVehicleDetails(callNumber);
-            });
-        });
-        
-        document.querySelectorAll('.edit-vehicle').forEach(button => {
-            button.addEventListener('click', function() {
-                const callNumber = this.getAttribute('data-call');
-                editVehicle(callNumber);
-            });
-        });
-        
-        // Set up add vehicle button
-        document.getElementById('add-vehicle-btn')?.addEventListener('click', function() {
-            showAddVehicleModal();
-        });
-        
-        // Set up search functionality
-        document.getElementById('btn-vehicle-search')?.addEventListener('click', function() {
-            const searchText = document.getElementById('vehicle-search').value.toLowerCase();
-            filterVehiclesTable(searchText);
-        });
-        
-        document.getElementById('vehicle-search')?.addEventListener('keyup', function(event) {
-            if (event.key === 'Enter') {
-                const searchText = this.value.toLowerCase();
-                filterVehiclesTable(searchText);
-            }
-        });
-    } catch (error) {
-        console.error(`renderVehiclesTable: Error during rendering for tab '${tabName}':`, error);
-        if (dynamicContentArea) {
-            dynamicContentArea.innerHTML = `<div class="alert alert-danger">Error rendering vehicle table for ${tabName}: ${error.message}. Check console.</div>`;
+    // Create table structure
+    const table = document.createElement('table');
+    table.className = 'table table-striped table-hover vehicle-table'; // Added table-hover for better UX
+
+    // Table header
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    const headers = [
+        { key: 'towbook_call_number', text: 'Call #' },
+        { key: 'complaint_number', text: 'Complaint #' },
+        { key: 'vin', text: 'VIN' },
+        { key: 'year', text: 'Year' },
+        { key: 'make', text: 'Make' },
+        { key: 'model', text: 'Model' },
+        { key: 'color', text: 'Color' },
+        { key: 'tow_date', text: 'Tow Date' },
+        { key: 'status', text: 'Status' },
+        { key: 'days_in_lot', text: 'Days' }, // Added Days in Lot
+        { key: 'actions', text: 'Actions' }
+    ];
+
+    headers.forEach(header => {
+        const th = document.createElement('th');
+        th.textContent = header.text;
+        th.dataset.column = header.key;
+        // Add sorting class if this column is currently sorted
+        if (appState.sortColumn === header.key) {
+            th.classList.add(appState.sortDirection === 'asc' ? 'sorted-asc' : 'sorted-desc');
         }
-        // hideLoading() should be called by the caller's finally block (loadVehicles)
-        // but if renderVehiclesTable is called directly from cache path, ensure it's handled.
+        th.addEventListener('click', () => sortTableByColumn(header.key));
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // Table body
+    const tbody = document.createElement('tbody');
+    if (vehicles.length === 0) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = headers.length;
+        td.textContent = 'No vehicles found matching this criteria.';
+        td.className = 'text-center';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+    } else {
+        vehicles.forEach(vehicle => {
+            const tr = document.createElement('tr');
+            tr.dataset.vehicleId = vehicle.towbook_call_number; // Store vehicle call number for actions
+
+            // Order of cells should match headers
+            const cells = [
+                vehicle.towbook_call_number || 'N/A',
+                vehicle.complaint_number || 'N/A',
+                vehicle.vin || 'N/A',
+                vehicle.year || 'N/A',
+                vehicle.make || 'N/A',
+                vehicle.model || 'N/A',
+                vehicle.color || 'N/A',
+                formatDateForDisplay(vehicle.tow_date), // Use consistent date formatting
+                renderStatusLabel(vehicle.status), // Use a helper for status
+                calculateDaysInLot(vehicle.tow_date), // Calculate days in lot
+                renderActionButtons(vehicle) // Use a helper for action buttons
+            ];
+
+            cells.forEach(cellContent => {
+                const td = document.createElement('td');
+                if (typeof cellContent === 'string') {
+                    td.textContent = cellContent;
+                } else { // If it's an HTML element (like status label or buttons)
+                    td.appendChild(cellContent);
+                }
+                tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
     }
+    table.appendChild(tbody);
+    dynamicContentArea.appendChild(table);
+    console.log('Vehicle table rendered.');
 }
 
 /**
- * Filter the vehicles table based on search text
+ * Helper function to render a status label
+ * @param {string} status - The status string
+ * @returns {HTMLElement} - A span element with the status label
  */
-function filterVehiclesTable(searchText) {
-    if (!searchText) {
-        // Reset table to show all rows
-        document.querySelectorAll('.vehicle-table tbody tr').forEach(row => {
-            row.style.display = '';
-        });
-        return;
+function renderStatusLabel(status) {
+    const span = document.createElement('span');
+    span.className = `status-label status-${status ? status.toLowerCase().replace(/_/g, '-') : 'unknown'}`;
+    span.textContent = status || 'Unknown';
+    return span;
+}
+
+/**
+ * Helper function to calculate days in lot
+ * @param {string} towDateStr - The tow date as a string
+ * @returns {string} - Number of days in lot or 'N/A'
+ */
+function calculateDaysInLot(towDateStr) {
+    if (!towDateStr) return 'N/A';
+    
+    let towDate;
+    
+    // Handle YYYY-MM-DD format specifically to avoid timezone issues
+    if (/^\d{4}-\d{2}-\d{2}$/.test(towDateStr)) {
+        const [year, month, day] = towDateStr.split('-');
+        towDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    } else {
+        towDate = new Date(towDateStr);
     }
     
-    document.querySelectorAll('.vehicle-table tbody tr').forEach(row => {
-        const rowText = row.textContent.toLowerCase();
-        if (rowText.includes(searchText)) {
-            row.style.display = '';
-        } else {
-            row.style.display = 'none';
-        }
-    });
+    if (isNaN(towDate.getTime())) return 'N/A';
+    
+    const today = new Date();
+    // Set both dates to midnight for accurate day calculation
+    towDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+    
+    const diffTime = today - towDate;
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    const span = document.createElement('span');
+    span.textContent = diffDays;
+    span.className = 'days-counter';
+    if (diffDays > 30) span.classList.add('critical'); // Example: critical after 30 days
+    else if (diffDays > 15) span.classList.add('warning'); // Example: warning after 15 days
+    return span;
 }
 
 /**
- * Set up table column sorting
+ * Helper function to render action buttons for a vehicle
+ * @param {object} vehicle - The vehicle object
+ * @returns {HTMLElement} - A div containing action buttons
  */
-function setupTableSorting() {
-    document.querySelectorAll('.vehicle-table th[data-sort]').forEach(header => {
-        header.addEventListener('click', function() {
-            const sortColumn = this.getAttribute('data-sort');
-            let sortDirection = 'asc';
-            
-            // Toggle direction if already sorting by this column
-            if (appState.sortColumn === sortColumn) {
-                sortDirection = appState.sortDirection === 'asc' ? 'desc' : 'asc';
-            }
-            
-            // Update state
-            appState.sortColumn = sortColumn;
-            appState.sortDirection = sortDirection;
-            
-            // Reload data with new sort
-            loadVehicles(appState.currentTab, true);
-        });
+function renderActionButtons(vehicle) {
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'action-links';
+
+    // View Details Button
+    const viewButton = document.createElement('a');
+    viewButton.href = '#';
+    viewButton.innerHTML = '<i class="fas fa-eye"></i>';
+    viewButton.title = 'View Details';
+    viewButton.onclick = (e) => { e.preventDefault(); openVehicleDetailsModal(vehicle.towbook_call_number); };
+    actionsDiv.appendChild(viewButton);
+
+    // Edit Button
+    const editButton = document.createElement('a');
+    editButton.href = '#';
+    editButton.innerHTML = '<i class="fas fa-edit"></i>';
+    editButton.title = 'Edit Vehicle';
+    editButton.onclick = (e) => { e.preventDefault(); openEditVehicleModal(vehicle.towbook_call_number); };
+    actionsDiv.appendChild(editButton);
+
+    // Delete Button
+    const deleteButton = document.createElement('a');
+    deleteButton.href = '#';
+    deleteButton.innerHTML = '<i class="fas fa-trash"></i>';
+    deleteButton.title = 'Delete Vehicle';
+    deleteButton.className = 'text-danger';
+    deleteButton.onclick = (e) => { e.preventDefault(); deleteVehicle(vehicle.towbook_call_number); };
+    actionsDiv.appendChild(deleteButton);
+
+    // Generate Forms Dropdown
+    const formsDropdownContainer = document.createElement('div');
+    formsDropdownContainer.className = 'dropdown d-inline-block'; // d-inline-block for proper alignment
+
+    const formsButton = document.createElement('button');
+    formsButton.className = 'btn btn-sm btn-outline-secondary dropdown-toggle';
+    formsButton.type = 'button';
+    formsButton.id = `formsDropdown-${vehicle.towbook_call_number}`;
+    formsButton.setAttribute('data-bs-toggle', 'dropdown');
+    formsButton.setAttribute('aria-expanded', 'false');
+    formsButton.innerHTML = '<i class="fas fa-file-alt"></i> Forms';
+    formsButton.title = 'Generate Forms';
+
+    const dropdownMenu = document.createElement('ul');
+    dropdownMenu.className = 'dropdown-menu';
+    dropdownMenu.setAttribute('aria-labelledby', `formsDropdown-${vehicle.towbook_call_number}`);
+
+    // Define available forms and conditions (example)
+    const availableForms = [
+        { name: 'TOP', endpoint: 'generate-top', condition: true }, // Always available for simplicity, or add logic
+        { name: 'TR-52', endpoint: 'generate-tr52', condition: vehicle.status === 'TOP_Generated' || vehicle.status === 'TR52_Ready' },
+        { name: 'TR-208', endpoint: 'generate-tr208', condition: vehicle.status === 'TR52_Ready' || vehicle.status === 'TR208_Ready' || (vehicle.tr208_eligible === 1 && vehicle.status === 'TOP_Generated') }
+    ];
+
+    availableForms.forEach(form => {
+        if (form.condition) {
+            const listItem = document.createElement('li');
+            const link = document.createElement('a');
+            link.className = 'dropdown-item';
+            link.href = '#';
+            link.textContent = `Generate ${form.name}`;
+            link.onclick = (e) => { 
+                e.preventDefault(); 
+                generateDocumentApiCall(vehicle.towbook_call_number, form.endpoint, form.name);
+            };
+            listItem.appendChild(link);
+            dropdownMenu.appendChild(listItem);
+        }
     });
+
+    if (dropdownMenu.children.length > 0) {
+        formsDropdownContainer.appendChild(formsButton);
+        formsDropdownContainer.appendChild(dropdownMenu);
+        actionsDiv.appendChild(formsDropdownContainer);
+    } else {
+        // Optionally, show a disabled-like button or nothing if no forms are available
+        const noFormsButton = document.createElement('button');
+        noFormsButton.className = 'btn btn-sm btn-outline-secondary';
+        noFormsButton.innerHTML = '<i class="fas fa-file-alt"></i> Forms';
+        noFormsButton.title = 'No forms available for current status';
+        noFormsButton.disabled = true;
+        actionsDiv.appendChild(noFormsButton);
+    }
+
+    return actionsDiv;
+}
+
+/**
+ * Sorts the vehicle table by a given column
+ * @param {string} columnKey - The key of the column to sort by
+ */
+function sortTableByColumn(columnKey) {
+    if (appState.sortColumn === columnKey) {
+        appState.sortDirection = appState.sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        appState.sortColumn = columnKey;
+        appState.sortDirection = 'asc';
+    }
+
+    // Sort the data
+    appState.vehiclesData.sort((a, b) => {
+        let valA = a[columnKey];
+        let valB = b[columnKey];
+
+        // Handle different data types for sorting
+        if (typeof valA === 'string') valA = valA.toLowerCase();
+        if (typeof valB === 'string') valB = valB.toLowerCase();
+        if (columnKey === 'tow_date') { // Date sorting
+            valA = new Date(valA);
+            valB = new Date(valB);
+        }
+        // Add more type handling if needed (e.g., numbers)
+
+        if (valA < valB) return appState.sortDirection === 'asc' ? -1 : 1;
+        if (valA > valB) return appState.sortDirection === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    // Re-render the table with sorted data
+    // Pass the current filter name, which should be stored in appState.lastVehicleTab or appState.currentTab
+    renderVehicleTable(appState.vehiclesData, appState.lastVehicleTab || appState.currentTab);
 }
 
 /**
@@ -1023,23 +1088,26 @@ function viewVehicleDetails(callNumber) {
         <div class="row">
             <div class="col-md-6">
                 <h5>${vehicleInfo}</h5>
-                <p><strong>License:</strong> ${vehicle.license_plate || 'N/A'} (${vehicle.license_state || 'N/A'})</p>
+                <p><strong>License:</strong> ${vehicle.plate || 'N/A'} (${vehicle.state || 'N/A'})</p>
                 <p><strong>VIN:</strong> ${vehicle.vin || 'N/A'}</p>
                 <p><strong>Color:</strong> ${vehicle.color || 'N/A'}</p>
                 <p><strong>Status:</strong> <span class="status-label ${getStatusClass(vehicle.status)}">${vehicle.status}</span></p>
                 <p><strong>Tow Date:</strong> ${towDate}</p>
                 <p><strong>Jurisdiction:</strong> ${vehicle.jurisdiction || 'N/A'}</p>
-                <p><strong>Location From:</strong> ${vehicle.location_from || 'N/A'}</p>
+                <p><strong>Location From:</strong> ${vehicle.location || 'N/A'}</p>
+                <p><strong>Requested By:</strong> ${vehicle.requestor || 'N/A'}</p>
+                <p><strong>Officer Name:</strong> ${vehicle.officer_name || 'N/A'}</p>
+                <p><strong>Case Number:</strong> ${vehicle.case_number || 'N/A'}</p>
             </div>
             <div class="col-md-6">
                 <h5>Owner Information</h5>
-                <p><strong>Name:</strong> ${vehicle.owner_name || 'Unknown'}</p>
-                <p><strong>Address:</strong> ${vehicle.owner_address || 'Unknown'}</p>
-                <p><strong>Phone:</strong> ${vehicle.owner_phone || 'Unknown'}</p>
-                <p><strong>Email:</strong> ${vehicle.owner_email || 'Unknown'}</p>
+                <p><strong>Name:</strong> ${vehicle.owner_name || 'N/A'}</p>
+                <p><strong>Address:</strong> ${vehicle.owner_address || 'N/A'}</p>
+                <p><strong>Phone:</strong> ${vehicle.owner_phone || 'N/A'}</p>
+                <p><strong>Email:</strong> ${vehicle.owner_email || 'N/A'}</p>
                 <hr>
                 <h5>Lienholder Information</h5>
-                <p><strong>Name:</strong> ${vehicle.lienholder_name || 'None'}</p>
+                <p><strong>Name:</strong> ${vehicle.lienholder_name || 'N/A'}</p>
                 <p><strong>Address:</strong> ${vehicle.lienholder_address || 'N/A'}</p>
             </div>
         </div>
@@ -1103,136 +1171,66 @@ function showAddVehicleModal() {
  * Load notifications data
  */
 function loadNotifications(forceRefresh = false) {
-    // Only reload if we don't have data or force refresh is true
-    if (forceRefresh || !appState.notificationsData.length) {
-        fetch('/api/pending-notifications')
-            .then(response => response.json())
-            .then(data => {
-                appState.notificationsData = data;
-                renderNotifications(data);
-            })
-            .catch(error => {
-                console.error('Error loading notifications:', error);
-                document.getElementById('dynamic-content-area').innerHTML = `
-                    <div class="alert alert-danger">
-                        Error loading notifications: ${error.message}
-                    </div>
-                `;
-            })
-            .finally(() => {
-                hideLoading();
-            });
-    } else {
-        // Use cached data
+    console.log(`loadNotifications called, forceRefresh: ${forceRefresh}`);
+    showLoading('Loading notifications...');
+
+    // Basic cache check
+    if (appState.notificationsData.length > 0 && !forceRefresh) {
         renderNotifications(appState.notificationsData);
         hideLoading();
+        return;
     }
+
+    fetch('/api/notifications') // Assuming this endpoint returns all notifications
+        .then(response => {
+            if (!response.ok) throw new Error(`API error: ${response.status}`);
+            return response.json();
+        })
+        .then(data => {
+            appState.notificationsData = data;
+            renderNotifications(data);
+        })
+        .catch(error => {
+            console.error('Error loading notifications:', error);
+            document.getElementById('dynamic-content-area').innerHTML = 
+                `<div class="alert alert-danger">Failed to load notifications: ${error.message}</div>`;
+        })
+        .finally(() => hideLoading());
 }
 
-/**
- * Render notifications list
- */
 function renderNotifications(notifications) {
-    if (!notifications || notifications.length === 0) {
-        document.getElementById('dynamic-content-area').innerHTML = `
-            <div class="alert alert-info">
-                <i class="fas fa-check-circle me-2"></i> No pending notifications.
-            </div>
-        `;
-        return;
-    }
-    
-    let content = `
-        <div class="notifications-container">
-    `;
-    
-    notifications.forEach(notification => {
-        const isUrgent = notification.due_date && new Date(notification.due_date) < new Date();
-        const notificationClass = isUrgent ? 'notification-item urgent' : 'notification-item';
-        
-        content += `
-            <div class="${notificationClass}" data-id="${notification.id}">
-                <div class="d-flex justify-content-between align-items-center">
-                    <h5>${notification.type}: ${notification.make || ''} ${notification.model || ''}</h5>
-                    <span class="badge ${isUrgent ? 'bg-danger' : 'bg-warning'}">
-                        ${notification.due_date ? new Date(notification.due_date).toLocaleDateString() : 'No due date'}
-                    </span>
-                </div>
-                <p>${notification.message}</p>
-                <div class="d-flex justify-content-between align-items-center">
-                    <div class="action-links">
-                        <a href="#" class="view-notification-vehicle" data-call="${notification.towbook_call_number}">
-                            <i class="fas fa-eye"></i> View Vehicle
-                        </a>
-                        <a href="#" class="send-notification" data-id="${notification.id}">
-                            <i class="fas fa-paper-plane"></i> Send Notification
-                        </a>
-                    </div>
-                    <button class="btn btn-sm btn-outline-secondary dismiss-notification" data-id="${notification.id}">
-                        Dismiss
-                    </button>
-                </div>
-            </div>
-        `;
-    });
-    
-    content += `
-        </div>
-    `;
-    
-    document.getElementById('dynamic-content-area').innerHTML = content;
-    
-    // Set up event handlers for notification actions
-    document.querySelectorAll('.view-notification-vehicle').forEach(link => {
-        link.addEventListener('click', function(e) {
-            e.preventDefault();
-            const callNumber = this.getAttribute('data-call');
-            viewVehicleDetails(callNumber);
-        });
-    });
-    
-    document.querySelectorAll('.send-notification').forEach(link => {
-        link.addEventListener('click', function(e) {
-            e.preventDefault();
-            const notificationId = this.getAttribute('data-id');
-            showSendNotificationModal(notificationId);
-        });
-    });
-    
-    document.querySelectorAll('.dismiss-notification').forEach(button => {
-        button.addEventListener('click', function() {
-            const notificationId = this.getAttribute('data-id');
-            dismissNotification(notificationId);
-        });
-    });
-}
+    const dynamicContentArea = document.getElementById('dynamic-content-area');
+    let contentHtml = `
+        <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+            <h1 class="h2">Notifications</h1>
+            <button class="btn btn-sm btn-outline-primary" id="clearAllNotifications">Clear All Read</button>
+        </div>`;
 
-/**
- * Show send notification modal
- */
-function showSendNotificationModal(notificationId) {
-    // Implement this to show the send notification modal
-    console.log('Show send notification modal for ID:', notificationId);
-    
-    // Get notification data
-    const notification = appState.notificationsData.find(n => n.id == notificationId);
-    if (!notification) {
-        console.error('Notification not found:', notificationId);
-        return;
+    if (notifications.length === 0) {
+        contentHtml += '<p>No notifications.</p>';
+    } else {
+        contentHtml += notifications.map(notification => `
+            <div class="notification-item ${notification.is_read ? 'read' : 'unread'} ${notification.level || 'info'}" data-id="${notification.id}">
+                <div class="d-flex w-100 justify-content-between">
+                    <h5 class="mb-1">${notification.title}</h5>
+                    <small>${new Date(notification.timestamp).toLocaleString()}</small>
+                </div>
+                <p class="mb-1">${notification.message}</p>
+                <small>Related Vehicle ID: ${notification.vehicle_id || 'N/A'}</small>
+                <button class="btn btn-sm btn-outline-secondary mark-as-read" data-id="${notification.id}" ${notification.is_read ? 'disabled' : ''}>Mark as Read</button>
+            </div>
+        `).join('');
     }
-    
-    const modal = document.getElementById('sendNotificationModal');
-    if (!modal) {
-        console.error('Send notification modal not found');
-        return;
+    dynamicContentArea.innerHTML = contentHtml;
+
+    // Add event listeners for "Mark as Read" and "Clear All"
+    document.querySelectorAll('.mark-as-read').forEach(button => {
+        button.addEventListener('click', () => markNotificationAsRead(button.dataset.id));
+    });
+    const clearAllButton = document.getElementById('clearAllNotifications');
+    if(clearAllButton) {
+        clearAllButton.addEventListener('click', clearAllReadNotifications);
     }
-    
-    // Set modal content
-    modal.querySelector('.modal-title').textContent = `Send ${notification.type} Notification`;
-    
-    // Show the modal
-    const bsModal = new bootstrap.Modal(modal);
-    bsModal.show();
 }
 
 /**
@@ -1276,248 +1274,771 @@ function dismissNotification(notificationId) {
  * Load contacts data
  */
 function loadContacts(forceRefresh = false) {
-    // Only reload if we don't have data or force refresh is true
-    if (forceRefresh || !appState.contactsData.length) {
-        fetch('/api/contacts')
-            .then(response => response.json())
-            .then(data => {
-                appState.contactsData = data;
-                renderContacts(data);
-            })
-            .catch(error => {
-                console.error('Error loading contacts:', error);
-                document.getElementById('dynamic-content-area').innerHTML = `
-                    <div class="alert alert-danger">
-                        Error loading contacts: ${error.message}
-                    </div>
-                `;
-            })
-            .finally(() => {
-                hideLoading();
-            });
-    } else {
-        // Use cached data
+    console.log(`loadContacts called, forceRefresh: ${forceRefresh}`);
+    showLoading('Loading contacts...');
+
+    if (appState.contactsData.length > 0 && !forceRefresh) {
         renderContacts(appState.contactsData);
         hideLoading();
-    }
-}
-
-/**
- * Render contacts list
- */
-function renderContacts(contacts) {
-    let content = `
-        <div class="mb-3">
-            <button class="btn btn-primary" id="add-contact-btn">
-                <i class="fas fa-plus"></i> Add Contact
-            </button>
-        </div>
-    `;
-    
-    if (!contacts || contacts.length === 0) {
-        content += `
-            <div class="alert alert-info">
-                No jurisdiction contacts found. Click the button above to add contacts.
-            </div>
-        `;
-    } else {
-        content += `<div class="contacts-list">`;
-        
-        contacts.forEach(contact => {
-            content += `
-                <div class="contact-card" data-id="${contact.id}">
-                    <h5>${contact.jurisdiction}</h5>
-                    <p><strong>Contact:</strong> ${contact.contact_name || 'N/A'}</p>
-                    <p><strong>Phone:</strong> ${contact.phone_number || 'N/A'}</p>
-                    <p><strong>Email:</strong> ${contact.email_address || 'N/A'}</p>
-                    <p><strong>Fax:</strong> ${contact.fax_number || 'N/A'}</p>
-                    <div class="mt-2">
-                        <button class="btn btn-sm btn-primary edit-contact" data-id="${contact.id}">
-                            <i class="fas fa-edit"></i> Edit
-                        </button>
-                        <button class="btn btn-sm btn-danger delete-contact" data-id="${contact.id}">
-                            <i class="fas fa-trash"></i> Delete
-                        </button>
-                    </div>
-                </div>
-            `;
-        });
-        
-        content += `</div>`;
-    }
-    
-    document.getElementById('dynamic-content-area').innerHTML = content;
-    
-    // Set up event handlers
-    document.getElementById('add-contact-btn')?.addEventListener('click', function() {
-        showAddContactModal();
-    });
-    
-    document.querySelectorAll('.edit-contact').forEach(button => {
-        button.addEventListener('click', function() {
-            const contactId = this.getAttribute('data-id');
-            editContact(contactId);
-        });
-    });
-    
-    document.querySelectorAll('.delete-contact').forEach(button => {
-        button.addEventListener('click', function() {
-            const contactId = this.getAttribute('data-id');
-            deleteContact(contactId);
-        });
-    });
-}
-
-/**
- * Show add contact modal
- */
-function showAddContactModal() {
-    const modal = document.getElementById('addContactModal');
-    if (!modal) {
-        console.error('Add contact modal not found');
         return;
     }
-    
-    const bsModal = new bootstrap.Modal(modal);
-    bsModal.show();
+
+    fetch('/api/contacts')
+        .then(response => {
+            if (!response.ok) throw new Error(`API error: ${response.status}`);
+            return response.json();
+        })
+        .then(data => {
+            appState.contactsData = data;
+            renderContacts(data);
+        })
+        .catch(error => {
+            console.error('Error loading contacts:', error);
+            document.getElementById('dynamic-content-area').innerHTML = 
+                `<div class="alert alert-danger">Failed to load contacts: ${error.message}</div>`;
+        })
+        .finally(() => hideLoading());
 }
 
-/**
- * Edit a contact
- */
-function editContact(contactId) {
-    // Implement edit contact functionality
-    console.log('Edit contact:', contactId);
+function renderContacts(contacts) {
+    const dynamicContentArea = document.getElementById('dynamic-content-area');
+    let contentHtml = `
+        <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+            <h1 class="h2">Jurisdiction Contacts</h1>
+            <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addContactModal">Add New Contact</button>
+        </div>`;
+
+    if (contacts.length === 0) {
+        contentHtml += '<p>No contacts found. Add one to get started.</p>';
+    } else {
+        contentHtml += '<div class="contacts-list">';
+        contentHtml += contacts.map(contact => `
+            <div class="contact-card" data-id="${contact.id}">
+                <h5>${contact.name} (${contact.jurisdiction_name})</h5>
+                <p><strong>Email:</strong> ${contact.email || 'N/A'}</p>
+                <p><strong>Phone:</strong> ${contact.phone || 'N/A'}</p>
+                <p><strong>Address:</strong> ${contact.address || 'N/A'}</p>
+                <p><strong>Notes:</strong> ${contact.notes || 'N/A'}</p>
+                <div class="action-links">
+                    <a href="#" class="edit-contact" data-id="${contact.id}" title="Edit Contact"><i class="fas fa-edit"></i></a>
+                    <a href="#" class="delete-contact" data-id="${contact.id}" title="Delete Contact"><i class="fas fa-trash"></i></a>
+                </div>
+            </div>
+        `).join('');
+        contentHtml += '</div>';
+    }
+    dynamicContentArea.innerHTML = contentHtml;
+
+    // Add event listeners for edit/delete (implementation needed in modals.js or here)
+    document.querySelectorAll('.edit-contact').forEach(button => {
+        button.addEventListener('click', (e) => {
+            e.preventDefault();
+            openEditContactModal(button.dataset.id);
+        });
+    });
+    document.querySelectorAll('.delete-contact').forEach(button => {
+        button.addEventListener('click', (e) => {
+            e.preventDefault();
+            deleteContact(button.dataset.id);
+        });
+    });
 }
 
-/**
- * Delete a contact
- */
+// Placeholder for deleteContact function
 function deleteContact(contactId) {
-    // Implement delete contact functionality
-    console.log('Delete contact:', contactId);
+    if (!confirm('Are you sure you want to delete this contact?')) return;
+    
+    fetch(`/api/contacts/${contactId}`, { method: 'DELETE' })
+        .then(response => {
+            if (!response.ok) throw new Error('Failed to delete contact');
+            return response.json();
+        })
+        .then(data => {
+            showToast(data.message || 'Contact deleted successfully', 'success');
+            loadContacts(true); // Refresh contacts list
+        })
+        .catch(error => {
+            console.error('Error deleting contact:', error);
+            showToast(error.message || 'Error deleting contact', 'error');
+        });
 }
 
 /**
  * Load reports data
  */
 function loadReports() {
-    // Implement reports loading functionality
-    document.getElementById('dynamic-content-area').innerHTML = `
-        <div class="alert alert-info">
-            Reports functionality is under development. Please check back soon.
+    const dynamicContentArea = document.getElementById('dynamic-content-area');
+    dynamicContentArea.innerHTML = `
+        <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+            <h1 class="h2">Reports</h1>
+        </div>
+        <p>Report generation functionality is under development.</p>
+        <!-- Placeholder for report options and display area -->
+        <div id="report-options">
+            <!-- Report type selection, date ranges, etc. -->
+        </div>
+        <div id="report-display-area">
+            <!-- Charts and tables will be rendered here -->
         </div>
     `;
-    hideLoading();
+    hideLoading(); // Called by loadTab
 }
 
 /**
  * Load statistics data
  */
 function loadStatistics() {
-    // Fetch statistics data
+    console.log("loadStatistics called");
+    showLoading('Loading statistics...');
+
     fetch('/api/statistics')
-        .then(response => response.json())
-        .then(data => {
-            renderStatistics(data);
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Statistics API request failed: ${response.status} ${response.statusText}`);
+            }
+            return response.json().catch(jsonError => {
+                console.error('Failed to parse JSON for statistics:', jsonError);
+                return response.text().then(text => {
+                    console.error('Response text for failed statistics JSON:', text);
+                    throw new Error('Invalid JSON response from statistics API. See console for response text.');
+                });
+            });
+        })
+        .then(statsData => {
+            console.log("Statistics data fetched, calling renderStatisticsPage");
+            renderStatisticsPage(statsData); // Call the new function
         })
         .catch(error => {
-            console.error('Error loading statistics:', error);
-            document.getElementById('dynamic-content-area').innerHTML = `
-                <div class="alert alert-danger">
-                    Error loading statistics: ${error.message}
-                </div>
-            `;
+            console.error('Error in loadStatistics:', error);
+            const dynamicContentArea = document.getElementById('dynamic-content-area');
+            if (dynamicContentArea) {
+                dynamicContentArea.innerHTML = `
+                  <div class="alert alert-danger">
+                      Failed to load statistics: ${error.message}. Check console for details.
+                  </div>`;
+            }
         })
         .finally(() => {
+            console.log("loadStatistics finally block: calling hideLoading()");
             hideLoading();
         });
 }
 
 /**
- * Render statistics
+ * Render the statistics page with various charts
+ * @param {object} statisticsData - The data fetched from /api/statistics
  */
-function renderStatistics(data) {
-    // Implement statistics rendering
-    document.getElementById('dynamic-content-area').innerHTML = `
-        <div class="row">
-            <div class="col-md-6">
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <h5>Vehicle Statistics</h5>
+function renderStatisticsPage(statisticsData) {
+    console.log('renderStatisticsPage called with data:', statisticsData);
+    const dynamicContentArea = document.getElementById('dynamic-content-area');
+    if (!dynamicContentArea) {
+        console.error('renderStatisticsPage: Dynamic content area not found!');
+        return;
+    }
+
+    let statsHtml = `
+        <div class="container-fluid pt-3">
+            <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                <h1 class="h2">Impound Statistics</h1>
+            </div>
+
+            <div class="row">
+                <!-- Status Distribution Card -->
+                <div class="col-lg-6 col-md-12 mb-4">
+                    <div class="card h-100">
+                        <div class="card-header">Vehicle Status Distribution</div>
+                        <div class="card-body d-flex flex-column justify-content-center align-items-center">
+                            <canvas id="statusDistChartStatsPage" style="display: none;"></canvas>
+                            <p id="statusDistChartStatsPageMessage" class="text-center m-0"></p>
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <ul class="list-group list-group-flush">
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                Total Vehicles
-                                <span class="badge bg-primary rounded-pill">${data.totalVehicles || 0}</span>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                Active Vehicles
-                                <span class="badge bg-info rounded-pill">${data.activeVehicles || 0}</span>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                Released Vehicles
-                                <span class="badge bg-secondary rounded-pill">${data.releasedVehicles || 0}</span>
-                            </li>
-                            <li class="list-group-item d-flex justify-content-between align-items-center">
-                                Avg. Processing Days
-                                <span class="badge bg-dark rounded-pill">${data.averageProcessingTimeDays || 'N/A'}</span>
-                            </li>
-                        </ul>
+                </div>
+
+                <!-- Average Processing Time Card -->
+                <div class="col-lg-6 col-md-12 mb-4">
+                    <div class="card h-100">
+                        <div class="card-header">Average Processing Times (Days)</div>
+                        <div class="card-body d-flex flex-column justify-content-center align-items-center">
+                            <canvas id="avgProcTimeChartStatsPage" style="display: none;"></canvas>
+                            <p id="avgProcTimeChartStatsPageMessage" class="text-center m-0"></p>
+                        </div>
                     </div>
                 </div>
             </div>
-            <div class="col-md-6">
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <h5>Jurisdiction Distribution</h5>
+
+            <div class="row">
+                <!-- Jurisdiction Distribution Card -->
+                <div class="col-lg-6 col-md-12 mb-4">
+                    <div class="card h-100">
+                        <div class="card-header">Vehicle Distribution by Jurisdiction</div>
+                        <div class="card-body d-flex flex-column justify-content-center align-items-center">
+                            <canvas id="jurisdictionDistChartStatsPage" style="display: none;"></canvas>
+                            <p id="jurisdictionDistChartStatsPageMessage" class="text-center m-0"></p>
+                        </div>
                     </div>
-                    <div class="card-body" style="height: 300px;">
-                        <canvas id="jurisdictionChart"></canvas>
+                </div>
+
+                <!-- Placeholder for another chart, e.g., Vehicles Over Time -->
+                <div class="col-lg-6 col-md-12 mb-4">
+                    <div class="card h-100">
+                        <div class="card-header">Vehicle Trends Over Time (Example)</div>
+                        <div class="card-body d-flex flex-column justify-content-center align-items-center">
+                            <!-- <canvas id="vehicleTrendsChartStatsPage"></canvas> -->
+                            <p id="vehicleTrendsChartStatsPageMessage" class="text-center m-0">Vehicle trend data is currently unavailable.</p>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     `;
-    
-    // Create jurisdiction chart if Chart.js is loaded
-    if (window.Chart && data.vehiclesByJurisdiction) {
-        const ctx = document.getElementById('jurisdictionChart');
-        if (ctx) {
-            const labels = Object.keys(data.vehiclesByJurisdiction);
-            const values = Object.values(data.vehiclesByJurisdiction);
-            
-            new Chart(ctx, {
-                type: 'doughnut',
+    dynamicContentArea.innerHTML = statsHtml;
+    console.log('renderStatisticsPage: Initial HTML structure rendered.');
+
+    // Render Status Distribution Chart
+    const statusCtx = document.getElementById('statusDistChartStatsPage');
+    const statusMsg = document.getElementById('statusDistChartStatsPageMessage');
+    try {
+        if (statisticsData && statisticsData.status_distribution && Object.keys(statisticsData.status_distribution).length > 0) {
+            if(statusCtx) statusCtx.style.display = 'block';
+            if(statusMsg) statusMsg.textContent = '';
+            new Chart(statusCtx, {
+                type: 'pie',
                 data: {
-                    labels: labels,
+                    labels: Object.keys(statisticsData.status_distribution),
                     datasets: [{
-                        data: values,
-                        backgroundColor: [
-                            '#007bff', '#17a2b8', '#28a745', '#ffc107', 
-                            '#dc3545', '#6c757d', '#20c997', '#6610f2'
-                        ]
+                        label: 'Status Distribution',
+                        data: Object.values(statisticsData.status_distribution),
+                        backgroundColor: ['#007bff', '#28a745', '#ffc107', '#dc3545', '#17a2b8', '#6c757d', '#6f42c1', '#20c997'],
                     }]
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false
-                }
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }
             });
+        } else {
+            if(statusCtx) statusCtx.style.display = 'none';
+            if(statusMsg) statusMsg.textContent = 'Status distribution data is currently unavailable.';
         }
+    } catch (e) {
+        console.error('Error rendering status distribution chart on stats page:', e);
+        if(statusCtx) statusCtx.style.display = 'none';
+        if(statusMsg) statusMsg.textContent = 'Error displaying status distribution chart.';
+    }
+
+    // Render Average Processing Time Chart
+    const avgTimeCtx = document.getElementById('avgProcTimeChartStatsPage');
+    const avgTimeMsg = document.getElementById('avgProcTimeChartStatsPageMessage');
+    try {
+        if (statisticsData && statisticsData.average_processing_times && Object.keys(statisticsData.average_processing_times).length > 0) {
+            if(avgTimeCtx) avgTimeCtx.style.display = 'block';
+            if(avgTimeMsg) avgTimeMsg.textContent = '';
+            new Chart(avgTimeCtx, {
+                type: 'bar',
+                data: {
+                    labels: Object.keys(statisticsData.average_processing_times),
+                    datasets: [{
+                        label: 'Avg. Days',
+                        data: Object.values(statisticsData.average_processing_times).map(d => parseFloat(d) || 0),
+                        backgroundColor: '#17a2b8',
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, title: { display: true, text: 'Days'} } }, plugins: { legend: { display: false } } }
+            });
+        } else {
+            if(avgTimeCtx) avgTimeCtx.style.display = 'none';
+            if(avgTimeMsg) avgTimeMsg.textContent = 'Average processing time data is currently unavailable.';
+        }
+    } catch (e) {
+        console.error('Error rendering average processing time chart on stats page:', e);
+        if(avgTimeCtx) avgTimeCtx.style.display = 'none';
+        if(avgTimeMsg) avgTimeMsg.textContent = 'Error displaying average processing time chart.';
+    }
+
+    // Render Jurisdiction Distribution Chart
+    const jurCtx = document.getElementById('jurisdictionDistChartStatsPage');
+    const jurMsg = document.getElementById('jurisdictionDistChartStatsPageMessage');
+    try {
+        if (statisticsData && statisticsData.jurisdiction_distribution && Object.keys(statisticsData.jurisdiction_distribution).length > 0) {
+            if(jurCtx) jurCtx.style.display = 'block';
+            if(jurMsg) jurMsg.textContent = '';
+            new Chart(jurCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(statisticsData.jurisdiction_distribution),
+                    datasets: [{
+                        label: 'Jurisdiction',
+                        data: Object.values(statisticsData.jurisdiction_distribution),
+                        backgroundColor: ['#007bff', '#28a745', '#ffc107', '#dc3545', '#17a2b8', '#6f42c1', '#20c997', '#fd7e14'],
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }
+            });
+        } else {
+            if(jurCtx) jurCtx.style.display = 'none';
+            if(jurMsg) jurMsg.textContent = 'Jurisdiction distribution data is currently unavailable.';
+        }
+    } catch (e) {
+        console.error('Error rendering jurisdiction distribution chart on stats page:', e);
+        if(jurCtx) jurCtx.style.display = 'none';
+        if(jurMsg) jurMsg.textContent = 'Error displaying jurisdiction distribution chart.';
+    }
+
+    // Placeholder for future charts, e.g., vehicles_over_time
+    // const trendsCtx = document.getElementById('vehicleTrendsChartStatsPage');
+    // const trendsMsg = document.getElementById('vehicleTrendsChartStatsPageMessage');
+    // if (statisticsData && statisticsData.vehicles_over_time) { ... }
+
+    console.log('renderStatisticsPage completed all rendering tasks.');
+}
+
+function loadCompliance() {
+    const dynamicContentArea = document.getElementById('dynamic-content-area');
+    dynamicContentArea.innerHTML = `
+        <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+            <h1 class="h2">Compliance Check</h1>
+        </div>
+        <p>Compliance check functionality is under development.</p>
+        <!-- Placeholder for compliance tools and reports -->
+    `;
+    hideLoading(); // Called by loadTab
+}
+
+function loadProfile() {
+    const dynamicContentArea = document.getElementById('dynamic-content-area');
+    // Fetch user profile data if needed, or use appState.currentUser
+    const user = appState.currentUser || { username: 'Guest', email: 'N/A', role: 'N/A' }; 
+    dynamicContentArea.innerHTML = `
+        <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+            <h1 class="h2">User Profile</h1>
+        </div>
+        <p><strong>Username:</strong> ${user.username}</p>
+        <p><strong>Email:</strong> ${user.email}</p>
+        <p><strong>Role:</strong> ${user.role}</p>
+        <!-- Add more profile details and edit options here -->
+    `;
+    hideLoading();
+}
+
+function loadLogs() {
+    showLoading('Loading system logs...');
+    fetch('/api/logs') // Assuming an endpoint for logs
+        .then(response => {
+            if (!response.ok) throw new Error(`API error: ${response.status}`);
+            return response.json();
+        })
+        .then(data => {
+            renderLogs(data);
+        })
+        .catch(error => {
+            console.error('Error loading logs:', error);
+            document.getElementById('dynamic-content-area').innerHTML = 
+                `<div class="alert alert-danger">Failed to load system logs: ${error.message}</div>`;
+        })
+        .finally(() => hideLoading());
+}
+
+function renderLogs(logs) {
+    const dynamicContentArea = document.getElementById('dynamic-content-area');
+    let contentHtml = `
+        <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+            <h1 class="h2">System Logs</h1>
+            <!-- Add filtering options here if needed -->
+        </div>`;
+    
+    if (logs.length === 0) {
+        contentHtml += '<p>No logs found.</p>';
+    } else {
+        contentHtml += `
+            <table class="table table-sm table-striped">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Level</th>
+                        <th>Message</th>
+                        <th>User</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+        contentHtml += logs.map(log => `
+            <tr>
+                <td>${new Date(log.timestamp).toLocaleString()}</td>
+                <td><span class="badge bg-${log.level === 'ERROR' ? 'danger' : log.level === 'WARNING' ? 'warning' : 'info'}">${log.level}</span></td>
+                <td>${log.message}</td>
+                <td>${log.user_id || 'System'}</td>
+                <td>${log.details ? `<pre style="max-height: 100px; overflow: auto;">${JSON.stringify(log.details, null, 2)}</pre>` : 'N/A'}</td>
+            </tr>
+        `).join('');
+        contentHtml += '</tbody></table>';
+    }
+    dynamicContentArea.innerHTML = contentHtml;
+}
+
+/**
+ * Opens the modal to view vehicle details.
+ * @param {string} callNumber - The towbook_call_number of the vehicle.
+ */
+async function openVehicleDetailsModal(callNumber) {
+    showLoading('Loading vehicle details...');
+    try {
+        const response = await fetch(`/api/vehicles/${callNumber}`, { credentials: 'include' });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch vehicle details: ${response.status}`);
+        }
+        const vehicle = await response.json();
+
+        const modalElement = document.getElementById('vehicleDetailsModal');
+        if (!modalElement) {
+            console.error('Vehicle details modal element not found.');
+            hideLoading();
+            return;
+        }
+
+        // Populate modal content (example, adjust to your modal's structure)
+        modalElement.querySelector('.modal-title').textContent = `Vehicle Details: ${vehicle.make || 'N/A'} ${vehicle.model || 'N/A'} (${vehicle.vin || 'N/A'})`;
+        
+        let modalBodyHtml = `
+            <p><strong>VIN:</strong> ${vehicle.vin || 'N/A'}</p>
+            <p><strong>Year:</strong> ${vehicle.year || 'N/A'}</p>
+            <p><strong>Make:</strong> ${vehicle.make || 'N/A'}</p>
+            <p><strong>Model:</strong> ${vehicle.model || 'N/A'}</p>
+            <p><strong>Color:</strong> ${vehicle.color || 'N/A'}</p>
+            <p><strong>License Plate:</strong> ${vehicle.plate || 'N/A'} (${vehicle.state || 'N/A'})</p>
+            <p><strong>Tow Date:</strong> ${formatDateForDisplay(vehicle.tow_date)}</p>
+            <p><strong>Status:</strong> ${renderStatusLabel(vehicle.status).outerHTML}</p>
+            <p><strong>Days in Lot:</strong> ${calculateDaysInLot(vehicle.tow_date).outerHTML}</p>
+            <p><strong>Location From:</strong> ${vehicle.location || 'N/A'}</p>
+            <p><strong>Requested By:</strong> ${vehicle.requestor || 'N/A'}</p>
+            <p><strong>Reason for Tow:</strong> ${vehicle.reason_for_tow || 'N/A'}</p>
+            <p><strong>Officer Name:</strong> ${vehicle.officer_name || 'N/A'}</p>
+            <p><strong>Case Number:</strong> ${vehicle.case_number || 'N/A'}</p>
+            <p><strong>Complaint Number:</strong> ${vehicle.complaint_number || 'N/A'}</p>
+            <p><strong>Jurisdiction:</strong> ${vehicle.jurisdiction || 'N/A'}</p>
+            <hr>
+            <h5>Owner Information</h5>
+            <p><strong>Name:</strong> ${vehicle.owner_name || 'N/A'}</p>
+            <p><strong>Address:</strong> ${vehicle.owner_address || 'N/A'}</p>
+            <p><strong>Phone:</strong> ${vehicle.owner_phone || 'N/A'}</p>
+            <p><strong>Email:</strong> ${vehicle.owner_email || 'N/A'}</p>
+            <hr>
+            <h5>Lienholder Information</h5>
+            <p><strong>Name:</strong> ${vehicle.lienholder_name || 'N/A'}</p>
+            <p><strong>Address:</strong> ${vehicle.lienholder_address || 'N/A'}</p>
+            <hr>
+            <h5>Notes</h5>
+            <pre>${vehicle.notes || 'No notes available'}</pre>
+        `;
+        modalElement.querySelector('.modal-body').innerHTML = modalBodyHtml;
+
+        const bsModal = new bootstrap.Modal(modalElement);
+        bsModal.show();
+
+    } catch (error) {
+        console.error('Error opening vehicle details modal:', error);
+        showToast('Error loading vehicle details. ' + error.message, 'error');
+    } finally {
+        hideLoading();
     }
 }
 
 /**
- * Load compliance check data
+ * Opens the modal to edit vehicle details.
+ * @param {string} callNumber - The towbook_call_number of the vehicle.
  */
-function loadCompliance() {
-    // Implement compliance check functionality
-    document.getElementById('dynamic-content-area').innerHTML = `
-        <div class="alert alert-info">
-            Compliance check functionality is under development. Please check back soon.
-        </div>
-    `;
-    hideLoading();
+async function openEditVehicleModal(callNumber) {
+    showLoading('Loading vehicle data for editing...');
+    try {
+        const response = await fetch(`/api/vehicles/${callNumber}`, { credentials: 'include' });
+        if (!response.ok) {
+            throw new Error(`Failed to fetch vehicle data: ${response.status}`);
+        }
+        const vehicle = await response.json();
+
+        const modalElement = document.getElementById('editVehicleModal');
+        if (!modalElement) {
+            console.error('Edit vehicle modal element not found.');
+            hideLoading();
+            return;
+        }
+
+        // Populate modal form (example, adjust to your modal's form fields)
+        // This assumes your edit modal has form inputs with IDs like 'edit-vin', 'edit-make', etc.
+        modalElement.querySelector('.modal-title').textContent = `Edit Vehicle: ${vehicle.make || 'N/A'} ${vehicle.model || 'N/A'}`;
+        document.getElementById('edit-vehicle-id').value = vehicle.towbook_call_number; // Hidden field for call number
+        document.getElementById('edit-vin').value = vehicle.vin || '';
+        document.getElementById('edit-year').value = vehicle.year || '';
+        document.getElementById('edit-make').value = vehicle.make || '';
+        document.getElementById('edit-model').value = vehicle.model || '';
+        document.getElementById('edit-color').value = vehicle.color || '';
+        // Populate vehicle type dropdown
+        document.getElementById('edit-vehicle_type').value = vehicle.vehicle_type || '4-door';
+        document.getElementById('edit-plate').value = vehicle.plate || '';
+        document.getElementById('edit-state').value = vehicle.state || '';
+        document.getElementById('edit-tow_date').value = formatDateForInput(vehicle.tow_date);
+        document.getElementById('edit-tow_time').value = vehicle.tow_time || '';
+        document.getElementById('edit-status').value = vehicle.status || '';
+        document.getElementById('edit-location').value = vehicle.location || '';
+        document.getElementById('edit-requestor').value = vehicle.requestor || '';
+        document.getElementById('edit-reason_for_tow').value = vehicle.reason_for_tow || '';
+        document.getElementById('edit-complaint_number').value = vehicle.complaint_number || '';
+        document.getElementById('edit-jurisdiction').value = vehicle.jurisdiction || '';
+        document.getElementById('edit-officer_name').value = vehicle.officer_name || '';
+        document.getElementById('edit-case_number').value = vehicle.case_number || '';
+        
+        document.getElementById('edit-owner_name').value = vehicle.owner_name || '';
+        document.getElementById('edit-owner_address').value = vehicle.owner_address || '';
+        document.getElementById('edit-owner_phone').value = vehicle.owner_phone || '';
+        document.getElementById('edit-owner_email').value = vehicle.owner_email || '';
+
+        document.getElementById('edit-lienholder_name').value = vehicle.lienholder_name || '';
+        document.getElementById('edit-lienholder_address').value = vehicle.lienholder_address || '';
+        
+        document.getElementById('edit-notes').value = vehicle.notes || '';
+
+        // Setup save button
+        const saveButton = document.getElementById('saveVehicleChangesButton');
+        // Clone and replace to remove old event listeners
+        const newSaveButton = saveButton.cloneNode(true);
+        saveButton.parentNode.replaceChild(newSaveButton, saveButton);
+        newSaveButton.onclick = () => saveVehicleChanges(callNumber);
+
+        const bsModal = new bootstrap.Modal(modalElement);
+        bsModal.show();
+
+    } catch (error) {
+        console.error('Error opening edit vehicle modal:', error);
+        showToast('Error loading vehicle data for editing. ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+/**
+ * Saves changes made to a vehicle in the edit modal.
+ * @param {string} callNumber - The towbook_call_number of the vehicle being edited.
+ */
+async function saveVehicleChanges(callNumber) {
+    showLoading('Saving vehicle changes...');
+    const editForm = document.getElementById('editVehicleForm'); // Assuming your form has this ID
+    if (!editForm) {
+        console.error('Edit vehicle form not found.');
+        hideLoading();
+        showToast('Error: Edit form not found.', 'error');
+        return;
+    }
+
+    const formData = new FormData(editForm);
+    const data = {};
+    formData.forEach((value, key) => data[key] = value);
+
+    // Remove the hidden vehicle_id from the data payload if it was included by FormData
+    // The callNumber parameter is used for the URL
+    if (data.hasOwnProperty('vehicle_id')) {
+        delete data.vehicle_id;
+    }
+
+    try {
+        const response = await authenticatedFetch(`/api/vehicle/edit/${callNumber}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data),
+        });
+
+        // Get response text first, then try to parse as JSON
+        const responseText = await response.text();
+        let result;
+        try {
+            result = JSON.parse(responseText);
+        } catch (jsonError) {
+            // If response is not JSON, log the actual response for debugging
+            console.error('Non-JSON response received:', responseText);
+            throw new Error(`Server returned non-JSON response. Response was: ${responseText.substring(0, 200)}...`);
+        }
+
+        if (!response.ok) {
+            throw new Error(result.error || `Failed to save changes: ${response.status}`);
+        }
+
+        showToast(result.message || 'Vehicle updated successfully!', 'success');
+        const editModalElement = document.getElementById('editVehicleModal');
+        const bsModal = bootstrap.Modal.getInstance(editModalElement);
+        if (bsModal) {
+            bsModal.hide();
+        }
+        loadTab(appState.currentTab, true); // Refresh current tab to show changes
+
+    } catch (error) {
+        console.error('Error saving vehicle changes:', error);
+        
+        // The global authentication handler will deal with auth errors,
+        // so we only need to handle other types of errors here
+        if (!error.message.includes('Authentication required') && !error.message.includes('401')) {
+            showToast('Error saving changes: ' + error.message, 'error');
+        }
+    } finally {
+        hideLoading();
+    }
+}
+
+/**
+ * Delete a vehicle from the system with confirmation
+ * @param {string} callNumber - The towbook_call_number of the vehicle to delete
+ */
+function deleteVehicle(callNumber) {
+    if (!confirm(`Are you sure you want to delete vehicle ${callNumber}? This action cannot be undone.`)) {
+        return;
+    }
+    
+    showLoading('Deleting vehicle...');
+    
+    fetch(`/api/vehicles/${callNumber}`, { 
+        method: 'DELETE',
+        credentials: 'include'
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`Failed to delete vehicle: ${response.status} ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        showToast(data.message || 'Vehicle deleted successfully', 'success');
+        loadTab(appState.currentTab, true); // Refresh current tab to remove deleted vehicle
+    })
+    .catch(error => {
+        console.error('Error deleting vehicle:', error);
+        if (!error.message.includes('Authentication required') && !error.message.includes('401')) {
+            showToast('Error deleting vehicle: ' + error.message, 'error');
+        }
+    })
+    .finally(() => {
+        hideLoading();
+    });
+}
+
+/**
+ * Calls the API to generate a document (TOP, TR52, TR208) for a vehicle.
+ * @param {string} callNumber - The towbook_call_number of the vehicle.
+ * @param {string} formTypeEndpoint - The API endpoint suffix (e.g., 'generate-top').
+ * @param {string} formName - The user-friendly name of the form (e.g., 'TOP').
+ */
+async function generateDocumentApiCall(callNumber, formTypeEndpoint, formName) {
+    showLoading(`Generating ${formName} form...`);
+    try {
+        const response = await fetch(`/api/${formTypeEndpoint}/${callNumber}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                // Add any other necessary headers, like CSRF token if used
+            },
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.error || `Failed to generate ${formName}: ${response.status}`);
+        }
+
+        showToast(`${formName} generated successfully: ${result.pdf_filename || 'No filename returned'}`, 'success');
+        
+        // Open the PDF in a new tab: use pdf_url if provided, else construct URL from pdf_filename
+        if (result.pdf_url) {
+            window.open(result.pdf_url, '_blank');
+        } else if (result.pdf_filename) {
+            const pdfUrl = `/static/generated_pdfs/${result.pdf_filename}`;
+            window.open(pdfUrl, '_blank');
+        }
+
+        loadTab(appState.currentTab, true); // Refresh to reflect potential status changes
+
+    } catch (error) {
+        console.error(`Error generating ${formName} for ${callNumber}:`, error);
+        showToast(`Error generating ${formName}: ${error.message}`, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+// Date formatting utilities
+/**
+ * Format a date for display in the table (MM/DD/YYYY format)
+ * @param {string} dateStr - Date string in various formats
+ * @returns {string} - Formatted date string or 'N/A'
+ */
+function formatDateForDisplay(dateStr) {
+    if (!dateStr || dateStr === 'N/A' || dateStr === '') {
+        return 'N/A';
+    }
+    
+    try {
+        // Handle YYYY-MM-DD format specifically to avoid timezone issues
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            const [year, month, day] = dateStr.split('-');
+            // Create date object using local timezone by specifying components
+            const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+            
+            // Check if date is valid
+            if (isNaN(date.getTime())) {
+                return dateStr; // Return original if can't parse
+            }
+            
+            // Format as MM/DD/YYYY for display
+            return date.toLocaleDateString('en-US', {
+                month: '2-digit',
+                day: '2-digit',
+                year: 'numeric'
+            });
+        }
+        
+        // For other date formats, use the original parsing method
+        const date = new Date(dateStr);
+        
+        // Check if date is valid
+        if (isNaN(date.getTime())) {
+            return dateStr; // Return original if can't parse
+        }
+        
+        // Format as MM/DD/YYYY for display
+        return date.toLocaleDateString('en-US', {
+            month: '2-digit',
+            day: '2-digit',
+            year: 'numeric'
+        });
+    } catch (error) {
+        console.warn('Date formatting error:', error, 'for date:', dateStr);
+        return dateStr; // Return original string if error
+    }
+}
+
+/**
+ * Format a date for HTML date input (YYYY-MM-DD format)
+ * @param {string} dateStr - Date string in various formats
+ * @returns {string} - Date in YYYY-MM-DD format or empty string
+ */
+function formatDateForInput(dateStr) {
+    if (!dateStr || dateStr === 'N/A' || dateStr === '') {
+        return '';
+    }
+    
+    try {
+        // Handle YYYY-MM-DD format (already correct)
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            return dateStr;
+        }
+        
+        // Parse other formats and convert to YYYY-MM-DD
+        const date = new Date(dateStr);
+        
+        // Check if date is valid
+        if (isNaN(date.getTime())) {
+            return ''; // Return empty if can't parse
+        }
+        
+        // Format as YYYY-MM-DD for input
+        return date.toISOString().split('T')[0];
+    } catch (error) {
+        console.warn('Date input formatting error:', error, 'for date:', dateStr);
+        return ''; // Return empty string if error
+    }
 }

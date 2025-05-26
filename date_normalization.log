@@ -1,0 +1,83 @@
+2025-05-25 19:56:49,441 - INFO - Starting database date normalization...
+2025-05-25 19:56:49,442 - ERROR - Error during date normalization: no such column: id
+2025-05-25 19:56:49,442 - ERROR - ❌ Date normalization failed: no such column: id
+2025-05-25 20:03:16,093 - INFO - Starting database date normalization...
+2025-05-25 20:03:16,094 - INFO - Found 66 records with tow dates to process
+2025-05-25 20:03:16,097 - ERROR - Call Number 18622: Could not normalize date ''
+2025-05-25 20:03:16,098 - INFO - Call Number 6316: Normalized '11/13/2023' -> '2023-11-13'
+2025-05-25 20:03:16,098 - INFO - Call Number 6403: Normalized '11/21/2023' -> '2023-11-21'
+2025-05-25 20:03:16,098 - INFO - Call Number 9871: Normalized '7/13/2024' -> '2024-07-13'
+2025-05-25 20:03:16,098 - INFO - Call Number 11653: Normalized '10/14/2024' -> '2024-10-14'
+2025-05-25 20:03:16,099 - INFO - Call Number 12268: Normalized '10/29/2024' -> '2024-10-29'
+2025-05-25 20:03:16,099 - INFO - Call Number 12269: Normalized '10/29/2024' -> '2024-10-29'
+2025-05-25 20:03:16,099 - INFO - Call Number 12270: Normalized '10/29/2024' -> '2024-10-29'
+2025-05-25 20:03:16,099 - INFO - Call Number 12271: Normalized '10/29/2024' -> '2024-10-29'
+2025-05-25 20:03:16,100 - INFO - Call Number 12530: Normalized '11/13/2024' -> '2024-11-13'
+2025-05-25 20:03:16,100 - ERROR - Call Number 12860: Could not normalize date ''
+2025-05-25 20:03:16,100 - INFO - Call Number 12869: Normalized '11/13/2024' -> '2024-11-13'
+2025-05-25 20:03:16,100 - INFO - Call Number 13834: Normalized '12/6/2024' -> '2024-12-06'
+2025-05-25 20:03:16,100 - ERROR - Call Number 14556: Could not normalize date ''
+2025-05-25 20:03:16,101 - INFO - Call Number 17914: Normalized '2/27/2025' -> '2025-02-27'
+2025-05-25 20:03:16,101 - INFO - Call Number 17915: Normalized '2/27/2025' -> '2025-02-27'
+2025-05-25 20:03:16,101 - INFO - Call Number 17916: Normalized '2/27/2025' -> '2025-02-27'
+2025-05-25 20:03:16,101 - INFO - Call Number 17919: Normalized '2/27/2025' -> '2025-02-27'
+2025-05-25 20:03:16,101 - ERROR - Call Number 17921: Could not normalize date ''
+2025-05-25 20:03:16,102 - INFO - Call Number 17937: Normalized '2/27/2025' -> '2025-02-27'
+2025-05-25 20:03:16,102 - INFO - Call Number 17992: Normalized '2/28/2025' -> '2025-02-28'
+2025-05-25 20:03:16,102 - WARNING - Could not parse date: '4/9'
+2025-05-25 20:03:16,102 - ERROR - Call Number 0: Could not normalize date '4/9'
+2025-05-25 20:03:16,109 - INFO - Date normalization complete:
+2025-05-25 20:03:16,109 - INFO -   - Updated: 17 records
+2025-05-25 20:03:16,109 - INFO -   - Skipped (already normalized): 44 records
+2025-05-25 20:03:16,110 - INFO -   - Errors: 5 records
+2025-05-25 20:03:16,110 - INFO - 
+Unique date formats after normalization:
+2025-05-25 20:03:16,110 - INFO -   
+2025-05-25 20:03:16,111 - INFO -   2023-11-13
+2025-05-25 20:03:16,111 - INFO -   2023-11-21
+2025-05-25 20:03:16,111 - INFO -   2024-07-13
+2025-05-25 20:03:16,111 - INFO -   2024-10-04
+2025-05-25 20:03:16,112 - INFO -   2024-10-14
+2025-05-25 20:03:16,112 - INFO -   2024-10-21
+2025-05-25 20:03:16,112 - INFO -   2024-10-29
+2025-05-25 20:03:16,112 - INFO -   2024-10-31
+2025-05-25 20:03:16,112 - INFO -   2024-11-13
+2025-05-25 20:03:16,113 - INFO -   ... and 25 more
+2025-05-25 20:03:16,113 - INFO - 
+Verifying date consistency...
+2025-05-25 20:03:16,114 - ERROR - Error during verification: no such column: id
+2025-05-25 20:03:16,114 - WARNING - ⚠️  Some dates may still need manual review
+2025-05-25 20:15:22,649 - INFO - Starting database date normalization...
+2025-05-25 20:15:22,650 - INFO - Found 66 records with tow dates to process
+2025-05-25 20:15:22,654 - ERROR - Call Number 18622: Could not normalize date ''
+2025-05-25 20:15:22,655 - ERROR - Call Number 12860: Could not normalize date ''
+2025-05-25 20:15:22,655 - ERROR - Call Number 14556: Could not normalize date ''
+2025-05-25 20:15:22,656 - ERROR - Call Number 17921: Could not normalize date ''
+2025-05-25 20:15:22,657 - WARNING - Could not parse date: '4/9'
+2025-05-25 20:15:22,657 - ERROR - Call Number 0: Could not normalize date '4/9'
+2025-05-25 20:15:22,657 - INFO - Date normalization complete:
+2025-05-25 20:15:22,658 - INFO -   - Updated: 0 records
+2025-05-25 20:15:22,658 - INFO -   - Skipped (already normalized): 61 records
+2025-05-25 20:15:22,658 - INFO -   - Errors: 5 records
+2025-05-25 20:15:22,658 - INFO - 
+Unique date formats after normalization:
+2025-05-25 20:15:22,659 - INFO -   
+2025-05-25 20:15:22,659 - INFO -   2023-11-13
+2025-05-25 20:15:22,659 - INFO -   2023-11-21
+2025-05-25 20:15:22,659 - INFO -   2024-07-13
+2025-05-25 20:15:22,660 - INFO -   2024-10-04
+2025-05-25 20:15:22,660 - INFO -   2024-10-14
+2025-05-25 20:15:22,660 - INFO -   2024-10-21
+2025-05-25 20:15:22,661 - INFO -   2024-10-29
+2025-05-25 20:15:22,661 - INFO -   2024-10-31
+2025-05-25 20:15:22,661 - INFO -   2024-11-13
+2025-05-25 20:15:22,661 - INFO -   ... and 25 more
+2025-05-25 20:15:22,662 - INFO - 
+Verifying date consistency...
+2025-05-25 20:15:22,662 - WARNING - Found 5 records with non-standard date formats:
+2025-05-25 20:15:22,663 - WARNING -   Call Number 18622: ''
+2025-05-25 20:15:22,663 - WARNING -   Call Number 12860: ''
+2025-05-25 20:15:22,664 - WARNING -   Call Number 14556: ''
+2025-05-25 20:15:22,664 - WARNING -   Call Number 17921: ''
+2025-05-25 20:15:22,664 - WARNING -   Call Number 0: '4/9'
+2025-05-25 20:15:22,664 - WARNING - ⚠️  Some dates may still need manual review

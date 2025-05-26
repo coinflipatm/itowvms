@@ -6,6 +6,8 @@ import sqlite3
 import logging
 import secrets
 import uuid
+from functools import wraps
+from flask import jsonify
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -361,6 +363,19 @@ def admin_required(f):
         return f(*args, **kwargs)
     decorated_function.__name__ = f.__name__
     return login_required(decorated_function)
+
+# Custom login_required decorator for API endpoints
+def api_login_required(f):
+    """
+    Custom login decorator for API endpoints that returns JSON instead of redirecting to login page
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated:
+            # For API requests, return JSON error instead of redirecting
+            return jsonify({"error": "Authentication required", "code": "UNAUTHORIZED"}), 401
+        return f(*args, **kwargs)
+    return decorated_function
 
 # Initialize auth database tables
 def init_auth_db():

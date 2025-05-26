@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import sqlite3
 import logging
 import os
@@ -278,15 +278,27 @@ def safe_parse_date(date_str):
     if not date_str or date_str == 'N/A':
         return None
     
+    # Try ISO format YYYY-MM-DD
     try:
         return datetime.strptime(date_str, '%Y-%m-%d').date()
     except ValueError:
+        pass
+    # Try full format MM/DD/YYYY
+    try:
+        return datetime.strptime(date_str, '%m/%d/%Y').date()
+    except ValueError:
+        pass
+    # Try short format MM/DD assuming current year
+    parts = date_str.split('/')
+    if len(parts) == 2:
         try:
-            # Try alternate format
-            return datetime.strptime(date_str, '%m/%d/%Y').date()
-        except ValueError:
-            # logging.warning(f"Could not parse date: {date_str}")  # Suppressed per requirements
-            return None
+            month, day = map(int, parts)
+            current_year = datetime.now().year
+            return date(current_year, month, day)
+        except Exception:
+            pass
+    # Could not parse date
+    return None
 
 def calculate_tr52_countdown(top_sent_date):
     if not top_sent_date or top_sent_date == 'N/A':
@@ -1103,3 +1115,17 @@ def clear_complaint_sequence_override(year=None, db_path="vehicles.db"):
     finally:
         if conn:
             conn.close()
+
+def get_status_list_for_filter(filter_name):
+    """
+    Returns a list of vehicle statuses based on a general filter name.
+    """
+    if filter_name == 'active':
+        return ['New', 'TOP Generated', 'TR52 Ready', 'TR208 Ready', 'Ready for Auction', 'Ready for Scrap']
+    elif filter_name == 'completed':
+        return ['Released', 'Auctioned', 'Scrapped', 'Transferred']
+    # If a specific status is passed (e.g., "New"), the caller can handle it directly.
+    # This function is for aggregate terms like "active" or "completed".
+    return None
+
+# Ensure all functions are defined above this line if they are to be used by others.

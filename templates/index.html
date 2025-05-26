@@ -133,7 +133,169 @@
 
     <!-- Add Vehicle Modal -->
     <div class="modal fade" id="addVehicleModal" tabindex="-1" aria-labelledby="addVehicleModalLabel" aria-hidden="true">
-        <!-- Modal content will be loaded or defined here -->
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addVehicleModalLabel">Add New Vehicle</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addVehicleForm">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="add-towbook_call_number" class="form-label">Call Number *</label>
+                                    <input type="text" class="form-control" id="add-towbook_call_number" name="towbook_call_number" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-vin" class="form-label">VIN</label>
+                                    <input type="text" class="form-control" id="add-vin" name="vin">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-year" class="form-label">Year</label>
+                                    <input type="text" class="form-control" id="add-year" name="year">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-make" class="form-label">Make</label>
+                                    <input type="text" class="form-control" id="add-make" name="make">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-model" class="form-label">Model</label>
+                                    <input type="text" class="form-control" id="add-model" name="model">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-color" class="form-label">Color</label>
+                                    <input type="text" class="form-control" id="add-color" name="color">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-vehicle_type" class="form-label">Vehicle Type</label>
+                                    <select class="form-select" id="add-vehicle_type" name="vehicle_type">
+                                        <option value="4-door">4 Door</option>
+                                        <option value="2-door">2 Door</option>
+                                        <option value="SUV">SUV</option>
+                                        <option value="Truck">Truck</option>
+                                        <option value="Van">Van</option>
+                                        <option value="Motorcycle">Motorcycle</option>
+                                        <option value="Wagon">Wagon</option>
+                                        <option value="Convertible">Convertible</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="add-plate" class="form-label">License Plate</label>
+                                    <input type="text" class="form-control" id="add-plate" name="plate">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-state" class="form-label">License State</label>
+                                    <input type="text" class="form-control" id="add-state" name="state">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-tow_date" class="form-label">Tow Date</label>
+                                    <input type="date" class="form-control" id="add-tow_date" name="tow_date">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-tow_time" class="form-label">Tow Time</label>
+                                    <input type="time" class="form-control" id="add-tow_time" name="tow_time">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-status" class="form-label">Status</label>
+                                    <select class="form-select" id="add-status" name="status">
+                                        <option value="New" selected>New</option>
+                                        <option value="TOP Generated">TOP Generated</option>
+                                        <option value="TR52 Ready">TR52 Ready</option>
+                                        <option value="TR208 Ready">TR208 Ready</option>
+                                        <option value="Ready for Auction">Ready for Auction</option>
+                                        <option value="Ready for Scrap">Ready for Scrap</option>
+                                        <option value="Released">Released</option>
+                                        <option value="Auctioned">Auctioned</option>
+                                        <option value="Scrapped">Scrapped</option>
+                                        <option value="Transferred">Transferred</option>
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-complaint_number" class="form-label">Complaint Number</label>
+                                    <input type="text" class="form-control" id="add-complaint_number" name="complaint_number">
+                                </div>
+                            </div>
+                        </div>
+                        <hr>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="add-location" class="form-label">Location From</label>
+                                    <input type="text" class="form-control" id="add-location" name="location">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-requestor" class="form-label">Requested By</label>
+                                    <input type="text" class="form-control" id="add-requestor" name="requestor">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-reason_for_tow" class="form-label">Reason For Tow</label>
+                                    <input type="text" class="form-control" id="add-reason_for_tow" name="reason_for_tow">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-jurisdiction" class="form-label">Jurisdiction</label>
+                                    <input type="text" class="form-control" id="add-jurisdiction" name="jurisdiction">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="add-officer_name" class="form-label">Officer Name</label>
+                                    <input type="text" class="form-control" id="add-officer_name" name="officer_name">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-case_number" class="form-label">Case Number</label>
+                                    <input type="text" class="form-control" id="add-case_number" name="case_number">
+                                </div>
+                            </div>
+                        </div>
+                        <hr>
+                        <h5>Owner Information</h5>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="add-owner_name" class="form-label">Owner Name</label>
+                                    <input type="text" class="form-control" id="add-owner_name" name="owner_name">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-owner_address" class="form-label">Owner Address</label>
+                                    <input type="text" class="form-control" id="add-owner_address" name="owner_address">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-owner_phone" class="form-label">Owner Phone</label>
+                                    <input type="text" class="form-control" id="add-owner_phone" name="owner_phone">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-owner_email" class="form-label">Owner Email</label>
+                                    <input type="email" class="form-control" id="add-owner_email" name="owner_email">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="add-lienholder_name" class="form-label">Lienholder Name</label>
+                                    <input type="text" class="form-control" id="add-lienholder_name" name="lienholder_name">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-lienholder_address" class="form-label">Lienholder Address</label>
+                                    <input type="text" class="form-control" id="add-lienholder_address" name="lienholder_address">
+                                </div>
+                            </div>
+                        </div>
+                        <hr>
+                        <div class="mb-3">
+                            <label for="add-notes" class="form-label">Notes</label>
+                            <textarea class="form-control" id="add-notes" name="notes" rows="3"></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="saveNewVehicleButton">Add Vehicle</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Edit Vehicle Modal -->
@@ -204,8 +366,18 @@
                                 </div>
                                 <div class="mb-3">
                                     <label for="edit-status" class="form-label">Status</label>
-                                    <input type="text" class="form-control" id="edit-status" name="status">
-                                    <!-- Consider making this a select dropdown populated with valid statuses -->
+                                    <select class="form-select" id="edit-status" name="status">
+                                        <option value="New">New</option>
+                                        <option value="TOP Generated">TOP Generated</option>
+                                        <option value="TR52 Ready">TR52 Ready</option>
+                                        <option value="TR208 Ready">TR208 Ready</option>
+                                        <option value="Ready for Auction">Ready for Auction</option>
+                                        <option value="Ready for Scrap">Ready for Scrap</option>
+                                        <option value="Released">Released</option>
+                                        <option value="Auctioned">Auctioned</option>
+                                        <option value="Scrapped">Scrapped</option>
+                                        <option value="Transferred">Transferred</option>
+                                    </select>
                                 </div>
                                  <div class="mb-3">
                                     <label for="edit-complaint_number" class="form-label">Complaint Number</label>

@@ -736,6 +736,10 @@ function loadVehicles(statusFilter = 'active', forceRefresh = false) {
     console.log(`loadVehicles called with statusFilter: ${statusFilter}, forceRefresh: ${forceRefresh}`);
     showLoading('Loading vehicles...');
 
+    // Convert tab name to proper status filter
+    const apiStatusFilter = convertTabNameToStatusFilter(statusFilter);
+    console.log(`Converted ${statusFilter} to ${apiStatusFilter} for API call`);
+
     // If data for this specific filter is already loaded and not forcing refresh, use it.
     // This simple cache assumes `appState.vehiclesData` holds data for the *last loaded* filter.
     // A more sophisticated cache would store data per filter.
@@ -751,11 +755,11 @@ function loadVehicles(statusFilter = 'active', forceRefresh = false) {
     // 'active' can be the default or explicitly passed
     // 'completed' should be explicitly passed
     // Specific statuses (New, TOP_Generated, etc.) are passed directly
-    if (statusFilter) {
-        apiUrl += `?status=${encodeURIComponent(statusFilter)}`;
+    if (apiStatusFilter) {
+        apiUrl += `?status=${encodeURIComponent(apiStatusFilter)}`;
     }
     // Add sorting parameters
-    apiUrl += `${statusFilter ? '&' : '?'}sort=${appState.sortColumn}&direction=${appState.sortDirection}`;
+    apiUrl += `${apiStatusFilter ? '&' : '?'}sort=${appState.sortColumn}&direction=${appState.sortDirection}`;
 
 
     fetch(apiUrl)
@@ -796,6 +800,26 @@ function renderVehicleTable(vehicles, currentFilterName) {
 
     // Clear previous content
     dynamicContentArea.innerHTML = ''; 
+
+    // Add header with Add Vehicle button
+    const headerDiv = document.createElement('div');
+    headerDiv.className = 'd-flex justify-content-between align-items-center mb-3';
+    
+    const titleDiv = document.createElement('div');
+    const title = document.createElement('h4');
+    title.textContent = `Vehicles - ${currentFilterName.charAt(0).toUpperCase() + currentFilterName.slice(1)} (${vehicles.length})`;
+    titleDiv.appendChild(title);
+    
+    const buttonDiv = document.createElement('div');
+    const addButton = document.createElement('button');
+    addButton.className = 'btn btn-primary';
+    addButton.innerHTML = '<i class="fas fa-plus"></i> Add Vehicle';
+    addButton.onclick = showAddVehicleModal;
+    buttonDiv.appendChild(addButton);
+    
+    headerDiv.appendChild(titleDiv);
+    headerDiv.appendChild(buttonDiv);
+    dynamicContentArea.appendChild(headerDiv);
 
     // Create table structure
     const table = document.createElement('table');
@@ -1162,9 +1186,102 @@ function showAddVehicleModal() {
         console.error('Add vehicle modal not found');
         return;
     }
-    
+
+    // Reset the form
+    const form = document.getElementById('addVehicleForm');
+    if (form) {
+        form.reset();
+        // Set default date to today
+        const todayDate = new Date().toISOString().split('T')[0];
+        document.getElementById('add-tow_date').value = todayDate;
+    }
+
+    // Setup save button event listener
+    const saveButton = document.getElementById('saveNewVehicleButton');
+    if (saveButton) {
+        // Remove any existing event listeners
+        const newSaveButton = saveButton.cloneNode(true);
+        saveButton.parentNode.replaceChild(newSaveButton, saveButton);
+        newSaveButton.onclick = saveNewVehicle;
+    }
+
     const bsModal = new bootstrap.Modal(modal);
     bsModal.show();
+}
+
+/**
+ * Save new vehicle from the add vehicle modal
+ */
+async function saveNewVehicle() {
+    showLoading('Adding vehicle...');
+    
+    try {
+        const form = document.getElementById('addVehicleForm');
+        if (!form) {
+            throw new Error('Add vehicle form not found');
+        }
+
+        // Collect form data
+        const formData = new FormData(form);
+        const vehicleData = {};
+        
+        // Convert FormData to regular object
+        for (let [key, value] of formData.entries()) {
+            // Only include non-empty values
+            if (value && value.trim() !== '') {
+                vehicleData[key] = value.trim();
+            }
+        }
+
+        // Validate required fields
+        if (!vehicleData.towbook_call_number) {
+            throw new Error('Call number is required');
+        }
+
+        // Send the data to the API
+        const response = await authenticatedFetch('/api/vehicles/add', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(vehicleData)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `Failed to add vehicle: ${response.status}`);
+        }
+
+        const result = await response.json();
+        
+        // Close the modal
+        const modal = bootstrap.Modal.getInstance(document.getElementById('addVehicleModal'));
+        if (modal) {
+            modal.hide();
+        }
+
+        // Show success message
+        showToast('Vehicle added successfully!', 'success');
+
+        // Refresh the vehicle list
+        const currentTab = appState.currentTab || 'dashboard';
+        if (currentTab.includes('vehicles') || currentTab === 'dashboard') {
+            // Force refresh the current vehicles view
+            appState.vehiclesData = []; // Clear cache
+            if (currentTab === 'dashboard') {
+                loadTab('dashboard', true);
+            } else {
+                const statusFilter = currentTab.replace('vehicles-', '') || 'active';
+                loadVehicles(statusFilter, true);
+            }
+        }
+
+    } catch (error) {
+        console.error('Error adding vehicle:', error);
+        showToast('Error adding vehicle: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
 }
 
 /**
@@ -1683,7 +1800,7 @@ async function openVehicleDetailsModal(callNumber) {
         const response = await fetch(`/api/vehicles/${callNumber}`, { credentials: 'include' });
         if (!response.ok) {
             throw new Error(`Failed to fetch vehicle details: ${response.status}`);
-        }
+               }
         const vehicle = await response.json();
 
         const modalElement = document.getElementById('vehicleDetailsModal');
@@ -1696,39 +1813,53 @@ async function openVehicleDetailsModal(callNumber) {
         // Populate modal content (example, adjust to your modal's structure)
         modalElement.querySelector('.modal-title').textContent = `Vehicle Details: ${vehicle.make || 'N/A'} ${vehicle.model || 'N/A'} (${vehicle.vin || 'N/A'})`;
         
-        let modalBodyHtml = `
-            <p><strong>VIN:</strong> ${vehicle.vin || 'N/A'}</p>
-            <p><strong>Year:</strong> ${vehicle.year || 'N/A'}</p>
-            <p><strong>Make:</strong> ${vehicle.make || 'N/A'}</p>
-            <p><strong>Model:</strong> ${vehicle.model || 'N/A'}</p>
-            <p><strong>Color:</strong> ${vehicle.color || 'N/A'}</p>
-            <p><strong>License Plate:</strong> ${vehicle.plate || 'N/A'} (${vehicle.state || 'N/A'})</p>
-            <p><strong>Tow Date:</strong> ${formatDateForDisplay(vehicle.tow_date)}</p>
-            <p><strong>Status:</strong> ${renderStatusLabel(vehicle.status).outerHTML}</p>
-            <p><strong>Days in Lot:</strong> ${calculateDaysInLot(vehicle.tow_date).outerHTML}</p>
-            <p><strong>Location From:</strong> ${vehicle.location || 'N/A'}</p>
-            <p><strong>Requested By:</strong> ${vehicle.requestor || 'N/A'}</p>
-            <p><strong>Reason for Tow:</strong> ${vehicle.reason_for_tow || 'N/A'}</p>
-            <p><strong>Officer Name:</strong> ${vehicle.officer_name || 'N/A'}</p>
-            <p><strong>Case Number:</strong> ${vehicle.case_number || 'N/A'}</p>
-            <p><strong>Complaint Number:</strong> ${vehicle.complaint_number || 'N/A'}</p>
-            <p><strong>Jurisdiction:</strong> ${vehicle.jurisdiction || 'N/A'}</p>
+        // Format vehicle info
+        const vehicleInfo = `${vehicle.make || ''} ${vehicle.model || ''} ${vehicle.vehicle_year || ''}`.trim();
+        const towDate = vehicle.tow_date ? new Date(vehicle.tow_date).toLocaleDateString() : 'N/A';
+        
+        const modalBody = modalElement.querySelector('.modal-body');
+        modalBody.innerHTML = `
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>${vehicleInfo}</h5>
+                    <p><strong>License:</strong> ${vehicle.plate || 'N/A'} (${vehicle.state || 'N/A'})</p>
+                    <p><strong>VIN:</strong> ${vehicle.vin || 'N/A'}</p>
+                    <p><strong>Color:</strong> ${vehicle.color || 'N/A'}</p>
+                    <p><strong>Status:</strong> <span class="status-label ${getStatusClass(vehicle.status)}">${vehicle.status}</span></p>
+                    <p><strong>Tow Date:</strong> ${towDate}</p>
+                    <p><strong>Jurisdiction:</strong> ${vehicle.jurisdiction || 'N/A'}</p>
+                    <p><strong>Location From:</strong> ${vehicle.location || 'N/A'}</p>
+                    <p><strong>Requested By:</strong> ${vehicle.requestor || 'N/A'}</p>
+                    <p><strong>Officer Name:</strong> ${vehicle.officer_name || 'N/A'}</p>
+                    <p><strong>Case Number:</strong> ${vehicle.case_number || 'N/A'}</p>
+                </div>
+                <div class="col-md-6">
+                    <h5>Owner Information</h5>
+                    <p><strong>Name:</strong> ${vehicle.owner_name || 'N/A'}</p>
+                    <p><strong>Address:</strong> ${vehicle.owner_address || 'N/A'}</p>
+                    <p><strong>Phone:</strong> ${vehicle.owner_phone || 'N/A'}</p>
+                    <p><strong>Email:</strong> ${vehicle.owner_email || 'N/A'}</p>
+                    <hr>
+                    <h5>Lienholder Information</h5>
+                    <p><strong>Name:</strong> ${vehicle.lienholder_name || 'N/A'}</p>
+                    <p><strong>Address:</strong> ${vehicle.lienholder_address || 'N/A'}</p>
+                </div>
+            </div>
             <hr>
-            <h5>Owner Information</h5>
-            <p><strong>Name:</strong> ${vehicle.owner_name || 'N/A'}</p>
-            <p><strong>Address:</strong> ${vehicle.owner_address || 'N/A'}</p>
-            <p><strong>Phone:</strong> ${vehicle.owner_phone || 'N/A'}</p>
-            <p><strong>Email:</strong> ${vehicle.owner_email || 'N/A'}</p>
-            <hr>
-            <h5>Lienholder Information</h5>
-            <p><strong>Name:</strong> ${vehicle.lienholder_name || 'N/A'}</p>
-            <p><strong>Address:</strong> ${vehicle.lienholder_address || 'N/A'}</p>
-            <hr>
-            <h5>Notes</h5>
-            <pre>${vehicle.notes || 'No notes available'}</pre>
+            <div class="row">
+                <div class="col-12">
+                    <h5>Notes</h5>
+                    <p>${vehicle.notes || 'No notes available'}</p>
+                </div>
+            </div>
         `;
-        modalElement.querySelector('.modal-body').innerHTML = modalBodyHtml;
+        // Store the original status in a data attribute for comparison later
+        const statusSelect = modalElement.querySelector('#details-status');
+        if (statusSelect) {
+            statusSelect.setAttribute('data-original-status', vehicle.status);
+        }
 
+        // Show the modal
         const bsModal = new bootstrap.Modal(modalElement);
         bsModal.show();
 
@@ -2041,4 +2172,85 @@ function formatDateForInput(dateStr) {
         console.warn('Date input formatting error:', error, 'for date:', dateStr);
         return ''; // Return empty string if error
     }
+}
+
+/**
+ * Update vehicle status from the details modal
+ */
+async function updateVehicleStatus(callNumber) {
+    const statusSelect = document.getElementById('details-status');
+    if (!statusSelect) {
+        showToast('Status dropdown not found', 'error');
+        return;
+    }
+
+    const newStatus = statusSelect.value;
+    const originalStatus = statusSelect.getAttribute('data-original-status') || statusSelect.options[statusSelect.selectedIndex].defaultSelected;
+
+    if (!newStatus) {
+        showToast('Please select a valid status', 'error');
+        return;
+    }
+
+    try {
+        showLoading('Updating vehicle status...');
+
+        const response = await authenticatedFetch(`/api/vehicles/${callNumber}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                status: newStatus
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `Failed to update status: ${response.status}`);
+        }
+
+        showToast('Vehicle status updated successfully!', 'success');
+
+        // Close the modal
+        const modal = bootstrap.Modal.getInstance(document.getElementById('vehicleDetailsModal'));
+        if (modal) {
+            modal.hide();
+        }
+
+        // Refresh the current view
+        const currentTab = appState.currentTab || 'dashboard';
+        if (currentTab.includes('vehicles') || currentTab === 'dashboard') {
+            // Force refresh the current vehicles view
+            appState.vehiclesData = []; // Clear cache
+            if (currentTab === 'dashboard') {
+                loadTab('dashboard', true);
+            } else {
+                const statusFilter = currentTab.replace('vehicles-', '') || 'active';
+                loadVehicles(statusFilter, true);
+            }
+        }
+
+    } catch (error) {
+        console.error('Error updating vehicle status:', error);
+        showToast('Error updating vehicle status: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+/**
+ * Convert frontend tab names to API status filter names
+ */
+function convertTabNameToStatusFilter(tabName) {
+    // Convert underscored tab names to space-separated status names
+    const conversions = {
+        'TOP_Generated': 'TOP Generated',
+        'TR52_Ready': 'TR52 Ready', 
+        'TR208_Ready': 'TR208 Ready',
+        'Ready_for_Auction': 'Ready for Auction',
+        'Ready_for_Scrap': 'Ready for Scrap'
+    };
+    
+    return conversions[tabName] || tabName;
 }

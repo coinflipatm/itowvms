@@ -145,8 +145,9 @@ def _perform_top_generation(call_number, username):
         data['plate'] = data.get('plate', 'N/A')
         data['state'] = data.get('state', 'N/A')
         data['complaint_number'] = data.get('complaint_number', 'N/A')
-        data['case_number'] = data.get('case_number', 'N/A')
-        data['officer_name'] = data.get('officer_name', 'N/A')
+        # Keep case_number and officer_name as-is so generator can handle empty values
+        data['case_number'] = data.get('case_number', '')
+        data['officer_name'] = data.get('officer_name', '')
         # towbook_call_number is implicitly used for logging if present in data
         
         is_tr208_eligible, _ = is_eligible_for_tr208(data)
@@ -356,9 +357,9 @@ def add_vehicle():
             vehicle_id = insert_vehicle(data)
             if vehicle_id:
                 success = True
-                log_action('Vehicle Added', data.get('towbook_call_number'), 
+                log_action('Vehicle Added', 
                            current_user.id if current_user else 'System', 
-                           f"Vehicle added: {data.get('make')} {data.get('model')}")
+                           f"Vehicle added: {data.get('towbook_call_number')} - {data.get('make')} {data.get('model')}")
         except Exception as e:
             return jsonify({"error": f"Database error: {str(e)}"}), 500
             
@@ -621,6 +622,36 @@ def api_diagnostic():
 def auth_diagnostics():
     """Serve the authentication diagnostics page"""
     return send_file('auth_diagnostics.html')
+
+@app.route('/api/vehicles/<vehicle_id>', methods=['PUT'])
+@api_login_required
+def update_vehicle_api(vehicle_id):
+    """API endpoint to update a vehicle's information."""
+    try:
+        # Check if vehicle exists first
+        existing_vehicle = get_vehicle_by_call_number(vehicle_id)
+        if not existing_vehicle:
+            return jsonify({"error": "Vehicle not found"}), 404
+        
+        data = request.json
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+        
+        # Update the vehicle in the database
+        from database import update_vehicle_by_call_number
+        success = update_vehicle_by_call_number(vehicle_id, data)
+        
+        if success:
+            log_action('Vehicle Updated', 
+                       current_user.id if hasattr(current_user, 'id') else 'System', 
+                       f"Vehicle {vehicle_id} updated: {', '.join(data.keys())}")
+            return jsonify({"message": "Vehicle updated successfully"}), 200
+        else:
+            return jsonify({"error": "Failed to update vehicle"}), 500
+        
+    except Exception as e:
+        logging.error(f"Error updating vehicle {vehicle_id}: {e}", exc_info=True)
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 if __name__ == "__main__":
     PORT = 5001

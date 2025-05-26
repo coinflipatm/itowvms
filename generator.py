@@ -139,14 +139,20 @@ class PDFGenerator:
                 ['VIN:', self._handle_empty_value(data.get('vin', 'N/A'))],
                 ['PLATE NUMBER:', final_plate_info], # Combined plate number and state
                 ['COMPLAINT #:', self._handle_empty_value(data.get('complaint_number', 'N/A'))],
-                ['CASE NUMBER:', self._handle_empty_value(data.get('case_number', 'N/A'))], 
-                ['OFFICER NAME:', self._handle_empty_value(data.get('officer_name', 'N/A'))]
             ]
             
-            # Filter out rows where the value is 'N/A' or empty, unless it's a key field like VIN or Complaint #
-            # For TOP form, most fields are important, so we might not filter aggressively.
-            # details = [row for row in details_data if row[1] and row[1] != 'N/A' or row[0] in ['VIN:', 'COMPLAINT #:']]
-            details = details_data # Keep all details for TOP form
+            # Only add officer name and case number if they have actual values
+            case_number = data.get('case_number', '')
+            officer_name = data.get('officer_name', '')
+            
+            if case_number and case_number.strip() and case_number.strip().upper() != 'N/A':
+                details_data.append(['CASE NUMBER:', case_number.strip()])
+                
+            if officer_name and officer_name.strip() and officer_name.strip().upper() != 'N/A':
+                details_data.append(['OFFICER NAME:', officer_name.strip()])
+            
+            # Keep all details for TOP form
+            details = details_data
 
             table = Table(details, colWidths=[2*inch, 4*inch])
             table.setStyle(TableStyle([

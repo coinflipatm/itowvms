@@ -2,44 +2,11 @@
 # This module contains all jurisdictions within Genesee County, Michigan
 
 GENESEE_COUNTY_JURISDICTIONS = [
-    # Cities
-    "City of Burton",
-    "City of Clio", 
-    "City of Davison",
-    "City of Fenton",
-    "City of Flint",
-    "City of Flushing",
-    "City of Grand Blanc",
-    "City of Linden",
-    "City of Mount Morris",
-    "City of Swartz Creek",
-    
-    # Townships
-    "Argentine Township",
-    "Atlas Township", 
-    "Clayton Township",
-    "Davison Township",
-    "Fenton Township",
-    "Flint Township",
-    "Flushing Township", 
-    "Forest Township",
-    "Genesee Township",
-    "Grand Blanc Township",
-    "Montrose Township",
-    "Mount Morris Township",
-    "Mundy Township",
-    "Richfield Township",
-    "Thetford Township",
-    "Vienna Township",
-    
-    # Villages
-    "Village of Gaines",
-    "Village of Goodrich",
-    "Village of Otisville",
-    
-    # Law Enforcement Agencies
+    # County and State Law Enforcement
     "Genesee County Sheriff's Office",
     "Michigan State Police - Flint Post",
+    
+    # City Police Departments
     "Burton Police Department", 
     "Clio Police Department",
     "Davison Police Department",
@@ -51,12 +18,20 @@ GENESEE_COUNTY_JURISDICTIONS = [
     "Mount Morris Police Department",
     "Swartz Creek Police Department",
     
-    # Special Districts/Authorities
-    "Genesee County Parks & Recreation",
-    "Bishop International Airport Authority",
-    "University of Michigan - Flint Public Safety",
-    "Kettering University Public Safety",
-    "Mott Community College Public Safety",
+    # Township Police Departments
+    "Davison Township Police Department",
+    "Fenton Township Police Department",
+    "Flint Township Police Department",
+    "Flushing Township Police Department",
+    "Genesee Township Police Department",
+    "Grand Blanc Township Police Department",
+    "Mount Morris Township Police Department",
+    "Mundy Township Police Department",
+    "Richfield Township Police Department",
+    
+    # Metro Stations
+    "Metro Station - Swartz Creek",
+    "Metro Station - Flint",
     
     # Other
     "Out of County",

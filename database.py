@@ -326,6 +326,65 @@ def init_db(db_path=None):
             """)
             logger.info("Table 'contacts' checked/created.")
 
+            # Add communication preference columns to contacts table if missing
+            cursor.execute("PRAGMA table_info(contacts)")
+            contacts_cols = [row[1] for row in cursor.fetchall()]
+            
+            # Rename old column names to new ones if they exist
+            if 'phone' in contacts_cols and 'phone_number' not in contacts_cols:
+                cursor.execute("ALTER TABLE contacts RENAME COLUMN phone TO phone_number")
+                logger.info("Renamed column 'phone' to 'phone_number' in 'contacts' table.")
+                
+            if 'email' in contacts_cols and 'email_address' not in contacts_cols:
+                cursor.execute("ALTER TABLE contacts RENAME COLUMN email TO email_address")
+                logger.info("Renamed column 'email' to 'email_address' in 'contacts' table.")
+                
+            if 'fax' in contacts_cols and 'fax_number' not in contacts_cols:
+                cursor.execute("ALTER TABLE contacts RENAME COLUMN fax TO fax_number")
+                logger.info("Renamed column 'fax' to 'fax_number' in 'contacts' table.")
+            
+            # Refresh column list after potential renames
+            cursor.execute("PRAGMA table_info(contacts)")
+            contacts_cols = [row[1] for row in cursor.fetchall()]
+            
+            if 'preferred_contact_method' not in contacts_cols:
+                cursor.execute("ALTER TABLE contacts ADD COLUMN preferred_contact_method TEXT DEFAULT 'email'")
+                logger.info("Added column 'preferred_contact_method' to 'contacts' table.")
+            
+            if 'secondary_contact_method' not in contacts_cols:
+                cursor.execute("ALTER TABLE contacts ADD COLUMN secondary_contact_method TEXT")
+                logger.info("Added column 'secondary_contact_method' to 'contacts' table.")
+
+            if 'contact_hours' not in contacts_cols:
+                cursor.execute("ALTER TABLE contacts ADD COLUMN contact_hours TEXT")
+                logger.info("Added column 'contact_hours' to 'contacts' table.")
+
+            if 'department' not in contacts_cols:
+                cursor.execute("ALTER TABLE contacts ADD COLUMN department TEXT")
+                logger.info("Added column 'department' to 'contacts' table.")
+
+            if 'mobile_number' not in contacts_cols:
+                cursor.execute("ALTER TABLE contacts ADD COLUMN mobile_number TEXT")
+                logger.info("Added column 'mobile_number' to 'contacts' table.")
+
+            if 'contact_title' not in contacts_cols:
+                cursor.execute("ALTER TABLE contacts ADD COLUMN contact_title TEXT")
+                logger.info("Added column 'contact_title' to 'contacts' table.")
+
+            if 'emergency_contact' not in contacts_cols:
+                cursor.execute("ALTER TABLE contacts ADD COLUMN emergency_contact INTEGER DEFAULT 0")
+                logger.info("Added column 'emergency_contact' to 'contacts' table.")
+
+            if 'active' not in contacts_cols:
+                cursor.execute("ALTER TABLE contacts ADD COLUMN active INTEGER DEFAULT 1")
+                logger.info("Added column 'active' to 'contacts' table.")
+
+            if 'last_contacted' not in contacts_cols:
+                cursor.execute("ALTER TABLE contacts ADD COLUMN last_contacted TEXT")
+                logger.info("Added column 'last_contacted' to 'contacts' table.")
+
+            conn.commit() # Commit contacts table changes
+
             # System Logs table
             conn.execute("""
             CREATE TABLE IF NOT EXISTS system_logs (
@@ -1218,8 +1277,10 @@ def add_contact_explicit(data):
             raise ValueError("Jurisdiction is a required field for contacts.")
 
         query = """
-            INSERT INTO contacts (jurisdiction, contact_name, phone_number, email_address, fax_number, address, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO contacts (jurisdiction, contact_name, phone_number, email_address, fax_number, address, notes,
+                                preferred_contact_method, secondary_contact_method, contact_hours, department,
+                                mobile_number, contact_title, emergency_contact, active, last_contacted)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         params = (
             data.get('jurisdiction'),
@@ -1228,7 +1289,16 @@ def add_contact_explicit(data):
             data.get('email_address'),
             data.get('fax_number'),
             data.get('address'),
-            data.get('notes')
+            data.get('notes'),
+            data.get('preferred_contact_method', 'email'),
+            data.get('secondary_contact_method'),
+            data.get('contact_hours'),
+            data.get('department'),
+            data.get('mobile_number'),
+            data.get('contact_title'),
+            data.get('emergency_contact', 0),
+            data.get('active', 1),
+            data.get('last_contacted')
         )
         with conn: # transactionality
             cursor = conn.execute(query, params)
@@ -1249,7 +1319,9 @@ def update_contact_explicit(contact_id, data):
         # Construct SET clause dynamically for fields present in data
         set_clauses = []
         params = []
-        allowed_fields = ['jurisdiction', 'contact_name', 'phone_number', 'email_address', 'fax_number', 'address', 'notes']
+        allowed_fields = ['jurisdiction', 'contact_name', 'phone_number', 'email_address', 'fax_number', 'address', 'notes', 
+                         'preferred_contact_method', 'secondary_contact_method', 'contact_hours', 'department', 
+                         'mobile_number', 'contact_title', 'emergency_contact', 'active', 'last_contacted']
         for field in allowed_fields:
             if field in data:
                 set_clauses.append(f"{field} = ?")

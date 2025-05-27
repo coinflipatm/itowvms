@@ -231,7 +231,10 @@
                                 </div>
                                 <div class="mb-3">
                                     <label for="add-jurisdiction" class="form-label">Jurisdiction</label>
-                                    <input type="text" class="form-control" id="add-jurisdiction" name="jurisdiction">
+                                    <select class="form-select" id="add-jurisdiction" name="jurisdiction">
+                                        <option value="">Select Jurisdiction...</option>
+                                        <!-- Options will be populated dynamically -->
+                                    </select>
                                 </div>
                             </div>
                             <div class="col-md-6">
@@ -394,7 +397,10 @@
                                 </div>
                                 <div class="mb-3">
                                     <label for="edit-jurisdiction" class="form-label">Jurisdiction</label>
-                                    <input type="text" class="form-control" id="edit-jurisdiction" name="jurisdiction">
+                                    <select class="form-select" id="edit-jurisdiction" name="jurisdiction">
+                                        <option value="">Select Jurisdiction...</option>
+                                        <!-- Options will be populated dynamically -->
+                                    </select>
                                 </div>
                             </div>
                             <div class="col-md-6">
@@ -484,7 +490,219 @@
 
     <!-- Add Contact Modal -->
     <div class="modal fade" id="addContactModal" tabindex="-1" aria-labelledby="addContactModalLabel" aria-hidden="true">
-        <!-- Modal content will be loaded or defined here -->
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addContactModalLabel">Add New Jurisdiction Contact</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addContactForm">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="add-contact-jurisdiction" class="form-label">Jurisdiction *</label>
+                                    <select class="form-select" id="add-contact-jurisdiction" name="jurisdiction" required>
+                                        <option value="">Select Jurisdiction...</option>
+                                        <!-- Options will be populated dynamically -->
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-contact-name" class="form-label">Contact Name</label>
+                                    <input type="text" class="form-control" id="add-contact-name" name="contact_name">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-contact-title" class="form-label">Title/Position</label>
+                                    <input type="text" class="form-control" id="add-contact-title" name="contact_title">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-contact-department" class="form-label">Department</label>
+                                    <input type="text" class="form-control" id="add-contact-department" name="department">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-contact-phone" class="form-label">Phone Number</label>
+                                    <input type="tel" class="form-control" id="add-contact-phone" name="phone_number">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-contact-mobile" class="form-label">Mobile Number</label>
+                                    <input type="tel" class="form-control" id="add-contact-mobile" name="mobile_number">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="add-contact-email" class="form-label">Email Address</label>
+                                    <input type="email" class="form-control" id="add-contact-email" name="email_address">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-contact-fax" class="form-label">Fax Number</label>
+                                    <input type="tel" class="form-control" id="add-contact-fax" name="fax_number">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-contact-preferred-method" class="form-label">Preferred Contact Method</label>
+                                    <select class="form-select" id="add-contact-preferred-method" name="preferred_contact_method">
+                                        <option value="email">Email</option>
+                                        <option value="phone">Phone</option>
+                                        <option value="fax">Fax</option>
+                                        <option value="text">Text Message</option>
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-contact-secondary-method" class="form-label">Secondary Contact Method</label>
+                                    <select class="form-select" id="add-contact-secondary-method" name="secondary_contact_method">
+                                        <option value="">None</option>
+                                        <option value="email">Email</option>
+                                        <option value="phone">Phone</option>
+                                        <option value="fax">Fax</option>
+                                        <option value="text">Text Message</option>
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="add-contact-hours" class="form-label">Contact Hours</label>
+                                    <input type="text" class="form-control" id="add-contact-hours" name="contact_hours" placeholder="e.g., 8:00 AM - 5:00 PM">
+                                </div>
+                                <div class="mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="add-contact-emergency" name="emergency_contact" value="1">
+                                        <label class="form-check-label" for="add-contact-emergency">
+                                            Emergency Contact
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="add-contact-active" name="active" value="1" checked>
+                                        <label class="form-check-label" for="add-contact-active">
+                                            Active Contact
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="add-contact-address" class="form-label">Address</label>
+                            <textarea class="form-control" id="add-contact-address" name="address" rows="2"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="add-contact-notes" class="form-label">Notes</label>
+                            <textarea class="form-control" id="add-contact-notes" name="notes" rows="3"></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="saveContactButton">Save Contact</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Contact Modal -->
+    <div class="modal fade" id="editContactModal" tabindex="-1" aria-labelledby="editContactModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editContactModalLabel">Edit Jurisdiction Contact</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editContactForm">
+                        <input type="hidden" id="edit-contact-id" name="id">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="edit-contact-jurisdiction" class="form-label">Jurisdiction *</label>
+                                    <select class="form-select" id="edit-contact-jurisdiction" name="jurisdiction" required>
+                                        <option value="">Select Jurisdiction...</option>
+                                        <!-- Options will be populated dynamically -->
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="edit-contact-name" class="form-label">Contact Name</label>
+                                    <input type="text" class="form-control" id="edit-contact-name" name="contact_name">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="edit-contact-title" class="form-label">Title/Position</label>
+                                    <input type="text" class="form-control" id="edit-contact-title" name="contact_title">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="edit-contact-department" class="form-label">Department</label>
+                                    <input type="text" class="form-control" id="edit-contact-department" name="department">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="edit-contact-phone" class="form-label">Phone Number</label>
+                                    <input type="tel" class="form-control" id="edit-contact-phone" name="phone_number">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="edit-contact-mobile" class="form-label">Mobile Number</label>
+                                    <input type="tel" class="form-control" id="edit-contact-mobile" name="mobile_number">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="edit-contact-email" class="form-label">Email Address</label>
+                                    <input type="email" class="form-control" id="edit-contact-email" name="email_address">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="edit-contact-fax" class="form-label">Fax Number</label>
+                                    <input type="tel" class="form-control" id="edit-contact-fax" name="fax_number">
+                                </div>
+                                <div class="mb-3">
+                                    <label for="edit-contact-preferred-method" class="form-label">Preferred Contact Method</label>
+                                    <select class="form-select" id="edit-contact-preferred-method" name="preferred_contact_method">
+                                        <option value="email">Email</option>
+                                        <option value="phone">Phone</option>
+                                        <option value="fax">Fax</option>
+                                        <option value="text">Text Message</option>
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="edit-contact-secondary-method" class="form-label">Secondary Contact Method</label>
+                                    <select class="form-select" id="edit-contact-secondary-method" name="secondary_contact_method">
+                                        <option value="">None</option>
+                                        <option value="email">Email</option>
+                                        <option value="phone">Phone</option>
+                                        <option value="fax">Fax</option>
+                                        <option value="text">Text Message</option>
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="edit-contact-hours" class="form-label">Contact Hours</label>
+                                    <input type="text" class="form-control" id="edit-contact-hours" name="contact_hours" placeholder="e.g., 8:00 AM - 5:00 PM">
+                                </div>
+                                <div class="mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="edit-contact-emergency" name="emergency_contact" value="1">
+                                        <label class="form-check-label" for="edit-contact-emergency">
+                                            Emergency Contact
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="edit-contact-active" name="active" value="1">
+                                        <label class="form-check-label" for="edit-contact-active">
+                                            Active Contact
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit-contact-address" class="form-label">Address</label>
+                            <textarea class="form-control" id="edit-contact-address" name="address" rows="2"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="edit-contact-notes" class="form-label">Notes</label>
+                            <textarea class="form-control" id="edit-contact-notes" name="notes" rows="3"></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="saveContactChangesButton">Save Changes</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Import Vehicles Modal (was ScrapeModal) -->

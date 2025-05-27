@@ -4,13 +4,14 @@ API routes for enhanced features in iTow Impound Manager
 from datetime import datetime, timedelta
 from collections import defaultdict
 from flask import Blueprint, request, jsonify, send_file, current_app
-from database import get_db_connection, get_vehicles, get_pending_notifications # Added get_pending_notifications
+from database import get_db_connection, get_vehicles, get_pending_notifications, get_contacts, get_contact_by_id, add_contact_explicit, update_contact_explicit, delete_contact_explicit
 from utils import log_action, convert_frontend_status
 from scraper import TowBookScraper # Add this import
 import logging # Added import for logging
 from io import BytesIO, StringIO # Added BytesIO import for exporting files
 import os # Added import for os
 from threading import Thread  # Added for background scraping
+from genesee_jurisdictions import get_jurisdiction_list
 
 # Create blueprint
 api = Blueprint('api', __name__)
@@ -369,6 +370,92 @@ def pending_notifications_route():
     except Exception as e:
         logging.error(f"Error fetching pending notifications: {e}", exc_info=True)
         return jsonify({'error': f'Error fetching pending notifications: {str(e)}'}), 500
+
+# Contacts API routes
+@api.route('/api/contacts')
+def get_contacts_api():
+    """Get all jurisdiction contacts"""
+    try:
+        contacts = get_contacts()
+        return jsonify(contacts)
+    except Exception as e:
+        logging.error(f"Error fetching contacts: {e}", exc_info=True)
+        return jsonify({'error': f'Error fetching contacts: {str(e)}'}), 500
+
+@api.route('/api/contacts/<int:contact_id>')
+def get_contact_api(contact_id):
+    """Get a specific contact by ID"""
+    try:
+        contact = get_contact_by_id(contact_id)
+        if contact:
+            return jsonify(contact)
+        else:
+            return jsonify({'error': 'Contact not found'}), 404
+    except Exception as e:
+        logging.error(f"Error fetching contact {contact_id}: {e}", exc_info=True)
+        return jsonify({'error': f'Error fetching contact: {str(e)}'}), 500
+
+@api.route('/api/contacts', methods=['POST'])
+def add_contact_api():
+    """Add a new jurisdiction contact"""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        # Validate required fields
+        if not data.get('jurisdiction'):
+            return jsonify({'error': 'Jurisdiction is required'}), 400
+        
+        contact_id = add_contact_explicit(data)
+        return jsonify({'success': True, 'contact_id': contact_id, 'message': 'Contact added successfully'}), 201
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logging.error(f"Error adding contact: {e}", exc_info=True)
+        return jsonify({'error': f'Error adding contact: {str(e)}'}), 500
+
+@api.route('/api/contacts/<int:contact_id>', methods=['PUT'])
+def update_contact_api(contact_id):
+    """Update an existing jurisdiction contact"""
+    try:
+        data = request.json
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        success = update_contact_explicit(contact_id, data)
+        if success:
+            return jsonify({'success': True, 'message': 'Contact updated successfully'})
+        else:
+            return jsonify({'error': 'Failed to update contact'}), 500
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logging.error(f"Error updating contact {contact_id}: {e}", exc_info=True)
+        return jsonify({'error': f'Error updating contact: {str(e)}'}), 500
+
+@api.route('/api/contacts/<int:contact_id>', methods=['DELETE'])
+def delete_contact_api(contact_id):
+    """Delete a jurisdiction contact"""
+    try:
+        success = delete_contact_explicit(contact_id)
+        if success:
+            return jsonify({'success': True, 'message': 'Contact deleted successfully'})
+        else:
+            return jsonify({'error': 'Contact not found'}), 404
+    except Exception as e:
+        logging.error(f"Error deleting contact {contact_id}: {e}", exc_info=True)
+        return jsonify({'error': f'Error deleting contact: {str(e)}'}), 500
+
+@api.route('/api/jurisdictions')
+def get_jurisdictions_api():
+    """Get list of all Genesee County jurisdictions"""
+    try:
+        jurisdictions = get_jurisdiction_list()
+        return jsonify(jurisdictions)
+    except Exception as e:
+        logging.error(f"Error fetching jurisdictions: {e}", exc_info=True)
+        return jsonify({'error': f'Error fetching jurisdictions: {str(e)}'}), 500
 
 # Register blueprint with the app
 def register_api_routes(app):

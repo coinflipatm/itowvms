@@ -94,8 +94,13 @@ document.addEventListener('DOMContentLoaded', function() {
         setupTabHandlers();
         initializeTooltips(); // Ensure Bootstrap JS is loaded before this
         checkNotifications(); // Async, should not block
-        console.log("Initial call to loadTab('dashboard')"); // Logging
-        loadTab('dashboard'); // This is the main entry point for content loading
+        
+        // Load jurisdictions first
+        loadJurisdictions();
+        
+        // Load active vehicles by default (matching navbar default)
+        console.log("Initial call to loadTab('active')"); // Logging
+        loadTab('active'); // This is the main entry point for content loading
     } catch (e) {
         console.error("Error during initial setup in DOMContentLoaded:", e);
         hideLoading(); // Try to hide if it was somehow shown
@@ -115,6 +120,20 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Start periodic data refresh
     setInterval(refreshCurrentTab, 60000); // Refresh every minute
+    
+    // Initialize jurisdiction contacts system
+    loadJurisdictions();
+    
+    // Set up event listeners for contact modals
+    const saveContactButton = document.getElementById('saveContactButton');
+    if (saveContactButton) {
+        saveContactButton.addEventListener('click', saveContact);
+    }
+    
+    const saveContactChangesButton = document.getElementById('saveContactChangesButton');
+    if (saveContactChangesButton) {
+        saveContactChangesButton.addEventListener('click', saveContactChanges);
+    }
 });
 
 /**
@@ -728,6 +747,29 @@ function renderLogs() {
 }
 
 /**
+ * Convert tab name to proper status filter for API
+ */
+function convertTabNameToStatusFilter(tabName) {
+    // Convert frontend tab names to backend API filters
+    switch (tabName) {
+        case 'active':
+            return 'active';
+        case 'completed':
+            return 'completed';
+        case 'New':
+            return 'New';
+        case 'TOP_Generated':
+            return 'TOP Generated';
+        case 'Ready_for_Auction':
+            return 'Ready for Auction';
+        case 'Ready_for_Scrap':
+            return 'Ready for Scrap';
+        default:
+            return tabName; // Pass through any other status as-is
+    }
+}
+
+/**
  * Load vehicles data for the specified status tab
  */
 function loadVehicles(statusFilter = 'active', forceRefresh = false) {
@@ -963,7 +1005,7 @@ function renderActionButtons(vehicle) {
     viewButton.href = '#';
     viewButton.innerHTML = '<i class="fas fa-eye"></i>';
     viewButton.title = 'View Details';
-    viewButton.onclick = (e) => { e.preventDefault(); openVehicleDetailsModal(vehicle.towbook_call_number); };
+    viewButton.onclick = (e) => { e.preventDefault(); viewVehicleDetails(vehicle.towbook_call_number); };
     actionsDiv.appendChild(viewButton);
 
     // Edit Button
@@ -1159,6 +1201,51 @@ function viewVehicleDetails(callNumber) {
 }
 
 /**
+ * Helper function to render form generation history
+ * @param {object} vehicle - The vehicle object
+ * @returns {string} - HTML string for form history
+ */
+function renderFormHistory(vehicle) {
+    // This is a placeholder implementation
+    // In a real system, you would fetch form generation logs from the database
+    const formHistory = [
+        { name: 'TOP Form', generated: false, date: null },
+        { name: 'Release Notice', generated: false, date: null }
+    ];
+    
+    let historyHtml = '<div class="form-history mb-3">';
+    
+    formHistory.forEach(form => {
+        const status = form.generated ? 'Generated' : 'Not Generated';
+        const statusClass = form.generated ? 'text-success' : 'text-muted';
+        const dateText = form.date ? ` on ${new Date(form.date).toLocaleDateString()}` : '';
+        
+        historyHtml += `
+            <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                <span>${form.name}</span>
+                <span class="${statusClass}">${status}${dateText}</span>
+            </div>
+        `;
+    });
+    
+    historyHtml += '</div>';
+    
+    // Add action buttons for form generation
+    historyHtml += `
+        <div class="form-actions">
+            <button class="btn btn-sm btn-primary me-2" onclick="generateDocumentApiCall('${vehicle.towbook_call_number}', 'generate-top', 'TOP')">
+                <i class="fas fa-file-pdf"></i> Generate TOP
+            </button>
+            <button class="btn btn-sm btn-secondary" onclick="generateDocumentApiCall('${vehicle.towbook_call_number}', 'generate-release-notice', 'Release Notice')">
+                <i class="fas fa-file-alt"></i> Generate Release Notice
+            </button>
+        </div>
+    `;
+    
+    return historyHtml;
+}
+
+/**
  * Get CSS class for a vehicle status
  */
 function getStatusClass(status) {
@@ -1202,6 +1289,9 @@ function showAddVehicleModal() {
         const todayDate = new Date().toISOString().split('T')[0];
         document.getElementById('add-tow_date').value = todayDate;
     }
+
+    // Populate jurisdiction dropdowns
+    loadJurisdictions();
 
     // Setup save button event listener
     const saveButton = document.getElementById('saveNewVehicleButton');
@@ -1292,7 +1382,156 @@ async function saveNewVehicle() {
 }
 
 /**
- * Load notifications data
+ * Open edit vehicle modal with vehicle data
+ */
+function openEditVehicleModal(callNumber) {
+    // Find vehicle data
+    const vehicle = appState.vehiclesData.find(v => 
+        v.towbook_call_number === callNumber || v.call_number === callNumber
+    );
+    
+    if (!vehicle) {
+        console.error('Vehicle not found:', callNumber);
+        showToast('Vehicle not found', 'error');
+        return;
+    }
+    
+    const modal = document.getElementById('editVehicleModal');
+    if (!modal) {
+        console.error('Edit vehicle modal not found');
+        return;
+    }
+
+    // Populate form fields with vehicle data
+    const form = document.getElementById('editVehicleForm');
+    if (form) {
+        // Basic vehicle info
+        document.getElementById('edit-vehicle-id').value = vehicle.towbook_call_number;
+        document.getElementById('edit-vin').value = vehicle.vin || '';
+        document.getElementById('edit-year').value = vehicle.vehicle_year || '';
+        document.getElementById('edit-make').value = vehicle.make || '';
+        document.getElementById('edit-model').value = vehicle.model || '';
+        document.getElementById('edit-color').value = vehicle.color || '';
+        document.getElementById('edit-vehicle_type').value = vehicle.vehicle_type || '';
+        document.getElementById('edit-plate').value = vehicle.plate || '';
+        document.getElementById('edit-state').value = vehicle.state || '';
+        document.getElementById('edit-tow_date').value = vehicle.tow_date || '';
+        document.getElementById('edit-tow_time').value = vehicle.tow_time || '';
+        document.getElementById('edit-status').value = vehicle.status || '';
+        
+        // Location and request info
+        document.getElementById('edit-location').value = vehicle.location || '';
+        document.getElementById('edit-requestor').value = vehicle.requestor || '';
+        document.getElementById('edit-reason_for_tow').value = vehicle.reason_for_tow || '';
+        document.getElementById('edit-jurisdiction').value = vehicle.jurisdiction || '';
+        
+        // Officer and case info
+        document.getElementById('edit-officer_name').value = vehicle.officer_name || '';
+        document.getElementById('edit-case_number').value = vehicle.case_number || '';
+        document.getElementById('edit-complaint_number').value = vehicle.complaint_number || '';
+        
+        // Owner info
+        document.getElementById('edit-owner_name').value = vehicle.owner_name || '';
+        document.getElementById('edit-owner_address').value = vehicle.owner_address || '';
+        document.getElementById('edit-owner_phone').value = vehicle.owner_phone || '';
+        document.getElementById('edit-owner_email').value = vehicle.owner_email || '';
+        
+        // Lienholder info
+        document.getElementById('edit-lienholder_name').value = vehicle.lienholder_name || '';
+        document.getElementById('edit-lienholder_address').value = vehicle.lienholder_address || '';
+        
+        // Notes
+        document.getElementById('edit-notes').value = vehicle.notes || '';
+    }
+
+    // Populate jurisdiction dropdowns
+    loadJurisdictions();
+
+    // Setup save button event listener
+    const saveButton = document.getElementById('saveVehicleChangesButton');
+    if (saveButton) {
+        // Remove any existing event listeners
+        const newSaveButton = saveButton.cloneNode(true);
+        saveButton.parentNode.replaceChild(newSaveButton, saveButton);
+        newSaveButton.onclick = () => saveVehicleChanges(callNumber);
+    }
+
+    const bsModal = new bootstrap.Modal(modal);
+    bsModal.show();
+}
+
+/**
+ * Save changes to vehicle from edit modal
+ */
+async function saveVehicleChanges(callNumber) {
+    showLoading('Updating vehicle...');
+    
+    try {
+        const form = document.getElementById('editVehicleForm');
+        if (!form) {
+            throw new Error('Edit vehicle form not found');
+        }
+
+        // Collect form data
+        const formData = new FormData(form);
+        const vehicleData = {};
+        
+        // Convert FormData to regular object
+        for (let [key, value] of formData.entries()) {
+            if (key !== 'vehicle_id') { // Exclude the ID field from the update data
+                // Include all values, even empty ones for updates
+                vehicleData[key] = value.trim();
+            }
+        }
+
+        // Send the data to the API
+        const response = await authenticatedFetch(`/api/vehicles/${callNumber}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(vehicleData)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `Failed to update vehicle: ${response.status}`);
+        }
+
+        const result = await response.json();
+        
+        // Close the modal
+        const modal = bootstrap.Modal.getInstance(document.getElementById('editVehicleModal'));
+        if (modal) {
+            modal.hide();
+        }
+
+        // Show success message
+        showToast('Vehicle updated successfully!', 'success');
+
+        // Refresh the vehicle list
+        const currentTab = appState.currentTab || 'dashboard';
+        if (currentTab.includes('vehicles') || currentTab === 'dashboard') {
+            // Force refresh the current vehicles view
+            appState.vehiclesData = []; // Clear cache
+            if (currentTab === 'dashboard') {
+                loadTab('dashboard', true);
+            } else {
+                const statusFilter = currentTab.replace('vehicles-', '') || 'active';
+                loadVehicles(statusFilter, true);
+            }
+        }
+
+    } catch (error) {
+        console.error('Error updating vehicle:', error);
+        showToast('Error updating vehicle: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+/**
+ * Load notifications data and render dashboard view
  */
 function loadNotifications(forceRefresh = false) {
     console.log(`loadNotifications called, forceRefresh: ${forceRefresh}`);
@@ -1438,11 +1677,26 @@ function renderContacts(contacts) {
         contentHtml += '<div class="contacts-list">';
         contentHtml += contacts.map(contact => `
             <div class="contact-card" data-id="${contact.id}">
-                <h5>${contact.name} (${contact.jurisdiction_name})</h5>
-                <p><strong>Email:</strong> ${contact.email || 'N/A'}</p>
-                <p><strong>Phone:</strong> ${contact.phone || 'N/A'}</p>
-                <p><strong>Address:</strong> ${contact.address || 'N/A'}</p>
-                <p><strong>Notes:</strong> ${contact.notes || 'N/A'}</p>
+                <h5>${contact.contact_name || 'Unnamed Contact'} ${contact.contact_title ? `(${contact.contact_title})` : ''}</h5>
+                <h6 class="text-primary">${contact.jurisdiction}</h6>
+                ${contact.department ? `<p><strong>Department:</strong> ${contact.department}</p>` : ''}
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Email:</strong> ${contact.email_address || 'N/A'}</p>
+                        <p><strong>Phone:</strong> ${contact.phone_number || 'N/A'}</p>
+                        ${contact.mobile_number ? `<p><strong>Mobile:</strong> ${contact.mobile_number}</p>` : ''}
+                        ${contact.fax_number ? `<p><strong>Fax:</strong> ${contact.fax_number}</p>` : ''}
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Preferred Method:</strong> ${contact.preferred_contact_method ? contact.preferred_contact_method.charAt(0).toUpperCase() + contact.preferred_contact_method.slice(1) : 'Email'}</p>
+                        ${contact.secondary_contact_method ? `<p><strong>Secondary Method:</strong> ${contact.secondary_contact_method.charAt(0).toUpperCase() + contact.secondary_contact_method.slice(1)}</p>` : ''}
+                        ${contact.contact_hours ? `<p><strong>Hours:</strong> ${contact.contact_hours}</p>` : ''}
+                        ${contact.emergency_contact ? '<span class="badge bg-danger">Emergency Contact</span>' : ''}
+                        ${contact.active === 0 ? '<span class="badge bg-secondary">Inactive</span>' : ''}
+                    </div>
+                </div>
+                ${contact.address ? `<p><strong>Address:</strong> ${contact.address}</p>` : ''}
+                ${contact.notes ? `<p><strong>Notes:</strong> ${contact.notes}</p>` : ''}
                 <div class="action-links">
                     <a href="#" class="edit-contact" data-id="${contact.id}" title="Edit Contact"><i class="fas fa-edit"></i></a>
                     <a href="#" class="delete-contact" data-id="${contact.id}" title="Delete Contact"><i class="fas fa-trash"></i></a>
@@ -1488,751 +1742,315 @@ function deleteContact(contactId) {
 }
 
 /**
- * Load reports data
+ * Load jurisdictions for dropdowns
  */
-function loadReports() {
-    const dynamicContentArea = document.getElementById('dynamic-content-area');
-    dynamicContentArea.innerHTML = `
-        <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-            <h1 class="h2">Reports</h1>
-        </div>
-        <p>Report generation functionality is under development.</p>
-        <!-- Placeholder for report options and display area -->
-        <div id="report-options">
-            <!-- Report type selection, date ranges, etc. -->
-        </div>
-        <div id="report-display-area">
-            <!-- Charts and tables will be rendered here -->
-        </div>
-    `;
-    hideLoading(); // Called by loadTab
-}
-
-/**
- * Load statistics data
- */
-function loadStatistics() {
-    console.log("loadStatistics called");
-    showLoading('Loading statistics...');
-
-    fetch('/api/statistics')
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`Statistics API request failed: ${response.status} ${response.statusText}`);
-            }
-            return response.json().catch(jsonError => {
-                console.error('Failed to parse JSON for statistics:', jsonError);
-                return response.text().then(text => {
-                    console.error('Response text for failed statistics JSON:', text);
-                    throw new Error('Invalid JSON response from statistics API. See console for response text.');
-                });
-            });
-        })
-        .then(statsData => {
-            console.log("Statistics data fetched, calling renderStatisticsPage");
-            renderStatisticsPage(statsData); // Call the new function
-        })
-        .catch(error => {
-            console.error('Error in loadStatistics:', error);
-            const dynamicContentArea = document.getElementById('dynamic-content-area');
-            if (dynamicContentArea) {
-                dynamicContentArea.innerHTML = `
-                  <div class="alert alert-danger">
-                      Failed to load statistics: ${error.message}. Check console for details.
-                  </div>`;
-            }
-        })
-        .finally(() => {
-            console.log("loadStatistics finally block: calling hideLoading()");
-            hideLoading();
-        });
-}
-
-/**
- * Render the statistics page with various charts
- * @param {object} statisticsData - The data fetched from /api/statistics
- */
-function renderStatisticsPage(statisticsData) {
-    console.log('renderStatisticsPage called with data:', statisticsData);
-    const dynamicContentArea = document.getElementById('dynamic-content-area');
-    if (!dynamicContentArea) {
-        console.error('renderStatisticsPage: Dynamic content area not found!');
-        return;
-    }
-
-    let statsHtml = `
-        <div class="container-fluid pt-3">
-            <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-                <h1 class="h2">Impound Statistics</h1>
-            </div>
-
-            <div class="row">
-                <!-- Status Distribution Card -->
-                <div class="col-lg-6 col-md-12 mb-4">
-                    <div class="card h-100">
-                        <div class="card-header">Vehicle Status Distribution</div>
-                        <div class="card-body d-flex flex-column justify-content-center align-items-center">
-                            <canvas id="statusDistChartStatsPage" style="display: none;"></canvas>
-                            <p id="statusDistChartStatsPageMessage" class="text-center m-0"></p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Average Processing Time Card -->
-                <div class="col-lg-6 col-md-12 mb-4">
-                    <div class="card h-100">
-                        <div class="card-header">Average Processing Times (Days)</div>
-                        <div class="card-body d-flex flex-column justify-content-center align-items-center">
-                            <canvas id="avgProcTimeChartStatsPage" style="display: none;"></canvas>
-                            <p id="avgProcTimeChartStatsPageMessage" class="text-center m-0"></p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="row">
-                <!-- Jurisdiction Distribution Card -->
-                <div class="col-lg-6 col-md-12 mb-4">
-                    <div class="card h-100">
-                        <div class="card-header">Vehicle Distribution by Jurisdiction</div>
-                        <div class="card-body d-flex flex-column justify-content-center align-items-center">
-                            <canvas id="jurisdictionDistChartStatsPage" style="display: none;"></canvas>
-                            <p id="jurisdictionDistChartStatsPageMessage" class="text-center m-0"></p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Placeholder for another chart, e.g., Vehicles Over Time -->
-                <div class="col-lg-6 col-md-12 mb-4">
-                    <div class="card h-100">
-                        <div class="card-header">Vehicle Trends Over Time (Example)</div>
-                        <div class="card-body d-flex flex-column justify-content-center align-items-center">
-                            <!-- <canvas id="vehicleTrendsChartStatsPage"></canvas> -->
-                            <p id="vehicleTrendsChartStatsPageMessage" class="text-center m-0">Vehicle trend data is currently unavailable.</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-    dynamicContentArea.innerHTML = statsHtml;
-    console.log('renderStatisticsPage: Initial HTML structure rendered.');
-
-    // Render Status Distribution Chart
-    const statusCtx = document.getElementById('statusDistChartStatsPage');
-    const statusMsg = document.getElementById('statusDistChartStatsPageMessage');
-    try {
-        if (statisticsData && statisticsData.status_distribution && Object.keys(statisticsData.status_distribution).length > 0) {
-            if(statusCtx) statusCtx.style.display = 'block';
-            if(statusMsg) statusMsg.textContent = '';
-            new Chart(statusCtx, {
-                type: 'pie',
-                data: {
-                    labels: Object.keys(statisticsData.status_distribution),
-                    datasets: [{
-                        label: 'Status Distribution',
-                        data: Object.values(statisticsData.status_distribution),
-                        backgroundColor: ['#007bff', '#28a745', '#ffc107', '#dc3545', '#17a2b8', '#6c757d', '#6f42c1', '#20c997'],
-                    }]
-                },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }
-            });
-        } else {
-            if(statusCtx) statusCtx.style.display = 'none';
-            if(statusMsg) statusMsg.textContent = 'Status distribution data is currently unavailable.';
-        }
-    } catch (e) {
-        console.error('Error rendering status distribution chart on stats page:', e);
-        if(statusCtx) statusCtx.style.display = 'none';
-        if(statusMsg) statusMsg.textContent = 'Error displaying status distribution chart.';
-    }
-
-    // Render Average Processing Time Chart
-    const avgTimeCtx = document.getElementById('avgProcTimeChartStatsPage');
-    const avgTimeMsg = document.getElementById('avgProcTimeChartStatsPageMessage');
-    try {
-        if (statisticsData && statisticsData.average_processing_times && Object.keys(statisticsData.average_processing_times).length > 0) {
-            if(avgTimeCtx) avgTimeCtx.style.display = 'block';
-            if(avgTimeMsg) avgTimeMsg.textContent = '';
-            new Chart(avgTimeCtx, {
-                type: 'bar',
-                data: {
-                    labels: Object.keys(statisticsData.average_processing_times),
-                    datasets: [{
-                        label: 'Avg. Days',
-                        data: Object.values(statisticsData.average_processing_times).map(d => parseFloat(d) || 0),
-                        backgroundColor: '#17a2b8',
-                    }]
-                },
-                options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, title: { display: true, text: 'Days'} } }, plugins: { legend: { display: false } } }
-            });
-        } else {
-            if(avgTimeCtx) avgTimeCtx.style.display = 'none';
-            if(avgTimeMsg) avgTimeMsg.textContent = 'Average processing time data is currently unavailable.';
-        }
-    } catch (e) {
-        console.error('Error rendering average processing time chart on stats page:', e);
-        if(avgTimeCtx) avgTimeCtx.style.display = 'none';
-        if(avgTimeMsg) avgTimeMsg.textContent = 'Error displaying average processing time chart.';
-    }
-
-    // Render Jurisdiction Distribution Chart
-    const jurCtx = document.getElementById('jurisdictionDistChartStatsPage');
-    const jurMsg = document.getElementById('jurisdictionDistChartStatsPageMessage');
-    try {
-        if (statisticsData && statisticsData.jurisdiction_distribution && Object.keys(statisticsData.jurisdiction_distribution).length > 0) {
-            if(jurCtx) jurCtx.style.display = 'block';
-            if(jurMsg) jurMsg.textContent = '';
-            new Chart(jurCtx, {
-                type: 'doughnut',
-                data: {
-                    labels: Object.keys(statisticsData.jurisdiction_distribution),
-                    datasets: [{
-                        label: 'Jurisdiction',
-                        data: Object.values(statisticsData.jurisdiction_distribution),
-                        backgroundColor: ['#007bff', '#28a745', '#ffc107', '#dc3545', '#17a2b8', '#6f42c1', '#20c997', '#fd7e14'],
-                    }]
-                },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top' } } }
-            });
-        } else {
-            if(jurCtx) jurCtx.style.display = 'none';
-            if(jurMsg) jurMsg.textContent = 'Jurisdiction distribution data is currently unavailable.';
-        }
-    } catch (e) {
-        console.error('Error rendering jurisdiction distribution chart on stats page:', e);
-        if(jurCtx) jurCtx.style.display = 'none';
-        if(jurMsg) jurMsg.textContent = 'Error displaying jurisdiction distribution chart.';
-    }
-
-    // Placeholder for future charts, e.g., vehicles_over_time
-    // const trendsCtx = document.getElementById('vehicleTrendsChartStatsPage');
-    // const trendsMsg = document.getElementById('vehicleTrendsChartStatsPageMessage');
-    // if (statisticsData && statisticsData.vehicles_over_time) { ... }
-
-    console.log('renderStatisticsPage completed all rendering tasks.');
-}
-
-function loadCompliance() {
-    const dynamicContentArea = document.getElementById('dynamic-content-area');
-    dynamicContentArea.innerHTML = `
-        <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-            <h1 class="h2">Compliance Check</h1>
-        </div>
-        <p>Compliance check functionality is under development.</p>
-        <!-- Placeholder for compliance tools and reports -->
-    `;
-    hideLoading(); // Called by loadTab
-}
-
-function loadProfile() {
-    const dynamicContentArea = document.getElementById('dynamic-content-area');
-    // Fetch user profile data if needed, or use appState.currentUser
-    const user = appState.currentUser || { username: 'Guest', email: 'N/A', role: 'N/A' }; 
-    dynamicContentArea.innerHTML = `
-        <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-            <h1 class="h2">User Profile</h1>
-        </div>
-        <p><strong>Username:</strong> ${user.username}</p>
-        <p><strong>Email:</strong> ${user.email}</p>
-        <p><strong>Role:</strong> ${user.role}</p>
-        <!-- Add more profile details and edit options here -->
-    `;
-    hideLoading();
-}
-
-function loadLogs() {
-    showLoading('Loading system logs...');
-    fetch('/api/logs') // Assuming an endpoint for logs
+function loadJurisdictions() {
+    return fetch('/api/jurisdictions')
         .then(response => {
             if (!response.ok) throw new Error(`API error: ${response.status}`);
             return response.json();
         })
-        .then(data => {
-            renderLogs(data);
+        .then(jurisdictions => {
+            populateJurisdictionDropdowns(jurisdictions);
+            return jurisdictions;
         })
         .catch(error => {
-            console.error('Error loading logs:', error);
-            document.getElementById('dynamic-content-area').innerHTML = 
-                `<div class="alert alert-danger">Failed to load system logs: ${error.message}</div>`;
-        })
-        .finally(() => hideLoading());
+            console.error('Error loading jurisdictions:', error);
+            return [];
+        });
 }
 
-function renderLogs(logs) {
-    const dynamicContentArea = document.getElementById('dynamic-content-area');
-    let contentHtml = `
-        <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-            <h1 class="h2">System Logs</h1>
-            <!-- Add filtering options here if needed -->
-        </div>`;
+/**
+ * Populate jurisdiction dropdowns
+ */
+function populateJurisdictionDropdowns(jurisdictions) {
+    // Safety check to prevent errors
+    if (!jurisdictions || !Array.isArray(jurisdictions)) {
+        console.warn('populateJurisdictionDropdowns called with invalid jurisdictions:', jurisdictions);
+        return;
+    }
     
-    if (logs.length === 0) {
-        contentHtml += '<p>No logs found.</p>';
-    } else {
-        contentHtml += `
-            <table class="table table-sm table-striped">
-                <thead>
-                    <tr>
-                        <th>Timestamp</th>
-                        <th>Level</th>
-                        <th>Message</th>
-                        <th>User</th>
-                        <th>Details</th>
-                    </tr>
-                </thead>
-                <tbody>
-        `;
-        contentHtml += logs.map(log => `
-            <tr>
-                <td>${new Date(log.timestamp).toLocaleString()}</td>
-                <td><span class="badge bg-${log.level === 'ERROR' ? 'danger' : log.level === 'WARNING' ? 'warning' : 'info'}">${log.level}</span></td>
-                <td>${log.message}</td>
-                <td>${log.user_id || 'System'}</td>
-                <td>${log.details ? `<pre style="max-height: 100px; overflow: auto;">${JSON.stringify(log.details, null, 2)}</pre>` : 'N/A'}</td>
-            </tr>
-        `).join('');
-        contentHtml += '</tbody></table>';
-    }
-    dynamicContentArea.innerHTML = contentHtml;
+    const dropdowns = [
+        'add-jurisdiction', 'edit-jurisdiction', 
+        'add-contact-jurisdiction', 'edit-contact-jurisdiction'
+    ];
+    
+    dropdowns.forEach(dropdownId => {
+        const dropdown = document.getElementById(dropdownId);
+        if (dropdown) {
+            // Clear existing options except the first one
+            const firstOption = dropdown.firstElementChild;
+            dropdown.innerHTML = '';
+            if (firstOption) dropdown.appendChild(firstOption);
+            
+            // Add jurisdiction options
+            jurisdictions.forEach(jurisdiction => {
+                const option = document.createElement('option');
+                option.value = jurisdiction;
+                option.textContent = jurisdiction;
+                dropdown.appendChild(option);
+            });
+        }
+    });
 }
 
 /**
- * Opens the modal to view vehicle details.
- * @param {string} callNumber - The towbook_call_number of the vehicle.
+ * Open edit contact modal
  */
-async function openVehicleDetailsModal(callNumber) {
-    showLoading('Loading vehicle details...');
-    try {
-        const response = await fetch(`/api/vehicles/${callNumber}`, { credentials: 'include' });
-        if (!response.ok) {
-            throw new Error(`Failed to fetch vehicle details: ${response.status}`);
-               }
-        const vehicle = await response.json();
-
-        const modalElement = document.getElementById('vehicleDetailsModal');
-        if (!modalElement) {
-            console.error('Vehicle details modal element not found.');
-            hideLoading();
-            return;
-        }
-
-        // Populate modal content (example, adjust to your modal's structure)
-        modalElement.querySelector('.modal-title').textContent = `Vehicle Details: ${vehicle.make || 'N/A'} ${vehicle.model || 'N/A'} (${vehicle.vin || 'N/A'})`;
-        
-        // Format vehicle info
-        const vehicleInfo = `${vehicle.make || ''} ${vehicle.model || ''} ${vehicle.vehicle_year || ''}`.trim();
-        const towDate = vehicle.tow_date ? new Date(vehicle.tow_date).toLocaleDateString() : 'N/A';
-        
-        const modalBody = modalElement.querySelector('.modal-body');
-        modalBody.innerHTML = `
-            <div class="row">
-                <div class="col-md-6">
-                    <h5>${vehicleInfo}</h5>
-                    <p><strong>License:</strong> ${vehicle.plate || 'N/A'} (${vehicle.state || 'N/A'})</p>
-                    <p><strong>VIN:</strong> ${vehicle.vin || 'N/A'}</p>
-                    <p><strong>Color:</strong> ${vehicle.color || 'N/A'}</p>
-                    <p><strong>Status:</strong> <span class="status-label ${getStatusClass(vehicle.status)}">${vehicle.status}</span></p>
-                    <p><strong>Tow Date:</strong> ${towDate}</p>
-                    <p><strong>Jurisdiction:</strong> ${vehicle.jurisdiction || 'N/A'}</p>
-                    <p><strong>Location From:</strong> ${vehicle.location || 'N/A'}</p>
-                    <p><strong>Requested By:</strong> ${vehicle.requestor || 'N/A'}</p>
-                    <p><strong>Officer Name:</strong> ${vehicle.officer_name || 'N/A'}</p>
-                    <p><strong>Case Number:</strong> ${vehicle.case_number || 'N/A'}</p>
-                </div>
-                <div class="col-md-6">
-                    <h5>Owner Information</h5>
-                    <p><strong>Name:</strong> ${vehicle.owner_name || 'N/A'}</p>
-                    <p><strong>Address:</strong> ${vehicle.owner_address || 'N/A'}</p>
-                    <p><strong>Phone:</strong> ${vehicle.owner_phone || 'N/A'}</p>
-                    <p><strong>Email:</strong> ${vehicle.owner_email || 'N/A'}</p>
-                    <hr>
-                    <h5>Lienholder Information</h5>
-                    <p><strong>Name:</strong> ${vehicle.lienholder_name || 'N/A'}</p>
-                    <p><strong>Address:</strong> ${vehicle.lienholder_address || 'N/A'}</p>
-                </div>
-            </div>
-            <hr>
-            <div class="row">
-                <div class="col-12">
-                    <h5>Form Generation History & Actions</h5>
-                    ${renderFormHistory(vehicle)}
-                </div>
-            </div>
-            <hr>
-            <div class="row">
-                <div class="col-12">
-                    <h5>Notes</h5>
-                    <p>${vehicle.notes || 'No notes available'}</p>
-                </div>
-            </div>
-        `;
-        // Store the original status in a data attribute for comparison later
-        const statusSelect = modal.querySelector('#details-status');
-        if (statusSelect) {
-            statusSelect.setAttribute('data-original-status', vehicle.status);
-        }
-
-        // Show the modal
-        const bsModal = new bootstrap.Modal(modal);
-        bsModal.show();
-
-    } catch (error) {
-        console.error('Error opening vehicle details modal:', error);
-        showToast('Error loading vehicle details. ' + error.message, 'error');
-    } finally {
-        hideLoading();
-    }
+function openEditContactModal(contactId) {
+    fetch(`/api/contacts/${contactId}`)
+        .then(response => {
+            if (!response.ok) throw new Error('Failed to fetch contact');
+            return response.json();
+        })
+        .then(contact => {
+            // Populate form fields
+            document.getElementById('edit-contact-id').value = contact.id;
+            document.getElementById('edit-contact-jurisdiction').value = contact.jurisdiction || '';
+            document.getElementById('edit-contact-name').value = contact.contact_name || '';
+            document.getElementById('edit-contact-title').value = contact.contact_title || '';
+            document.getElementById('edit-contact-department').value = contact.department || '';
+            document.getElementById('edit-contact-phone').value = contact.phone_number || '';
+            document.getElementById('edit-contact-mobile').value = contact.mobile_number || '';
+            document.getElementById('edit-contact-email').value = contact.email_address || '';
+            document.getElementById('edit-contact-fax').value = contact.fax_number || '';
+            document.getElementById('edit-contact-preferred-method').value = contact.preferred_contact_method || 'email';
+            document.getElementById('edit-contact-secondary-method').value = contact.secondary_contact_method || '';
+            document.getElementById('edit-contact-hours').value = contact.contact_hours || '';
+            document.getElementById('edit-contact-address').value = contact.address || '';
+            document.getElementById('edit-contact-notes').value = contact.notes || '';
+            document.getElementById('edit-contact-emergency').checked = contact.emergency_contact === 1;
+            document.getElementById('edit-contact-active').checked = contact.active !== 0;
+            
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('editContactModal'));
+            modal.show();
+        })
+        .catch(error => {
+            console.error('Error loading contact:', error);
+            showToast('Error loading contact details', 'error');
+        });
 }
 
 /**
- * Opens the modal to edit vehicle details.
- * @param {string} callNumber - The towbook_call_number of the vehicle.
+ * Save new contact
  */
-async function openEditVehicleModal(callNumber) {
-    showLoading('Loading vehicle data for editing...');
-    try {
-        const response = await fetch(`/api/vehicles/${callNumber}`, { credentials: 'include' });
-        if (!response.ok) {
-            throw new Error(`Failed to fetch vehicle data: ${response.status}`);
+function saveContact() {
+    const form = document.getElementById('addContactForm');
+    const formData = new FormData(form);
+    const contactData = {};
+    
+    for (let [key, value] of formData.entries()) {
+        if (key === 'emergency_contact' || key === 'active') {
+            contactData[key] = value === '1' ? 1 : 0;
+        } else {
+            contactData[key] = value;
         }
-        const vehicle = await response.json();
-
-        const modalElement = document.getElementById('editVehicleModal');
-        if (!modalElement) {
-            console.error('Edit vehicle modal element not found.');
-            hideLoading();
-            return;
-        }
-
-        // Populate modal form (example, adjust to your modal's form fields)
-        // This assumes your edit modal has form inputs with IDs like 'edit-vin', 'edit-make', etc.
-        modalElement.querySelector('.modal-title').textContent = `Edit Vehicle: ${vehicle.make || 'N/A'} ${vehicle.model || 'N/A'}`;
-        document.getElementById('edit-vehicle-id').value = vehicle.towbook_call_number; // Hidden field for call number
-        document.getElementById('edit-vin').value = vehicle.vin || '';
-        document.getElementById('edit-year').value = vehicle.year || '';
-        document.getElementById('edit-make').value = vehicle.make || '';
-        document.getElementById('edit-model').value = vehicle.model || '';
-        document.getElementById('edit-color').value = vehicle.color || '';
-        // Populate vehicle type dropdown
-        document.getElementById('edit-vehicle_type').value = vehicle.vehicle_type || '4-door';
-        document.getElementById('edit-plate').value = vehicle.plate || '';
-        document.getElementById('edit-state').value = vehicle.state || '';
-        document.getElementById('edit-tow_date').value = formatDateForInput(vehicle.tow_date);
-        document.getElementById('edit-tow_time').value = vehicle.tow_time || '';
-        document.getElementById('edit-status').value = vehicle.status || '';
-        document.getElementById('edit-location').value = vehicle.location || '';
-        document.getElementById('edit-requestor').value = vehicle.requestor || '';
-        document.getElementById('edit-reason_for_tow').value = vehicle.reason_for_tow || '';
-        document.getElementById('edit-complaint_number').value = vehicle.complaint_number || '';
-        document.getElementById('edit-jurisdiction').value = vehicle.jurisdiction || '';
-        document.getElementById('edit-officer_name').value = vehicle.officer_name || '';
-        document.getElementById('edit-case_number').value = vehicle.case_number || '';
-        
-        document.getElementById('edit-owner_name').value = vehicle.owner_name || '';
-        document.getElementById('edit-owner_address').value = vehicle.owner_address || '';
-        document.getElementById('edit-owner_phone').value = vehicle.owner_phone || '';
-        document.getElementById('edit-owner_email').value = vehicle.owner_email || '';
-
-        document.getElementById('edit-lienholder_name').value = vehicle.lienholder_name || '';
-        document.getElementById('edit-lienholder_address').value = vehicle.lienholder_address || '';
-        
-        document.getElementById('edit-notes').value = vehicle.notes || '';
-
-        // Setup save button
-        const saveButton = document.getElementById('saveVehicleChangesButton');
-        // Clone and replace to remove old event listeners
-        const newSaveButton = saveButton.cloneNode(true);
-        saveButton.parentNode.replaceChild(newSaveButton, saveButton);
-        newSaveButton.onclick = () => saveVehicleChanges(callNumber);
-
-        const bsModal = new bootstrap.Modal(modalElement);
-        bsModal.show();
-
-    } catch (error) {
-        console.error('Error opening edit vehicle modal:', error);
-        showToast('Error loading vehicle data for editing. ' + error.message, 'error');
-    } finally {
-        hideLoading();
     }
+    
+    // Set default values
+    if (!contactData.emergency_contact) contactData.emergency_contact = 0;
+    if (!contactData.active) contactData.active = 1;
+    if (!contactData.preferred_contact_method) contactData.preferred_contact_method = 'email';
+    
+    fetch('/api/contacts', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(contactData)
+    })
+    .then(response => {
+        if (!response.ok) throw new Error('Failed to save contact');
+        return response.json();
+    })
+    .then(data => {
+        showToast(data.message || 'Contact added successfully', 'success');
+        bootstrap.Modal.getInstance(document.getElementById('addContactModal')).hide();
+        form.reset();
+        loadContacts(true); // Refresh contacts list
+    })
+    .catch(error => {
+        console.error('Error saving contact:', error);
+        showToast(error.message || 'Error saving contact', 'error');
+    });
 }
 
 /**
- * Saves changes made to a vehicle in the edit modal.
- * @param {string} callNumber - The towbook_call_number of the vehicle being edited.
+ * Save contact changes
  */
-async function saveVehicleChanges(callNumber) {
-    showLoading('Saving vehicle changes...');
-    const editForm = document.getElementById('editVehicleForm'); // Assuming your form has this ID
-    if (!editForm) {
-        console.error('Edit vehicle form not found.');
-        hideLoading();
-        showToast('Error: Edit form not found.', 'error');
+function saveContactChanges() {
+    const form = document.getElementById('editContactForm');
+    const formData = new FormData(form);
+    const contactData = {};
+    const contactId = document.getElementById('edit-contact-id').value;
+    
+    for (let [key, value] of formData.entries()) {
+        if (key === 'emergency_contact' || key === 'active') {
+            contactData[key] = value === '1' ? 1 : 0;
+        } else if (key !== 'id') {
+            contactData[key] = value;
+        }
+    }
+    
+    // Handle unchecked checkboxes
+    if (!formData.has('emergency_contact')) contactData.emergency_contact = 0;
+    if (!formData.has('active')) contactData.active = 0;
+    
+    fetch(`/api/contacts/${contactId}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(contactData)
+    })
+    .then(response => {
+        if (!response.ok) throw new Error('Failed to update contact');
+        return response.json();
+    })
+    .then(data => {
+        showToast(data.message || 'Contact updated successfully', 'success');
+        bootstrap.Modal.getInstance(document.getElementById('editContactModal')).hide();
+        loadContacts(true); // Refresh contacts list
+    })
+    .catch(error => {
+        console.error('Error updating contact:', error);
+        showToast(error.message || 'Error updating contact', 'error');
+    });
+}
+
+/**
+ * Generate document via API call
+ * @param {string} callNumber - The vehicle call number
+ * @param {string} endpoint - The API endpoint (e.g., 'generate-top', 'generate-release-notice')
+ * @param {string} documentType - The type of document being generated for display
+ */
+function generateDocumentApiCall(callNumber, endpoint, documentType) {
+    if (!callNumber || !endpoint) {
+        console.error('Missing required parameters for generateDocumentApiCall');
+        showToast('Missing required parameters for document generation', 'error');
         return;
     }
 
-    const formData = new FormData(editForm);
-    const data = {};
-    formData.forEach((value, key) => data[key] = value);
+    // Show loading indicator
+    showLoading(`Generating ${documentType}...`);
 
-    // Remove the hidden vehicle_id from the data payload if it was included by FormData
-    // The callNumber parameter is used for the URL
-    if (data.hasOwnProperty('vehicle_id')) {
-        delete data.vehicle_id;
-    }
+    // Construct the API URL
+    const apiUrl = `/api/${endpoint}/${callNumber}`;
 
-    try {
-        const response = await authenticatedFetch(`/api/vehicle/edit/${callNumber}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(data),
-        });
-
-        // Get response text first, then try to parse as JSON
-        const responseText = await response.text();
-        let result;
-        try {
-            result = JSON.parse(responseText);
-        } catch (jsonError) {
-            // If response is not JSON, log the actual response for debugging
-            console.error('Non-JSON response received:', responseText);
-            throw new Error(`Server returned non-JSON response. Response was: ${responseText.substring(0, 200)}...`);
+    // Make the API call
+    fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
         }
-
+    })
+    .then(response => {
         if (!response.ok) {
-            throw new Error(result.error || `Failed to save changes: ${response.status}`);
+            return response.json().then(errorData => {
+                throw new Error(errorData.error || `HTTP ${response.status}: Failed to generate ${documentType}`);
+            });
         }
-
-        showToast(result.message || 'Vehicle updated successfully!', 'success');
-        const editModalElement = document.getElementById('editVehicleModal');
-        const bsModal = bootstrap.Modal.getInstance(editModalElement);
-        if (bsModal) {
-            bsModal.hide();
-        }
-        loadTab(appState.currentTab, true); // Refresh current tab to show changes
-
-    } catch (error) {
-        console.error('Error saving vehicle changes:', error);
-        
-        // The global authentication handler will deal with auth errors,
-        // so we only need to handle other types of errors here
-        if (!error.message.includes('Authentication required') && !error.message.includes('401')) {
-            showToast('Error saving changes: ' + error.message, 'error');
-        }
-    } finally {
+        return response.json();
+    })
+    .then(data => {
         hideLoading();
+        
+        if (data.pdf_filename) {
+            showToast(`${documentType} generated successfully: ${data.pdf_filename}`, 'success');
+            
+            // Open the generated PDF in a new tab
+            if (data.pdf_url) {
+                window.open(data.pdf_url, '_blank');
+            }
+            
+            // Refresh the vehicle list to show updated status
+            const currentTab = appState.currentTab || 'dashboard';
+            if (currentTab.includes('vehicles') || currentTab === 'dashboard') {
+                // Force refresh the current vehicles view
+                appState.vehiclesData = []; // Clear cache
+                if (currentTab === 'dashboard') {
+                    loadTab('dashboard', true);
+                } else {
+                    const statusFilter = currentTab.replace('vehicles-', '') || 'active';
+                    loadVehicles(statusFilter, true);
+                }
+            }
+        } else {
+            throw new Error(data.message || 'Unknown error occurred during document generation');
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        console.error(`Error generating ${documentType}:`, error);
+        showToast(`Error generating ${documentType}: ${error.message}`, 'error');
+    });
+}
+
+/**
+ * Format date for display
+ * @param {string} dateStr - The date string to format
+ * @returns {string} - Formatted date string
+ */
+function formatDateForDisplay(dateStr) {
+    if (!dateStr || dateStr === 'N/A' || dateStr === '') return 'N/A';
+    
+    try {
+        // Handle YYYY-MM-DD format specifically to avoid timezone issues
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            const [year, month, day] = dateStr.split('-');
+            const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+            return date.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
+        }
+        
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return 'N/A';
+        
+        return date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+        });
+    } catch (error) {
+        console.warn('Date formatting error:', error, 'for date:', dateStr);
+        return 'N/A';
     }
 }
 
 /**
- * Delete a vehicle from the system with confirmation
- * @param {string} callNumber - The towbook_call_number of the vehicle to delete
+ * Delete a vehicle
  */
-function deleteVehicle(callNumber) {
+async function deleteVehicle(callNumber) {
+    // Confirm deletion
     if (!confirm(`Are you sure you want to delete vehicle ${callNumber}? This action cannot be undone.`)) {
         return;
     }
     
     showLoading('Deleting vehicle...');
     
-    fetch(`/api/vehicles/${callNumber}`, { 
-        method: 'DELETE',
-        credentials: 'include'
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`Failed to delete vehicle: ${response.status} ${response.statusText}`);
-        }
-        return response.json();
-    })
-    .then(data => {
-        showToast(data.message || 'Vehicle deleted successfully', 'success');
-        loadTab(appState.currentTab, true); // Refresh current tab to remove deleted vehicle
-    })
-    .catch(error => {
-        console.error('Error deleting vehicle:', error);
-        if (!error.message.includes('Authentication required') && !error.message.includes('401')) {
-            showToast('Error deleting vehicle: ' + error.message, 'error');
-        }
-    })
-    .finally(() => {
-        hideLoading();
-    });
-}
-
-/**
- * Calls the API to generate a document (TOP or Release Notice) for a vehicle.
- * @param {string} callNumber - The towbook_call_number of the vehicle.
- * @param {string} formTypeEndpoint - The API endpoint suffix (e.g., 'generate-top').
- * @param {string} formName - The user-friendly name of the form (e.g., 'TOP').
- */
-async function generateDocumentApiCall(callNumber, formTypeEndpoint, formName) {
-    showLoading(`Generating ${formName} form...`);
     try {
-        const response = await fetch(`/api/${formTypeEndpoint}/${callNumber}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                // Add any other necessary headers, like CSRF token if used
-            },
-        });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-            throw new Error(result.error || `Failed to generate ${formName}: ${response.status}`);
-        }
-
-        showToast(`${formName} generated successfully: ${result.pdf_filename || 'No filename returned'}`, 'success');
-        
-        // Open the PDF in a new tab: use pdf_url if provided, else construct URL from pdf_filename
-        if (result.pdf_url) {
-            window.open(result.pdf_url, '_blank');
-        } else if (result.pdf_filename) {
-            const pdfUrl = `/static/generated_pdfs/${result.pdf_filename}`;
-            window.open(pdfUrl, '_blank');
-        }
-
-        loadTab(appState.currentTab, true); // Refresh to reflect potential status changes
-
-    } catch (error) {
-        console.error(`Error generating ${formName} for ${callNumber}:`, error);
-        showToast(`Error generating ${formName}: ${error.message}`, 'error');
-    } finally {
-        hideLoading();
-    }
-}
-
-// Date formatting utilities
-/**
- * Format a date for display in the table (MM/DD/YYYY format)
- * @param {string} dateStr - Date string in various formats
- * @returns {string} - Formatted date string or 'N/A'
- */
-function formatDateForDisplay(dateStr) {
-    if (!dateStr || dateStr === 'N/A' || dateStr === '') {
-        return 'N/A';
-    }
-    
-    try {
-        // Handle YYYY-MM-DD format specifically to avoid timezone issues
-        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-            const [year, month, day] = dateStr.split('-');
-            // Create date object using local timezone by specifying components
-            const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-            
-            // Check if date is valid
-            if (isNaN(date.getTime())) {
-                return dateStr; // Return original if can't parse
-            }
-            
-            // Format as MM/DD/YYYY for display
-            return date.toLocaleDateString('en-US', {
-                month: '2-digit',
-                day: '2-digit',
-                year: 'numeric'
-            });
-        }
-        
-        // For other date formats, use the original parsing method
-        const date = new Date(dateStr);
-        
-        // Check if date is valid
-        if (isNaN(date.getTime())) {
-            return dateStr; // Return original if can't parse
-        }
-        
-        // Format as MM/DD/YYYY for display
-        return date.toLocaleDateString('en-US', {
-            month: '2-digit',
-            day: '2-digit',
-            year: 'numeric'
-        });
-    } catch (error) {
-        console.warn('Date formatting error:', error, 'for date:', dateStr);
-        return dateStr; // Return original string if error
-    }
-}
-
-/**
- * Format a date for HTML date input (YYYY-MM-DD format)
- * @param {string} dateStr - Date string in various formats
- * @returns {string} - Date in YYYY-MM-DD format or empty string
- */
-function formatDateForInput(dateStr) {
-    if (!dateStr || dateStr === 'N/A' || dateStr === '') {
-        return '';
-    }
-    
-    try {
-        // Handle YYYY-MM-DD format (already correct)
-        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-            return dateStr;
-        }
-        
-        // Parse other formats and convert to YYYY-MM-DD
-        const date = new Date(dateStr);
-        
-        // Check if date is valid
-        if (isNaN(date.getTime())) {
-            return ''; // Return empty if can't parse
-        }
-        
-        // Format as YYYY-MM-DD for input
-        return date.toISOString().split('T')[0];
-    } catch (error) {
-        console.warn('Date input formatting error:', error, 'for date:', dateStr);
-        return ''; // Return empty string if error
-    }
-}
-
-/**
- * Update vehicle status from the details modal
- */
-async function updateVehicleStatus(callNumber) {
-    const statusSelect = document.getElementById('details-status');
-    if (!statusSelect) {
-        showToast('Status dropdown not found', 'error');
-        return;
-    }
-
-    const newStatus = statusSelect.value;
-    const originalStatus = statusSelect.getAttribute('data-original-status') || statusSelect.options[statusSelect.selectedIndex].defaultSelected;
-
-    if (!newStatus) {
-        showToast('Please select a valid status', 'error');
-        return;
-    }
-
-    try {
-        showLoading('Updating vehicle status...');
-
         const response = await authenticatedFetch(`/api/vehicles/${callNumber}`, {
-            method: 'PUT',
+            method: 'DELETE',
             headers: {
                 'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                status: newStatus
-            })
+            }
         });
 
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(errorData.error || `Failed to update status: ${response.status}`);
+            throw new Error(errorData.error || `Failed to delete vehicle: ${response.status}`);
         }
 
-        showToast('Vehicle status updated successfully!', 'success');
+        const result = await response.json();
+        
+        // Show success message
+        showToast('Vehicle deleted successfully!', 'success');
 
-        // Close the modal
-        const modal = bootstrap.Modal.getInstance(document.getElementById('vehicleDetailsModal'));
-        if (modal) {
-            modal.hide();
-        }
-
-        // Refresh the current view
+        // Refresh the vehicle list
         const currentTab = appState.currentTab || 'dashboard';
         if (currentTab.includes('vehicles') || currentTab === 'dashboard') {
             // Force refresh the current vehicles view
@@ -2246,100 +2064,9 @@ async function updateVehicleStatus(callNumber) {
         }
 
     } catch (error) {
-        console.error('Error updating vehicle status:', error);
-        showToast('Error updating vehicle status: ' + error.message, 'error');
+        console.error('Error deleting vehicle:', error);
+        showToast('Error deleting vehicle: ' + error.message, 'error');
     } finally {
         hideLoading();
-    }
-}
-
-/**
- * Convert frontend tab names to API status filter names
- */
-function convertTabNameToStatusFilter(tabName) {
-    // Convert underscored tab names to space-separated status names
-    const conversions = {
-        'TOP_Generated': 'TOP Generated',
-        'Ready_for_Auction': 'Ready for Auction',
-        'Ready_for_Scrap': 'Ready for Scrap'
-    };
-    
-    return conversions[tabName] || tabName;
-}
-
-/**
- * Render form generation history and regeneration options for a vehicle
- * @param {object} vehicle - The vehicle object
- * @returns {string} - HTML string for form history section
- */
-function renderFormHistory(vehicle) {
-    const forms = [
-        {
-            name: 'TOP',
-            endpoint: 'generate-top',
-            generatedAt: vehicle.top_form_generated_at,
-            generatedBy: vehicle.top_form_generated_by,
-            condition: true, // TOP can always be generated/regenerated
-            badgeClass: 'bg-primary'
-        }
-    ];
-
-    let historyHtml = '<div class="form-history-container">';
-    
-    forms.forEach(form => {
-        const isGenerated = form.generatedAt && form.generatedAt !== 'N/A';
-        const canGenerate = form.condition;
-        
-        historyHtml += `
-            <div class="card mb-2">
-                <div class="card-body py-2">
-                    <div class="row align-items-center">
-                        <div class="col-md-3">
-                            <span class="badge ${form.badgeClass} me-2">${form.name}</span>
-                        </div>
-                        <div class="col-md-5">
-                            ${isGenerated ? 
-                                `<small class="text-muted">
-                                    Generated: ${formatDateTimeForDisplay(form.generatedAt)}<br>
-                                    By: ${form.generatedBy || 'Unknown'}
-                                </small>` : 
-                                '<small class="text-muted">Not generated yet</small>'
-                            }
-                        </div>
-                        <div class="col-md-4 text-end">
-                            ${canGenerate ? 
-                                `<button class="btn btn-sm ${isGenerated ? 'btn-outline-secondary' : 'btn-primary'} me-1" 
-                                    onclick="generateDocumentApiCall('${vehicle.towbook_call_number}', '${form.endpoint}', '${form.name}')">
-                                    <i class="fas ${isGenerated ? 'fa-redo' : 'fa-plus'}"></i> 
-                                    ${isGenerated ? 'Regenerate' : 'Generate'}
-                                </button>` : 
-                                `<button class="btn btn-sm btn-secondary" disabled>
-                                    <i class="fas fa-lock"></i> Not Available
-                                </button>`
-                            }
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-    });
-    
-    historyHtml += '</div>';
-    return historyHtml;
-}
-
-/**
- * Format date and time for display in form history
- * @param {string} dateTimeStr - DateTime string
- * @returns {string} - Formatted date time string
- */
-function formatDateTimeForDisplay(dateTimeStr) {
-    if (!dateTimeStr || dateTimeStr === 'N/A') return 'N/A';
-    
-    try {
-        const date = new Date(dateTimeStr);
-        return date.toLocaleString();
-    } catch (error) {
-        return dateTimeStr;
     }
 }

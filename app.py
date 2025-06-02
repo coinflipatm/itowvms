@@ -1,74 +1,68 @@
-import os # Added: for path operations and environment variables
-import base64 # Added: for placeholder logo
-import logging # Added: for logging
-from flask import Flask, render_template, send_file, request, jsonify, redirect, url_for
+import os
+import base64
+import logging
+import secrets
+from flask import Flask, render_template, send_file, request, jsonify, redirect, url_for, send_from_directory, g
 from database import (init_db, get_vehicles_by_status, update_vehicle_status,
                       update_vehicle, update_vehicle_by_call_number, insert_vehicle, get_db_connection, check_and_update_statuses, 
-                       get_pending_notifications,
+                      get_pending_notifications,
                       mark_notification_sent, get_contact_by_jurisdiction, save_contact, get_contacts,
                       get_vehicles, safe_parse_date, add_contact_explicit, update_contact_explicit,
-                      delete_contact_explicit, get_contact_by_id, get_vehicle_by_id, get_vehicle_by_call_number) # Added functions for call number support
+                      delete_contact_explicit, get_contact_by_id, get_vehicle_by_id, get_vehicle_by_call_number)
 from generator import PDFGenerator
-from utils import (generate_next_complaint_number, release_vehicle, log_action, # Changed from generate_complaint_number
+from utils import (generate_next_complaint_number, release_vehicle, log_action,
                    ensure_logs_table_exists, setup_logging, get_status_filter, calculate_newspaper_ad_date,
                    calculate_storage_fees, determine_jurisdiction, send_email_notification, 
                    send_sms_notification, send_fax_notification, is_valid_email, is_valid_phone,
                    generate_certified_mail_number, get_status_list_for_filter)
 from flask_login import login_required, current_user
 from auth import auth_bp, login_manager, init_auth_db, User, api_login_required
-from datetime import datetime, timedelta, date # Added date here
-from scraper import TowBookScraper
-import threading
-import subprocess # Added for running shell commands
-from werkzeug.security import safe_join
+from datetime import datetime, timedelta, date
 from werkzeug.utils import secure_filename
-from io import StringIO, BytesIO
-import csv
-import re
-import sqlite3 # Added for handling database specific errors like IntegrityError
-import time # Added for time.sleep
+import sqlite3
+import time
+import subprocess
 
 # Configure logging
 setup_logging()
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'dev_key_change_this_in_production')
 
-# Force the use of vehicles.db as the main database
+app.config.update(
+    SECRET_KEY=os.environ.get('SECRET_KEY', 'dev-secret-key-itow-vms-2025'),
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=24),
+    SESSION_COOKIE_SECURE=False,  # Set to True in production with HTTPS
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_PERMANENT=False
+)
+
 database_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'vehicles.db')
 os.environ['DATABASE_URL'] = database_path
 logging.info(f"Using database at: {database_path}")
 
-# Initialize Flask-Login
 login_manager.init_app(app)
 login_manager.login_view = 'auth.login'
 login_manager.login_message = 'Please log in to access this page.'
 login_manager.login_message_category = 'info'
-
-# Register authentication blueprint
 app.register_blueprint(auth_bp)
-
-# Import and register the API blueprint
 from api_routes import register_api_routes
 register_api_routes(app)
+from scheduler import init_scheduler
+scheduler = init_scheduler(app)
 
-# Initialize components that require app context
 with app.app_context():
-    # Log database information for debugging
     logging.info("Initializing application components...")
     logging.info(f"Database path from environment: {os.environ.get('DATABASE_URL')}")
     logging.info(f"Database exists: {os.path.exists(database_path)}")
     if os.path.exists(database_path):
         logging.info(f"Database size: {os.path.getsize(database_path)} bytes")
-        
-    # Initialize database and other components
     init_db()
     init_auth_db()
     ensure_logs_table_exists()
 
 pdf_gen = PDFGenerator()
 
-# Configure upload folders
 UPLOAD_FOLDER = 'static/uploads/vehicle_photos'
 DOCUMENT_FOLDER = 'static/uploads/documents'
 GENERATED_FOLDER = 'static/generated_pdfs'
@@ -77,32 +71,20 @@ app.config['DOCUMENT_FOLDER'] = DOCUMENT_FOLDER
 app.config['GENERATED_FOLDER'] = GENERATED_FOLDER
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 ALLOWED_DOCUMENT_EXTENSIONS = {'pdf', 'doc', 'docx', 'txt'}
-
-# Ensure folders exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(DOCUMENT_FOLDER, exist_ok=True)
 os.makedirs(GENERATED_FOLDER, exist_ok=True)
-
-# Add a default logo path to suppress warnings
 LOGO_PATH = 'static/logo.png'
 if not os.path.exists(LOGO_PATH):
     try:
-        # Create a minimal 1x1 transparent PNG
-        # PNG signature: \x89PNG\r\n\x1a\n
-        # IHDR chunk: length (13), name (IHDR), width (1), height (1), bit depth (1), color type (0 - grayscale), compression (0), filter (0), interlace (0), CRC
-        # IDAT chunk: length (10), name (IDAT), data (compressed pixel data - \x78\x9c\x63\x60\x00\x00\x01\x00\x01 - for a single black pixel, or use a transparent one), CRC
-        # IEND chunk: length (0), name (IEND), CRC
-        # A 1x1 transparent PNG, base64 encoded
         png_data = base64.b64decode(
             b'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
         )
         with open(LOGO_PATH, 'wb') as f:
-            f.write(png_data) # Added missing f.write()
+            f.write(png_data)
         logging.info(f"Created placeholder 1x1 transparent PNG at {LOGO_PATH}")
     except Exception as e:
         logging.error(f"Failed to create placeholder logo.png: {e}", exc_info=True)
-
-# Ensure all helper functions are defined before routes that use them.
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -121,6 +103,7 @@ def _perform_top_generation(call_number, username):
     vehicle_data = None    # Initialize vehicle_data
     success = False        # Initialize success
     message = ""           # Initialize message
+    conn = None
     try:
         conn = get_db_connection()
         vehicle = conn.execute("SELECT * FROM vehicles WHERE towbook_call_number = ?", (call_number,)).fetchone()
@@ -194,7 +177,8 @@ def _perform_top_generation(call_number, username):
         message = f"Error generating TOP form: {e}"
         pdf_filename = str(e) 
     finally:
-        if conn:
+        # Only close the connection if it's not managed by Flask's g object
+        if conn and (not hasattr(g, '_database') or g._database != conn):
             conn.close()
     return success, message, pdf_filename, vehicle_data, notification_id
 
@@ -338,7 +322,8 @@ def _perform_release_notice_generation(call_number, username):
         message = f"Error generating release notice: {e}"
         pdf_filename = str(e)
     finally:
-        if conn:
+        # Only close the connection if it's not managed by Flask's g object
+        if conn and (not hasattr(g, '_database') or g._database != conn):
             conn.close()
     return success, message, pdf_filename, vehicle_data, notification_id
 
@@ -363,12 +348,9 @@ def generate_release_notice(call_number):
 
 @app.route('/')
 def index():
-    # The main page, usually renders index.html
-    # You might want to pass some initial data to the template
     return render_template('index.html', current_user=current_user)
     
 
-# Main API route for vehicle data
 @app.route('/api/vehicles')
 def api_get_vehicles():
     """Fetch vehicles based on status, sorting, and other filters"""
@@ -399,83 +381,51 @@ def api_get_vehicles():
         logging.error(f"Error fetching vehicles: {e}", exc_info=True)
         return jsonify({"error": f"Failed to fetch vehicles: {str(e)}"}), 500
 
-@app.route('/api/vehicle/<vehicle_id>', methods=['GET'])
-@app.route('/api/vehicles/<vehicle_id>', methods=['GET'])
-# @login_required (disabled for testing)
-def get_vehicle_detail_api(vehicle_id):
-    """API endpoint to get detailed information for a single vehicle."""
-    try:
-        # Try to get by towbook_call_number first (which is the primary identifier)
-        vehicle = get_vehicle_by_call_number(vehicle_id)
-        if vehicle:
-            return jsonify(dict(vehicle))
-        else:
-            return jsonify({"error": "Vehicle not found"}), 404
-    except Exception as e:
-        logging.error(f"Error fetching vehicle details for call number {vehicle_id}: {e}", exc_info=True)
-        return jsonify({"error": f"Failed to fetch vehicle details: {str(e)}"}), 500
-
-@app.route('/api/vehicle/edit/<vehicle_id>', methods=['POST'])
+@app.route('/api/vehicles/<vehicle_id>', methods=['GET', 'PUT', 'DELETE'])
 @api_login_required
-def edit_vehicle_api(vehicle_id):
-    """API endpoint to update vehicle information."""
-    try:
-        data = request.json
-        if not data:
-            return jsonify({"error": "No data provided"}), 400
-
-        # Ensure 'last_updated' is set
-        data['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-        # Update by towbook_call_number
-        success, message = update_vehicle_by_call_number(vehicle_id, data)
-        if success:
-            log_action('Vehicle Updated', 
-                       current_user.id if hasattr(current_user, 'id') else 'System', 
-                       f"Vehicle details updated for call number: {vehicle_id}")
-            # Fetch the updated vehicle data to return it
-            updated_vehicle = get_vehicle_by_call_number(vehicle_id)
-            if updated_vehicle:
-                 return jsonify({"success": True, "message": "Vehicle updated successfully", "vehicle": dict(updated_vehicle)}), 200
-            else: # Should not happen if update was successful and call number is correct
-                 return jsonify({"success": True, "message": "Vehicle updated, but failed to retrieve updated data"}), 200
-        else:
-            # update_vehicle might return False if vehicle not found or on other db errors
-            # Check if vehicle exists first to give a more specific error
+def vehicle_detail_api(vehicle_id):
+    if request.method == 'GET':
+        try:
+            vehicle = get_vehicle_by_call_number(vehicle_id)
+            if vehicle:
+                return jsonify(dict(vehicle))
+            else:
+                return jsonify({"error": "Vehicle not found"}), 404
+        except Exception as e:
+            logging.error(f"Error fetching vehicle details for call number {vehicle_id}: {e}", exc_info=True)
+            return jsonify({"error": f"Failed to fetch vehicle details: {str(e)}"}), 500
+    elif request.method == 'PUT':
+        try:
             existing_vehicle = get_vehicle_by_call_number(vehicle_id)
             if not existing_vehicle:
-                return jsonify({"error": "Vehicle not found, cannot update"}), 404
-            return jsonify({"error": "Failed to update vehicle"}), 500
-            
-    except Exception as e:
-        logging.error(f"Error updating vehicle call number {vehicle_id}: {e}", exc_info=True)
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
-
-@app.route('/api/vehicles/<vehicle_id>', methods=['DELETE'])
-@api_login_required
-def delete_vehicle_api(vehicle_id):
-    """API endpoint to delete a vehicle from the system."""
-    try:
-        # Check if vehicle exists first
-        existing_vehicle = get_vehicle_by_call_number(vehicle_id)
-        if not existing_vehicle:
-            return jsonify({"error": "Vehicle not found"}), 404
-        
-        # Delete the vehicle from the database
-        from database import delete_vehicle_by_call_number
-        success = delete_vehicle_by_call_number(vehicle_id)
-        
-        if success:
-            log_action('Vehicle Deleted', 
-                       current_user.id if hasattr(current_user, 'id') else 'System', 
-                       f"Vehicle deleted: call number {vehicle_id}")
-            return jsonify({"success": True, "message": f"Vehicle {vehicle_id} deleted successfully"}), 200
-        else:
-            return jsonify({"error": "Failed to delete vehicle"}), 500
-            
-    except Exception as e:
-        logging.error(f"Error deleting vehicle call number {vehicle_id}: {e}", exc_info=True)
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+                return jsonify({"error": "Vehicle not found"}), 404
+            data = request.json
+            if not data:
+                return jsonify({"error": "No data provided"}), 400
+            success = update_vehicle_by_call_number(vehicle_id, data)
+            if success:
+                log_action('Vehicle Updated', current_user.id if hasattr(current_user, 'id') else 'System', f"Vehicle {vehicle_id} updated: {', '.join(data.keys())}")
+                return jsonify({"message": "Vehicle updated successfully"}), 200
+            else:
+                return jsonify({"error": "Failed to update vehicle"}), 500
+        except Exception as e:
+            logging.error(f"Error updating vehicle {vehicle_id}: {e}", exc_info=True)
+            return jsonify({"error": f"Server error: {str(e)}"}), 500
+    elif request.method == 'DELETE':
+        try:
+            existing_vehicle = get_vehicle_by_call_number(vehicle_id)
+            if not existing_vehicle:
+                return jsonify({"error": "Vehicle not found"}), 404
+            from database import delete_vehicle_by_call_number
+            success = delete_vehicle_by_call_number(vehicle_id)
+            if success:
+                log_action('Vehicle Deleted', current_user.id if hasattr(current_user, 'id') else 'System', f"Vehicle deleted: call number {vehicle_id}")
+                return jsonify({"success": True, "message": f"Vehicle {vehicle_id} deleted successfully"}), 200
+            else:
+                return jsonify({"error": "Failed to delete vehicle"}), 500
+        except Exception as e:
+            logging.error(f"Error deleting vehicle call number {vehicle_id}: {e}", exc_info=True)
+            return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 @app.route('/api/diagnostic', methods=['GET'])
 @api_login_required
@@ -516,8 +466,8 @@ def api_diagnostic():
         db_path = os.environ.get('DATABASE_URL', 'Not set, or connection failed')
         
     finally:
-        # Cursor does not need to be closed separately if the connection is closed.
-        if db_conn:
+        # Only close the connection if it's not managed by Flask's g object
+        if db_conn and (not hasattr(g, '_database') or g._database != db_conn):
             db_conn.close()
             
     return jsonify({
@@ -542,61 +492,45 @@ def auth_diagnostics():
     """Serve the authentication diagnostics page"""
     return send_file('auth_diagnostics.html')
 
-@app.route('/api/vehicles/<vehicle_id>', methods=['PUT'])
-@api_login_required
-def update_vehicle_api(vehicle_id):
-    """API endpoint to update a vehicle's information."""
-    try:
-        # Check if vehicle exists first
-        existing_vehicle = get_vehicle_by_call_number(vehicle_id)
-        if not existing_vehicle:
-            return jsonify({"error": "Vehicle not found"}), 404
-        
-        data = request.json
-        if not data:
-            return jsonify({"error": "No data provided"}), 400
-        
-        # Update the vehicle in the database
-        from database import update_vehicle_by_call_number
-        success = update_vehicle_by_call_number(vehicle_id, data)
-        
-        if success:
-            log_action('Vehicle Updated', 
-                       current_user.id if hasattr(current_user, 'id') else 'System', 
-                       f"Vehicle {vehicle_id} updated: {', '.join(data.keys())}")
-            return jsonify({"message": "Vehicle updated successfully"}), 200
-        else:
-            return jsonify({"error": "Failed to update vehicle"}), 500
-        
-    except Exception as e:
-        logging.error(f"Error updating vehicle {vehicle_id}: {e}", exc_info=True)
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+@app.route('/debug_frontend.html')
+def debug_frontend():
+    """Serve the debug frontend test page"""
+    return send_file('debug_frontend.html')
+
+@app.route('/simple_vehicle_test.html')
+def simple_vehicle_test():
+    """Serve the simple vehicle test page"""
+    return send_file('simple_vehicle_test.html')
+
+@app.route('/js_debug_test.html')
+def js_debug_test():
+    """Serve the JavaScript debug test page"""
+    return send_file('js_debug_test.html')
+
+@app.route('/comprehensive_debug.html')
+def comprehensive_debug():
+    """Serve the comprehensive debug page"""
+    return send_file('comprehensive_debug.html')
+
+@app.route('/js-test')
+def js_execution_test():
+    """JavaScript execution diagnostic test page"""
+    return send_from_directory('.', 'js_execution_test.html')
+
+@app.route('/direct-vehicle-test')
+def direct_vehicle_test():
+    """Direct vehicle data test page"""
+    return send_from_directory('.', 'direct_vehicle_test.html')
 
 if __name__ == "__main__":
     PORT = 5001
-    # Only run fuser logic if this is the main process and not the reloader's child
     if os.environ.get("WERKZEUG_RUN_MAIN") != "true":
         logging.info(f"Preparing to start Flask app on port {PORT} (main process)")
-        fuser_command_section_completed_normally = False
         try:
-            # Command to kill any process using the port
             kill_command = f"fuser -k -n tcp {PORT}"
             logging.info(f"Attempting to free port {PORT} by running: '{kill_command}'")
-            
-            # Using print with flush=True for immediate output, in case logging is buffered or interrupted
-            print(f"DEBUG: About to execute fuser command.", flush=True)
-
             result = subprocess.run(kill_command, shell=True, capture_output=True, text=True, check=False)
-            
-            print(f"DEBUG: fuser subprocess.run finished. RC: {result.returncode}. Stdout: '{result.stdout.strip()}'. Stderr: '{result.stderr.strip()}'", flush=True)
-            logging.info(f"DEBUG: fuser subprocess.run finished. RC: {result.returncode}. Stdout: '{result.stdout.strip()}', Stderr: '{result.stderr.strip()}'")
-
-            logging.info(f"fuser command processed with return code: {result.returncode}") # Changed log message slightly for clarity
-            if result.stdout:
-                logging.info(f"fuser stdout: {result.stdout.strip()}")
-            if result.stderr:
-                logging.info(f"fuser stderr: {result.stderr.strip()}")
-
+            logging.info(f"fuser subprocess.run finished. RC: {result.returncode}. Stdout: '{result.stdout.strip()}', Stderr: '{result.stderr.strip()}'")
             if result.returncode == 0:
                 logging.info(f"fuser command likely succeeded in signalling process(es) on port {PORT}.")
             elif "command not found" in result.stderr.lower() or "not found" in result.stderr.lower() or result.returncode == 127:
@@ -605,22 +539,13 @@ if __name__ == "__main__":
                 logging.info(f"fuser: No process found on port {PORT} (return code 1). This is normal if the port was already free.")
             else:
                 logging.warning(f"fuser command may have encountered an issue. Return code: {result.returncode}. Stdout: '{result.stdout.strip()}', Stderr: '{result.stderr.strip()}'")
-            
-            fuser_command_section_completed_normally = True
             logging.info("Waiting 2 seconds for port to be fully released...")
-            time.sleep(2) # Increased delay to 2 seconds
-
+            time.sleep(2)
         except FileNotFoundError:
             logging.warning("fuser command not found (FileNotFoundError during subprocess.run). Please ensure 'psmisc' package is installed.")
         except Exception as e:
             logging.error(f"Error trying to free port {PORT} using fuser: {e}", exc_info=True)
-        finally:
-            print(f"DEBUG: Reached finally block after fuser attempt. Normal completion: {fuser_command_section_completed_normally}", flush=True)
-            logging.info(f"DEBUG: Reached finally block after fuser attempt. Normal completion: {fuser_command_section_completed_normally}")
     else:
         logging.info(f"Flask app reloader active, skipping fuser command for port {PORT}.")
-
     logging.info("Starting Flask application...")
-    # Pass use_reloader=False if you want to completely disable it,
-    # but the WERKZEUG_RUN_MAIN check should be sufficient for the fuser issue.
     app.run(host="0.0.0.0", port=PORT, debug=True)

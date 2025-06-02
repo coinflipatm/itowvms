@@ -461,6 +461,123 @@ def get_jurisdictions_api():
 def register_api_routes(app):
     app.register_blueprint(api)
     
+    # Scheduler management routes
+    @app.route('/api/scheduler/status')
+    def scheduler_status():
+        """Get the current status of the automated scheduler"""
+        try:
+            from scheduler import get_scheduler
+            scheduler = get_scheduler()
+            status = scheduler.get_scheduler_status()
+            return jsonify(status)
+        except Exception as e:
+            logging.error(f"Error getting scheduler status: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/scheduler/trigger', methods=['POST'])
+    def trigger_status_check():
+        """Manually trigger a status progression check"""
+        try:
+            from database import check_and_update_statuses
+            result = check_and_update_statuses()
+            return jsonify({
+                'success': result,
+                'message': 'Status progression check completed' if result else 'Status progression check had issues',
+                'timestamp': datetime.now().isoformat()
+            })
+        except Exception as e:
+            logging.error(f"Error triggering status check: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/scheduler/auto-advance', methods=['POST'])
+    def trigger_auto_advance():
+        """Manually trigger automatic status advancement"""
+        try:
+            from scheduler import get_scheduler
+            scheduler = get_scheduler()
+            scheduler._auto_advance_statuses()
+            return jsonify({
+                'success': True,
+                'message': 'Automatic status advancement completed',
+                'timestamp': datetime.now().isoformat()
+            })
+        except Exception as e:
+            logging.error(f"Error triggering auto-advance: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/scheduler/config', methods=['GET', 'POST'])
+    def scheduler_config():
+        """Get or update scheduler configuration"""
+        try:
+            from scheduler import get_scheduler
+            scheduler = get_scheduler()
+            
+            if request.method == 'GET':
+                config = scheduler.get_configuration()
+                return jsonify(config)
+            else:  # POST
+                config_data = request.get_json()
+                scheduler.update_configuration(config_data)
+                return jsonify({
+                    'success': True,
+                    'message': 'Configuration updated successfully',
+                    'timestamp': datetime.now().isoformat()
+                })
+        except Exception as e:
+            logging.error(f"Error handling scheduler config: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/scheduler/activity')
+    def scheduler_activity():
+        """Get recent automation activity log"""
+        try:
+            # For now, return sample data since activity logging is not fully implemented
+            # In a real implementation, this would query a log table or file
+            activities = [
+                {
+                    'timestamp': (datetime.now() - timedelta(hours=2)).isoformat(),
+                    'action': 'Automatic Status Check',
+                    'details': 'Checked 15 vehicles for status progression eligibility',
+                    'vehicle': None
+                },
+                {
+                    'timestamp': (datetime.now() - timedelta(hours=6)).isoformat(),
+                    'action': 'Status Advanced',
+                    'details': 'Advanced from New to TOP Generated',
+                    'vehicle': 'T240001'
+                },
+                {
+                    'timestamp': (datetime.now() - timedelta(hours=12)).isoformat(),
+                    'action': 'Notification Sent',
+                    'details': 'TOP reminder notification sent to Wayne County',
+                    'vehicle': 'T240002'
+                }
+            ]
+            
+            return jsonify({
+                'activities': activities,
+                'total_count': len(activities)
+            })
+        except Exception as e:
+            logging.error(f"Error getting scheduler activity: {e}")
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/scheduler/daily-check', methods=['POST'])
+    def trigger_daily_check():
+        """Manually trigger the daily morning status check"""
+        try:
+            from scheduler import get_scheduler
+            scheduler = get_scheduler()
+            scheduler._daily_morning_status_check()
+            return jsonify({
+                'success': True,
+                'message': 'Daily morning status check completed',
+                'timestamp': datetime.now().isoformat()
+            })
+        except Exception as e:
+            logging.error(f"Error triggering daily status check: {e}")
+            return jsonify({'error': str(e)}), 500
+    
     # Add a diagnostic route
     @app.route('/api/diagnostic')
     def diagnostic():

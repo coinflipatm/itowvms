@@ -165,14 +165,19 @@ def login():
         password = request.form.get('password')
         remember = request.form.get('remember') == 'on'
         
+        logger.info(f"Login attempt for username: {username}")
+        
         user = User.get_by_username(username)
         
         if user and user.check_password(password):
             if not user.is_active:
+                logger.warning(f"Login denied for inactive user: {username}")
                 flash('This account has been deactivated. Please contact an administrator.', 'danger')
                 return redirect(url_for('auth.login'))
             
+            logger.info(f"Successful login for user: {username}, attempting to set session")
             login_user(user, remember=remember)
+            logger.info(f"Flask-Login login_user called, current_user.is_authenticated: {current_user.is_authenticated}")
             User.update_last_login(user.id)
             
             from utils import log_action
@@ -181,8 +186,10 @@ def login():
             next_page = request.args.get('next')
             if not next_page or not next_page.startswith('/'):
                 next_page = url_for('index')
+            logger.info(f"Redirecting to: {next_page}")
             return redirect(next_page)
         
+        logger.warning(f"Failed login attempt for username: {username}")
         flash('Invalid username or password', 'danger')
     
     return render_template('login.html')

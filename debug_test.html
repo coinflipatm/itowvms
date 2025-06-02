@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debug Test</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        #debug-output {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 15px;
+            margin: 20px;
+            border-radius: 5px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1>Debug Test for Active Vehicles Tab</h1>
+        <button id="test-btn" class="btn btn-primary">Test Active Vehicles Load</button>
+        <div id="debug-output"></div>
+        <div id="dynamic-content-area"></div>
+    </div>
+
+    <script>
+        // Debug logging function
+        function debugLog(message) {
+            const output = document.getElementById('debug-output');
+            output.textContent += new Date().toISOString() + ': ' + message + '\n';
+            console.log(message);
+        }
+
+        // Test the API call directly
+        async function testActiveVehiclesAPI() {
+            debugLog('Starting API test...');
+            
+            try {
+                const response = await fetch('/api/vehicles?status=active');
+                debugLog('API Response status: ' + response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                debugLog('API returned ' + data.length + ' vehicles');
+                debugLog('First vehicle: ' + JSON.stringify(data[0], null, 2));
+                
+                // Test the rendering
+                testRenderTable(data);
+                
+            } catch (error) {
+                debugLog('Error: ' + error.message);
+            }
+        }
+
+        // Test table rendering
+        function testRenderTable(vehicles) {
+            debugLog('Testing table rendering...');
+            
+            const dynamicContentArea = document.getElementById('dynamic-content-area');
+            if (!dynamicContentArea) {
+                debugLog('ERROR: dynamic-content-area not found!');
+                return;
+            }
+            
+            debugLog('dynamic-content-area found, creating table...');
+            
+            // Clear content
+            dynamicContentArea.innerHTML = '';
+            
+            // Create header
+            const headerDiv = document.createElement('div');
+            headerDiv.className = 'd-flex justify-content-between align-items-center mb-3';
+            
+            const titleDiv = document.createElement('div');
+            const title = document.createElement('h3');
+            title.textContent = 'Active Vehicles';
+            titleDiv.appendChild(title);
+            headerDiv.appendChild(titleDiv);
+            
+            dynamicContentArea.appendChild(headerDiv);
+            
+            // Create table
+            const table = document.createElement('table');
+            table.className = 'table table-striped';
+            
+            // Create header
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+            const headers = ['Call #', 'VIN', 'Make', 'Model', 'Status'];
+            
+            headers.forEach(headerText => {
+                const th = document.createElement('th');
+                th.textContent = headerText;
+                headerRow.appendChild(th);
+            });
+            
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+            
+            // Create body
+            const tbody = document.createElement('tbody');
+            
+            if (vehicles.length === 0) {
+                const tr = document.createElement('tr');
+                const td = document.createElement('td');
+                td.colSpan = headers.length;
+                td.textContent = 'No vehicles found';
+                td.className = 'text-center';
+                tr.appendChild(td);
+                tbody.appendChild(tr);
+            } else {
+                vehicles.slice(0, 5).forEach(vehicle => { // Show only first 5 for testing
+                    const tr = document.createElement('tr');
+                    
+                    const cells = [
+                        vehicle.towbook_call_number || 'N/A',
+                        vehicle.vin || 'N/A',
+                        vehicle.make || 'N/A',
+                        vehicle.model || 'N/A',
+                        vehicle.status || 'N/A'
+                    ];
+                    
+                    cells.forEach(cellContent => {
+                        const td = document.createElement('td');
+                        td.textContent = cellContent;
+                        tr.appendChild(td);
+                    });
+                    
+                    tbody.appendChild(tr);
+                });
+            }
+            
+            table.appendChild(tbody);
+            dynamicContentArea.appendChild(table);
+            
+            debugLog('Table rendered successfully with ' + vehicles.length + ' vehicles');
+        }
+
+        // Set up test button
+        document.getElementById('test-btn').addEventListener('click', testActiveVehiclesAPI);
+        
+        debugLog('Debug test page loaded');
+    </script>
+</body>
+</html>

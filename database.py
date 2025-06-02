@@ -72,7 +72,7 @@ def transaction():
         def __enter__(self):
             self.conn = get_db_connection()
             self.conn.execute("BEGIN")
-            return self.conn.cursor() # Return cursor for use within 'with' block
+            return self.conn  # Return connection, not cursor
 
         def __exit__(self, exc_type, exc_val, exc_tb):
             if exc_type is None:
@@ -626,6 +626,7 @@ def update_vehicle_status(call_number, new_status, update_fields=None):
 def update_vehicle(call_number, data):
     from utils import log_action
     logging.info(f"Updating vehicle {call_number}: {data}")
+    conn = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -637,7 +638,6 @@ def update_vehicle(call_number, data):
         # Verify the vehicle exists
         cursor.execute("SELECT * FROM vehicles WHERE towbook_call_number = ?", (call_number,))
         if not cursor.fetchone():
-            conn.close()
             return False, "Vehicle not found"
         
         # Filter out any fields that don't exist in the database
@@ -698,26 +698,24 @@ def update_vehicle(call_number, data):
         set_clause = ', '.join([f"{key} = ?" for key in filtered_data.keys()])
         values = list(filtered_data.values()) + [call_number]
         
-        cursor.execute(f"UPDATE vehicles SET {set_clause} WHERE towbook_call_number = ?", values)
-        conn.commit()
+        with conn:  # Use context manager for transaction
+            cursor.execute(f"UPDATE vehicles SET {set_clause} WHERE towbook_call_number = ?", values)
         
-        # Log the action before closing the connection
+        # Log the action
         log_action("UPDATE", call_number, "Vehicle updated")
         
-        # Only close the connection if it's not managed by Flask's g object
-        if not hasattr(g, '_database') or g._database != conn:
-            conn.close()
-        
         return True, "Vehicle updated successfully"
+        
+    except sqlite3.IntegrityError as e:
+        logging.error(f"Integrity error updating vehicle {call_number}: {e}", exc_info=True)
+        return False, f"Database constraint violation: {str(e)}"
     except Exception as e:
-        logging.error(f"Error updating vehicle: {e}")
-        # Ensure connection is properly closed on error if not managed by Flask's g
-        try:
-            if 'conn' in locals() and not hasattr(g, '_database') or g._database != conn:
-                conn.close()
-        except:
-            pass  # Connection might already be closed
-        return False, str(e)
+        logging.error(f"Error updating vehicle {call_number}: {e}", exc_info=True)
+        return False, f"Database error: {str(e)}"
+    finally:
+        # Only close the connection if it's not managed by Flask's g object
+        if conn and (not hasattr(g, '_database') or g._database != conn):
+            conn.close()
 
 def update_vehicle_by_call_number(call_number, data):
     """
@@ -802,8 +800,9 @@ def delete_vehicle_by_call_number(call_number):
         raise
 
 def insert_vehicle(data):
-    from utils import log_action, generate_next_complaint_number # Ensure generate_next_complaint_number is correct
+    from utils import log_action, generate_next_complaint_number
     logger = current_app.logger if hasattr(current_app, 'logger') else logging.getLogger(__name__)
+    conn = None
     try:
         conn = get_db_connection()
         
@@ -813,25 +812,20 @@ def insert_vehicle(data):
         data.setdefault('last_updated', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
         data.setdefault('owner_known', 'No')
         data.setdefault('archived', 0)
-        # Removed tr208_eligible as part of TR-52/TR-208 simplification
 
         # Generate complaint number if not provided
         if 'complaint_number' not in data or not data['complaint_number']:
-            complaint_num_val = generate_next_complaint_number(conn) # Pass conn if needed by the function
-            # Ensure complaint_num_val is a string, not a tuple or other type
+            complaint_num_val = generate_next_complaint_number()
             if isinstance(complaint_num_val, tuple):
-                # Assuming the first element of the tuple is the desired string
                 data['complaint_number'] = str(complaint_num_val[0]) 
             else:
                 data['complaint_number'] = str(complaint_num_val)
         elif isinstance(data['complaint_number'], tuple):
-            # If it was already a tuple in the input data
             data['complaint_number'] = str(data['complaint_number'][0])
         else:
             data['complaint_number'] = str(data['complaint_number'])
 
-        # Define columns based on your table schema to avoid inserting extra keys from data
-        # This also helps in maintaining the correct order if not using named placeholders
+        # Define columns based on table schema
         columns = [
             'towbook_call_number', 'complaint_number', 'tow_date', 'vehicle_year', 'make',
             'model', 'vin', 'plate', 'state', 'color', 'location',
@@ -853,21 +847,23 @@ def insert_vehicle(data):
             VALUES ({', '.join(['?'] * len(insert_data))})
         """
         
-        with conn:
+        with conn:  # Use context manager for transaction
             cursor = conn.cursor()
             cursor.execute(query, tuple(insert_data.values()))
             vehicle_id = cursor.lastrowid
         
         logger.info(f"Vehicle inserted with ID: {vehicle_id}, Call Number: {data.get('towbook_call_number')}")
-        # log_action('Vehicle Added', data.get('towbook_call_number'), 'System', f"Vehicle {data.get('make')} {data.get('model')} added.") # User from context
         return vehicle_id
 
     except sqlite3.IntegrityError as e:
         logger.error(f"Integrity error inserting vehicle (Call#: {data.get('towbook_call_number')}, Complaint#: {data.get('complaint_number')}): {e}", exc_info=True)
-        raise # Re-raise to be handled by the caller, perhaps with a user-friendly message
+        raise ValueError(f"Vehicle with this call number or complaint number already exists: {str(e)}")
     except Exception as e:
         logger.error(f"Error inserting vehicle (Call#: {data.get('towbook_call_number')}): {e}", exc_info=True)
         raise
+    finally:
+        if conn and (not hasattr(g, '_database') or g._database != conn):
+            conn.close()
 
 def get_vehicles(tab, sort_column=None, sort_direction='asc'):
     """
@@ -1098,6 +1094,7 @@ def check_and_update_statuses():
 
 def get_pending_notifications():
     logger = current_app.logger if hasattr(current_app, 'logger') else logging.getLogger(__name__)
+    conn = None
     try:
         conn = get_db_connection()
         # Fetch notifications that are 'Pending' and optionally order them by due_date or created_at
@@ -1113,51 +1110,59 @@ def get_pending_notifications():
     except Exception as e:
         logger.error(f"Error fetching pending notifications: {e}", exc_info=True)
         return []
+    finally:
+        # Only close the connection if it's not managed by Flask's g object
+        if conn and (not hasattr(g, '_database') or g._database != conn):
+            conn.close()
 
 def mark_notification_sent(notification_id, method, recipient):
+    conn = None
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
         
-        cursor.execute("""
-            UPDATE notifications
-            SET status = 'sent', sent_date = ?, sent_method = ?, recipient = ?
-            WHERE id = ?
-        """, (datetime.now().strftime('%Y-%m-%d'), method, recipient, notification_id))
-        
-        # Get notification details for logging
-        cursor.execute("SELECT * FROM notifications WHERE id = ?", (notification_id,))
-        notification = cursor.fetchone()
-        
-        if notification:
-            # Update vehicle record based on notification type
-            if notification['notification_type'] == 'TOP':
-                cursor.execute("UPDATE vehicles SET top_notification_sent = 1 WHERE towbook_call_number = ?",
-                              (notification['vehicle_id'],))
+        with conn:  # Use context manager for transaction
+            cursor = conn.cursor()
             
-            elif notification['notification_type'] == 'Auction_Ad':
-                cursor.execute("UPDATE vehicles SET auction_ad_sent = 1 WHERE towbook_call_number = ?",
-                              (notification['vehicle_id'],))
+            cursor.execute("""
+                UPDATE notifications
+                SET status = 'sent', sent_date = ?, sent_method = ?, recipient = ?
+                WHERE id = ?
+            """, (datetime.now().strftime('%Y-%m-%d'), method, recipient, notification_id))
             
-            elif notification['notification_type'] == 'Release_Notice':
-                cursor.execute("UPDATE vehicles SET release_notification_sent = 1 WHERE towbook_call_number = ?",
-                              (notification['vehicle_id'],))
+            # Get notification details for logging
+            cursor.execute("SELECT * FROM notifications WHERE id = ?", (notification_id,))
+            notification = cursor.fetchone()
             
-            # Log the action before closing the connection
-            from utils import log_action
-            log_action("NOTIFICATION_SENT", notification['vehicle_id'],
-                      f"{notification['notification_type']} sent to {recipient} via {method}")
+            if notification:
+                # Update vehicle record based on notification type
+                if notification['notification_type'] == 'TOP':
+                    cursor.execute("UPDATE vehicles SET top_notification_sent = 1 WHERE towbook_call_number = ?",
+                                  (notification['vehicle_id'],))
+                
+                elif notification['notification_type'] == 'Auction_Ad':
+                    cursor.execute("UPDATE vehicles SET auction_ad_sent = 1 WHERE towbook_call_number = ?",
+                                  (notification['vehicle_id'],))
+                
+                elif notification['notification_type'] == 'Release_Notice':
+                    cursor.execute("UPDATE vehicles SET release_notification_sent = 1 WHERE towbook_call_number = ?",
+                                  (notification['vehicle_id'],))
         
-        conn.commit()
-        # Only close the connection if it's not managed by Flask's g object
-        if not hasattr(g, '_database') or g._database != conn:
-            conn.close()
+                # Log the action before closing the connection
+                from utils import log_action
+                log_action("NOTIFICATION_SENT", notification['vehicle_id'],
+                          f"{notification['notification_type']} sent to {recipient} via {method}")
+        
         return True
     except Exception as e:
-        logging.error(f"Error marking notification sent: {e}")
+        logging.error(f"Error marking notification sent: {e}", exc_info=True)
         return False
+    finally:
+        # Only close the connection if it's not managed by Flask's g object
+        if conn and (not hasattr(g, '_database') or g._database != conn):
+            conn.close()
 
 def get_contact_by_jurisdiction(jurisdiction):
+    conn = None
     try:
         conn = get_db_connection()
         conn.row_factory = sqlite3.Row
@@ -1166,85 +1171,80 @@ def get_contact_by_jurisdiction(jurisdiction):
         cursor.execute("SELECT * FROM contacts WHERE jurisdiction = ?", (jurisdiction,))
         contact = cursor.fetchone()
         
-        # Only close the connection if it's not managed by Flask's g object
-        if not hasattr(g, '_database') or g._database != conn:
-            conn.close()
         return dict(contact) if contact else None
     except Exception as e:
-        logging.error(f"Error getting contact: {e}")
+        logging.error(f"Error getting contact: {e}", exc_info=True)
         return None
+    finally:
+        # Only close the connection if it's not managed by Flask's g object
+        if conn and (not hasattr(g, '_database') or g._database != conn):
+            conn.close()
 
 def save_contact(contact_data):
+    conn = None
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
         
-        # Check if contact exists
-        if 'id' in contact_data and contact_data['id']:
-            # Update existing contact
-            cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_data['id'],))
-            if not cursor.fetchone():
-                if not hasattr(g, '_database') or g._database != conn:
-                    conn.close()
-                return False, "Contact not found"
-                
-            set_clause = ', '.join([f"{key} = ?" for key in contact_data.keys() if key != 'id'])
-            values = [contact_data[key] for key in contact_data.keys() if key != 'id'] + [contact_data['id']]
+        with conn:  # Use context manager for transaction
+            cursor = conn.cursor()
             
-            cursor.execute(f"UPDATE contacts SET {set_clause} WHERE id = ?", values)
-            message = "Contact updated successfully"
-        else:
-            # Check if jurisdiction exists
-            cursor.execute("SELECT id FROM contacts WHERE jurisdiction = ?", (contact_data['jurisdiction'],))
-            existing = cursor.fetchone()
-            
-            if existing:
-                # Update existing contact by jurisdiction
-                fields = []
-                values = []
-                for key, value in contact_data.items():
-                    if key != 'id' and key != 'jurisdiction':  # Skip primary key and jurisdiction
-                        fields.append(f"{key} = ?")
-                        values.append(value)
+            # Check if contact exists
+            if 'id' in contact_data and contact_data['id']:
+                # Update existing contact
+                cursor.execute("SELECT * FROM contacts WHERE id = ?", (contact_data['id'],))
+                if not cursor.fetchone():
+                    return False, "Contact not found"
+                    
+                set_clause = ', '.join([f"{key} = ?" for key in contact_data.keys() if key != 'id'])
+                values = [contact_data[key] for key in contact_data.keys() if key != 'id'] + [contact_data['id']]
                 
-                # Add jurisdiction for WHERE clause
-                values.append(contact_data['jurisdiction'])
-                
-                cursor.execute(f"""
-                    UPDATE contacts SET {", ".join(fields)}
-                    WHERE jurisdiction = ?
-                """, values)
+                cursor.execute(f"UPDATE contacts SET {set_clause} WHERE id = ?", values)
                 message = "Contact updated successfully"
             else:
-                # Create new contact
-                if 'jurisdiction' not in contact_data or not contact_data['jurisdiction']:
-                    if not hasattr(g, '_database') or g._database != conn:
-                        conn.close()
-                    return False, "Jurisdiction is required"
-                    
-                columns = ', '.join([k for k in contact_data.keys() if k != 'id'])
-                placeholders = ', '.join(['?' for k in contact_data.keys() if k != 'id'])
-                values = [contact_data[k] for k in contact_data.keys() if k != 'id']
+                # Check if jurisdiction exists
+                cursor.execute("SELECT id FROM contacts WHERE jurisdiction = ?", (contact_data['jurisdiction'],))
+                existing = cursor.fetchone()
                 
-                cursor.execute(f"INSERT INTO contacts ({columns}) VALUES ({placeholders})", values)
-                message = "Contact added successfully"
+                if existing:
+                    # Update existing contact by jurisdiction
+                    fields = []
+                    values = []
+                    for key, value in contact_data.items():
+                        if key != 'id' and key != 'jurisdiction':  # Skip primary key and jurisdiction
+                            fields.append(f"{key} = ?")
+                            values.append(value)
+                    
+                    # Add jurisdiction for WHERE clause
+                    values.append(contact_data['jurisdiction'])
+                    
+                    cursor.execute(f"""
+                        UPDATE contacts SET {", ".join(fields)}
+                        WHERE jurisdiction = ?
+                    """, values)
+                    message = "Contact updated successfully"
+                else:
+                    # Create new contact
+                    if 'jurisdiction' not in contact_data or not contact_data['jurisdiction']:
+                        return False, "Jurisdiction is required"
+                        
+                    columns = ', '.join([k for k in contact_data.keys() if k != 'id'])
+                    placeholders = ', '.join(['?' for k in contact_data.keys() if k != 'id'])
+                    values = [contact_data[k] for k in contact_data.keys() if k != 'id']
+                    
+                    cursor.execute(f"INSERT INTO contacts ({columns}) VALUES ({placeholders})", values)
+                    message = "Contact added successfully"
         
-        conn.commit()
-        # Only close the connection if it's not managed by Flask's g object
-        if not hasattr(g, '_database') or g._database != conn:
-            conn.close()
         return True, message
     except Exception as e:
-        logging.error(f"Error saving contact: {e}")
-        # Ensure connection is properly closed on error if not managed by Flask's g
-        try:
-            if 'conn' in locals() and not hasattr(g, '_database') or g._database != conn:
-                conn.close()
-        except:
-            pass  # Connection might already be closed
+        logging.error(f"Error saving contact: {e}", exc_info=True)
         return False, str(e)
+    finally:
+        # Only close the connection if it's not managed by Flask's g object
+        if conn and (not hasattr(g, '_database') or g._database != conn):
+            conn.close()
 
 def get_contacts():
+    conn = None
     try:
         conn = get_db_connection()
         conn.row_factory = sqlite3.Row
@@ -1253,25 +1253,35 @@ def get_contacts():
         cursor.execute("SELECT * FROM contacts ORDER BY jurisdiction")
         contacts = [dict(row) for row in cursor.fetchall()]
         
-        # Only close the connection if it's not managed by Flask's g object
-        if not hasattr(g, '_database') or g._database != conn:
-            conn.close()
         return contacts
     except Exception as e:
-        logging.error(f"Error getting contacts: {e}")
+        logging.error(f"Error getting contacts: {e}", exc_info=True)
         return []
+    finally:
+        # Only close the connection if it's not managed by Flask's g object
+        if conn and (not hasattr(g, '_database') or g._database != conn):
+            conn.close()
 
 def get_contact_by_id(contact_id):
-    conn = get_db_connection()
-    contact = conn.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,)).fetchone()
-    # conn.close() # Connection managed by g
-    return dict(contact) if contact else None
+    conn = None
+    try:
+        conn = get_db_connection()
+        contact = conn.execute("SELECT * FROM contacts WHERE id = ?", (contact_id,)).fetchone()
+        return dict(contact) if contact else None
+    except Exception as e:
+        logging.error(f"Error getting contact by ID {contact_id}: {e}", exc_info=True)
+        return None
+    finally:
+        # Only close the connection if it's not managed by Flask's g object
+        if conn and (not hasattr(g, '_database') or g._database != conn):
+            conn.close()
 
 def add_contact_explicit(data):
-    conn = get_db_connection()
-    # cursor = conn.cursor() # Not needed if using conn.execute directly with context manager
+    conn = None
     logger = current_app.logger if hasattr(current_app, 'logger') else logging.getLogger(__name__)
     try:
+        conn = get_db_connection()
+        
         # Ensure required fields like jurisdiction are present
         if not data.get('jurisdiction'):
             raise ValueError("Jurisdiction is a required field for contacts.")
@@ -1311,11 +1321,17 @@ def add_contact_explicit(data):
     except Exception as e:
         logger.error(f"Error adding contact explicitly: {e}", exc_info=True)
         raise # Re-raise for caller to handle
+    finally:
+        # Only close the connection if it's not managed by Flask's g object
+        if conn and (not hasattr(g, '_database') or g._database != conn):
+            conn.close()
 
 def update_contact_explicit(contact_id, data):
-    conn = get_db_connection()
+    conn = None
     logger = current_app.logger if hasattr(current_app, 'logger') else logging.getLogger(__name__)
     try:
+        conn = get_db_connection()
+        
         # Construct SET clause dynamically for fields present in data
         set_clauses = []
         params = []
@@ -1351,11 +1367,17 @@ def update_contact_explicit(contact_id, data):
     except Exception as e:
         logger.error(f"Error updating contact ID {contact_id}: {e}", exc_info=True)
         raise
+    finally:
+        # Only close the connection if it's not managed by Flask's g object
+        if conn and (not hasattr(g, '_database') or g._database != conn):
+            conn.close()
 
 def delete_contact_explicit(contact_id):
-    conn = get_db_connection()
+    conn = None
     logger = current_app.logger if hasattr(current_app, 'logger') else logging.getLogger(__name__)
     try:
+        conn = get_db_connection()
+        
         with conn:
             cursor = conn.execute("DELETE FROM contacts WHERE id = ?", (contact_id,))
         
@@ -1369,11 +1391,17 @@ def delete_contact_explicit(contact_id):
     except Exception as e:
         logger.error(f"Error deleting contact ID {contact_id}: {e}", exc_info=True)
         raise
+    finally:
+        # Only close the connection if it's not managed by Flask's g object
+        if conn and (not hasattr(g, '_database') or g._database != conn):
+            conn.close()
 
 def log_police_event(vehicle_id, form_type, recipient_jurisdiction, method, logged_by, notes='', confirmation_details=''):
-    conn = get_db_connection() 
+    conn = None
     logger = current_app.logger if hasattr(current_app, 'logger') else logging.getLogger(__name__)
     try:
+        conn = get_db_connection()
+        
         # Get towbook_call_number for denormalization
         vehicle_info = conn.execute("SELECT towbook_call_number FROM vehicles WHERE id = ?", (vehicle_id,)).fetchone()
         towbook_call_number = vehicle_info['towbook_call_number'] if vehicle_info else None
@@ -1392,11 +1420,17 @@ def log_police_event(vehicle_id, form_type, recipient_jurisdiction, method, logg
     except sqlite3.Error as e:
          logger.error(f"Error logging police event for vehicle ID {vehicle_id}: {e}", exc_info=True)
          # Decide if to raise or handle, for now, just log
+    finally:
+        # Only close the connection if it's not managed by Flask's g object
+        if conn and (not hasattr(g, '_database') or g._database != conn):
+            conn.close()
 
 def add_document(call_number, document_name, document_type, file_path, uploaded_by='System'): 
-    conn = get_db_connection()
+    conn = None
     logger = current_app.logger if hasattr(current_app, 'logger') else logging.getLogger(__name__)
     try:
+        conn = get_db_connection()
+        
         # Get vehicle_id from call_number
         vehicle_info = conn.execute("SELECT id FROM vehicles WHERE towbook_call_number = ?", (call_number,)).fetchone()
         if not vehicle_info:
@@ -1421,3 +1455,7 @@ def add_document(call_number, document_name, document_type, file_path, uploaded_
         logger.error(f"Error adding document for vehicle call_number {call_number}: {e}", exc_info=True)
         # Decide if to raise or handle
         return None
+    finally:
+        # Only close the connection if it's not managed by Flask's g object
+        if conn and (not hasattr(g, '_database') or g._database != conn):
+            conn.close()

@@ -1,9 +1,24 @@
+nohup: ignoring input
 INFO:root:===== iTow Impound Manager Started =====
 INFO:root:Using database at: /workspaces/itowvms/vehicles.db
+INFO:scheduler:Automated status scheduler initialized
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Added job "Automated Status Progression" to job store "default"
+INFO:apscheduler.scheduler:Added job "Daily Morning Status Refresh" to job store "default"
+INFO:apscheduler.scheduler:Added job "Notification Processing" to job store "default"
+INFO:apscheduler.scheduler:Added job "Daily System Cleanup" to job store "default"
+INFO:apscheduler.scheduler:Added job "Automatic Status Advancement" to job store "default"
+INFO:apscheduler.scheduler:Scheduler started
+INFO:scheduler:Automated status scheduler started successfully
+INFO:app:Automated status progression scheduler started
 INFO:root:Initializing application components...
 INFO:root:Database path from environment: /workspaces/itowvms/vehicles.db
 INFO:root:Database exists: True
-INFO:root:Database size: 290816 bytes
+INFO:root:Database size: 299008 bytes
 INFO:app:Initializing database at /workspaces/itowvms/vehicles.db...
 INFO:app:Table 'vehicles' checked/created.
 INFO:app:Table 'contacts' checked/created.
@@ -17,10 +32,10 @@ INFO:auth:Auth database tables initialized
 INFO:root:Preparing to start Flask app on port 5001 (main process)
 INFO:root:Attempting to free port 5001 by running: 'fuser -k -n tcp 5001'
 DEBUG: About to execute fuser command.
-DEBUG: fuser subprocess.run finished. RC: 0. Stdout: '11337 11366'. Stderr: '5001/tcp:'
-INFO:root:DEBUG: fuser subprocess.run finished. RC: 0. Stdout: '11337 11366', Stderr: '5001/tcp:'
+DEBUG: fuser subprocess.run finished. RC: 0. Stdout: '58499 58567'. Stderr: '5001/tcp:'
+INFO:root:DEBUG: fuser subprocess.run finished. RC: 0. Stdout: '58499 58567', Stderr: '5001/tcp:'
 INFO:root:fuser command processed with return code: 0
-INFO:root:fuser stdout: 11337 11366
+INFO:root:fuser stdout: 58499 58567
 INFO:root:fuser stderr: 5001/tcp:
 INFO:root:fuser command likely succeeded in signalling process(es) on port 5001.
 INFO:root:Waiting 2 seconds for port to be fully released...
@@ -32,15 +47,29 @@ INFO:root:Starting Flask application...
 INFO:werkzeug:[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
  * Running on all addresses (0.0.0.0)
  * Running on http://127.0.0.1:5001
- * Running on http://10.0.1.40:5001
+ * Running on http://10.0.3.234:5001
 INFO:werkzeug:[33mPress CTRL+C to quit[0m
 INFO:werkzeug: * Restarting with stat
 INFO:root:===== iTow Impound Manager Started =====
 INFO:root:Using database at: /workspaces/itowvms/vehicles.db
+INFO:scheduler:Automated status scheduler initialized
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Added job "Automated Status Progression" to job store "default"
+INFO:apscheduler.scheduler:Added job "Daily Morning Status Refresh" to job store "default"
+INFO:apscheduler.scheduler:Added job "Notification Processing" to job store "default"
+INFO:apscheduler.scheduler:Added job "Daily System Cleanup" to job store "default"
+INFO:apscheduler.scheduler:Added job "Automatic Status Advancement" to job store "default"
+INFO:apscheduler.scheduler:Scheduler started
+INFO:scheduler:Automated status scheduler started successfully
+INFO:app:Automated status progression scheduler started
 INFO:root:Initializing application components...
 INFO:root:Database path from environment: /workspaces/itowvms/vehicles.db
 INFO:root:Database exists: True
-INFO:root:Database size: 290816 bytes
+INFO:root:Database size: 299008 bytes
 INFO:app:Initializing database at /workspaces/itowvms/vehicles.db...
 INFO:app:Table 'vehicles' checked/created.
 INFO:app:Table 'contacts' checked/created.
@@ -54,4 +83,8 @@ INFO:auth:Auth database tables initialized
 INFO:root:Flask app reloader active, skipping fuser command for port 5001.
 INFO:root:Starting Flask application...
 WARNING:werkzeug: * Debugger is active!
-INFO:werkzeug: * Debugger PIN: 930-841-162
+INFO:werkzeug: * Debugger PIN: 142-064-928
+INFO:werkzeug:127.0.0.1 - - [02/Jun/2025 01:44:29] "GET /api/workflow-counts HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [02/Jun/2025 01:44:29] "GET /api/statistics HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [02/Jun/2025 01:45:29] "GET /api/workflow-counts HTTP/1.1" 200 -
+INFO:werkzeug:127.0.0.1 - - [02/Jun/2025 01:45:29] "GET /api/statistics HTTP/1.1" 200 -

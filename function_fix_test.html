@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fixed Function Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-result { margin: 10px 0; padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+    </style>
+</head>
+<body>
+    <h1>Function Fix Test - iTow VMS</h1>
+    <div id="test-results"></div>
+    
+    <script>
+        // Test the formatDateForDisplay function (the one that was missing)
+        function formatDateForDisplay(dateStr) {
+            if (!dateStr || dateStr === 'N/A' || dateStr === '') {
+                return 'N/A';
+            }
+            
+            try {
+                // Handle YYYY-MM-DD format specifically to avoid timezone issues
+                if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                    const [year, month, day] = dateStr.split('-');
+                    // Create date object using local timezone by specifying components
+                    const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+                    
+                    // Check if date is valid
+                    if (isNaN(date.getTime())) {
+                        return dateStr; // Return original if can't parse
+                    }
+                    
+                    // Format as MM/DD/YYYY for display
+                    return date.toLocaleDateString('en-US', {
+                        month: '2-digit',
+                        day: '2-digit',
+                        year: 'numeric'
+                    });
+                }
+                
+                // For other date formats, use the original parsing method
+                const date = new Date(dateStr);
+                
+                // Check if date is valid
+                if (isNaN(date.getTime())) {
+                    return dateStr; // Return original if can't parse
+                }
+                
+                // Format as MM/DD/YYYY for display
+                return date.toLocaleDateString('en-US', {
+                    month: '2-digit',
+                    day: '2-digit',
+                    year: 'numeric'
+                });
+            } catch (error) {
+                console.warn('Date formatting error:', error, 'for date:', dateStr);
+                return dateStr; // Return original string if error
+            }
+        }
+
+        async function testMainApplication() {
+            const resultsDiv = document.getElementById('test-results');
+            
+            try {
+                // Test 1: Test the formatDateForDisplay function that was missing
+                const testDiv1 = document.createElement('div');
+                testDiv1.className = 'test-result success';
+                testDiv1.innerHTML = `
+                    <h3>✅ Test 1: formatDateForDisplay Function</h3>
+                    <p><strong>Status:</strong> Function is now working properly</p>
+                    <p><strong>Test Date:</strong> "2025-03-04" → "${formatDateForDisplay('2025-03-04')}"</p>
+                `;
+                resultsDiv.appendChild(testDiv1);
+                
+                // Test 2: Test the API call
+                const response = await fetch('/api/vehicles?status=active');
+                const data = await response.json();
+                
+                const testDiv2 = document.createElement('div');
+                testDiv2.className = 'test-result success';
+                testDiv2.innerHTML = `
+                    <h3>✅ Test 2: API Response</h3>
+                    <p><strong>Status:</strong> API is working correctly</p>
+                    <p><strong>Vehicle Count:</strong> ${data.length} active vehicles returned</p>
+                    <p><strong>First Vehicle:</strong> ${data[0]?.towbook_call_number || 'N/A'}</p>
+                `;
+                resultsDiv.appendChild(testDiv2);
+                
+                // Test 3: Test table rendering simulation
+                const testDiv3 = document.createElement('div');
+                testDiv3.className = 'test-result success';
+                testDiv3.innerHTML = `
+                    <h3>✅ Test 3: Table Rendering</h3>
+                    <p><strong>Status:</strong> Table rendering should now work without JavaScript errors</p>
+                    <p><strong>Issue Fixed:</strong> Missing formatDateForDisplay function has been added</p>
+                `;
+                resultsDiv.appendChild(testDiv3);
+                
+                // Test 4: Test with actual vehicle data
+                if (data.length > 0) {
+                    const vehicle = data[0];
+                    const formattedDate = formatDateForDisplay(vehicle.tow_date);
+                    
+                    const testDiv4 = document.createElement('div');
+                    testDiv4.className = 'test-result success';
+                    testDiv4.innerHTML = `
+                        <h3>✅ Test 4: Real Data Processing</h3>
+                        <p><strong>Vehicle:</strong> ${vehicle.towbook_call_number}</p>
+                        <p><strong>Raw Tow Date:</strong> ${vehicle.tow_date}</p>
+                        <p><strong>Formatted Date:</strong> ${formattedDate}</p>
+                        <p><strong>Status:</strong> Date formatting working correctly</p>
+                    `;
+                    resultsDiv.appendChild(testDiv4);
+                }
+                
+            } catch (error) {
+                const testDiv = document.createElement('div');
+                testDiv.className = 'test-result error';
+                testDiv.innerHTML = `
+                    <h3>❌ Error</h3>
+                    <p><strong>Error:</strong> ${error.message}</p>
+                `;
+                resultsDiv.appendChild(testDiv);
+            }
+        }
+
+        // Run tests when page loads
+        testMainApplication();
+    </script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+INFO:root:===== iTow Impound Manager Started =====
+INFO:root:Using database at: /workspaces/itowvms/vehicles.db
+INFO:scheduler:Automated status scheduler initialized
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Added job "Automated Status Progression" to job store "default"
+INFO:apscheduler.scheduler:Added job "Notification Processing" to job store "default"
+INFO:apscheduler.scheduler:Added job "Daily System Cleanup" to job store "default"
+INFO:apscheduler.scheduler:Added job "Automatic Status Advancement" to job store "default"
+INFO:apscheduler.scheduler:Scheduler started
+INFO:scheduler:Automated status scheduler started successfully
+INFO:app:Automated status progression scheduler started
+INFO:root:Initializing application components...
+INFO:root:Database path from environment: /workspaces/itowvms/vehicles.db
+INFO:root:Database exists: True
+INFO:root:Database size: 294912 bytes
+INFO:app:Initializing database at /workspaces/itowvms/vehicles.db...
+INFO:app:Table 'vehicles' checked/created.
+INFO:app:Table 'contacts' checked/created.
+INFO:app:Table 'system_logs' checked/created.
+INFO:app:Table 'notifications' checked/created.
+INFO:app:Table 'auctions' checked/created.
+INFO:app:Table 'auction_vehicles' checked/created.
+INFO:app:Table 'documents' checked/created.
+INFO:app:Table 'police_log' checked/created.
+INFO:auth:Auth database tables initialized
+INFO:root:Preparing to start Flask app on port 5001 (main process)
+INFO:root:Attempting to free port 5001 by running: 'fuser -k -n tcp 5001'
+DEBUG: About to execute fuser command.
+DEBUG: fuser subprocess.run finished. RC: 0. Stdout: '47667 47721'. Stderr: '5001/tcp:'
+INFO:root:DEBUG: fuser subprocess.run finished. RC: 0. Stdout: '47667 47721', Stderr: '5001/tcp:'
+INFO:root:fuser command processed with return code: 0
+INFO:root:fuser stdout: 47667 47721
+INFO:root:fuser stderr: 5001/tcp:
+INFO:root:fuser command likely succeeded in signalling process(es) on port 5001.
+INFO:root:Waiting 2 seconds for port to be fully released...
+DEBUG: Reached finally block after fuser attempt. Normal completion: True
+INFO:root:DEBUG: Reached finally block after fuser attempt. Normal completion: True
+INFO:root:Starting Flask application...
+ * Serving Flask app 'app'
+ * Debug mode: on
+INFO:werkzeug:[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5001
+ * Running on http://10.0.0.31:5001
+INFO:werkzeug:[33mPress CTRL+C to quit[0m
+INFO:werkzeug: * Restarting with stat
+INFO:root:===== iTow Impound Manager Started =====
+INFO:root:Using database at: /workspaces/itowvms/vehicles.db
+INFO:scheduler:Automated status scheduler initialized
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Adding job tentatively -- it will be properly scheduled when the scheduler starts
+INFO:apscheduler.scheduler:Added job "Automated Status Progression" to job store "default"
+INFO:apscheduler.scheduler:Added job "Notification Processing" to job store "default"
+INFO:apscheduler.scheduler:Added job "Daily System Cleanup" to job store "default"
+INFO:apscheduler.scheduler:Added job "Automatic Status Advancement" to job store "default"
+INFO:apscheduler.scheduler:Scheduler started
+INFO:scheduler:Automated status scheduler started successfully
+INFO:app:Automated status progression scheduler started
+INFO:root:Initializing application components...
+INFO:root:Database path from environment: /workspaces/itowvms/vehicles.db
+INFO:root:Database exists: True
+INFO:root:Database size: 294912 bytes
+INFO:app:Initializing database at /workspaces/itowvms/vehicles.db...
+INFO:app:Table 'vehicles' checked/created.
+INFO:app:Table 'contacts' checked/created.
+INFO:app:Table 'system_logs' checked/created.
+INFO:app:Table 'notifications' checked/created.
+INFO:app:Table 'auctions' checked/created.
+INFO:app:Table 'auction_vehicles' checked/created.
+INFO:app:Table 'documents' checked/created.
+INFO:app:Table 'police_log' checked/created.
+INFO:auth:Auth database tables initialized
+INFO:root:Flask app reloader active, skipping fuser command for port 5001.
+INFO:root:Starting Flask application...
+WARNING:werkzeug: * Debugger is active!
+INFO:werkzeug: * Debugger PIN: 496-912-033

@@ -238,6 +238,9 @@ function loadTab(tabName, forceRefresh = false) {
         case 'compliance':
             loadCompliance();
             break;
+        case 'automation':
+            loadAutomation();
+            break;
         case 'profile': // New case
             loadProfile();
             break;
@@ -944,6 +947,56 @@ function renderVehicleTable(vehicles, currentFilterName) {
 }
 
 /**
+ * Helper function to format date for display
+ * @param {string} dateStr - The date string to format
+ * @returns {string} - Formatted date as MM/DD/YYYY or 'N/A'
+ */
+function formatDateForDisplay(dateStr) {
+    if (!dateStr || dateStr === 'N/A' || dateStr === '') {
+        return 'N/A';
+    }
+    
+    try {
+        // Handle YYYY-MM-DD format specifically to avoid timezone issues
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            const [year, month, day] = dateStr.split('-');
+            // Create date object using local timezone by specifying components
+            const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+            
+            // Check if date is valid
+            if (isNaN(date.getTime())) {
+                return dateStr; // Return original if can't parse
+            }
+            
+            // Format as MM/DD/YYYY for display
+            return date.toLocaleDateString('en-US', {
+                month: '2-digit',
+                day: '2-digit',
+                year: 'numeric'
+            });
+        }
+        
+        // For other date formats, use the original parsing method
+        const date = new Date(dateStr);
+        
+        // Check if date is valid
+        if (isNaN(date.getTime())) {
+            return dateStr; // Return original if can't parse
+        }
+        
+        // Format as MM/DD/YYYY for display
+        return date.toLocaleDateString('en-US', {
+            month: '2-digit',
+            day: '2-digit',
+            year: 'numeric'
+        });
+    } catch (error) {
+        console.warn('Date formatting error:', error, 'for date:', dateStr);
+        return dateStr; // Return original string if error
+    }
+}
+
+/**
  * Helper function to render a status label
  * @param {string} status - The status string
  * @returns {HTMLElement} - A span element with the status label
@@ -1266,7 +1319,6 @@ function getStatusClass(status) {
  * Edit a vehicle
  */
 function editVehicle(callNumber) {
-    // Implement edit functionality
     console.log('Edit vehicle:', callNumber);
     // This would typically show the edit modal and populate it with data
 }
@@ -1525,6 +1577,72 @@ async function saveVehicleChanges(callNumber) {
     } catch (error) {
         console.error('Error updating vehicle:', error);
         showToast('Error updating vehicle: ' + error.message, 'error');
+    } finally {
+        hideLoading();
+    }
+}
+
+/**
+ * Delete a vehicle with confirmation
+ */
+async function deleteVehicle(callNumber) {
+    if (!confirm('Are you sure you want to delete this vehicle? This action cannot be undone.')) {
+        return;
+    }
+
+    try {
+        // Show loading state on delete buttons
+        const deleteButtons = document.querySelectorAll(`[onclick*="deleteVehicle('${callNumber}')"]`);
+        deleteButtons.forEach(btn => {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        });
+
+        showLoading('Deleting vehicle...');
+
+        const response = await authenticatedFetch(`/api/vehicles/${callNumber}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `Failed to delete vehicle: ${response.status}`);
+        }
+
+        const result = await response.json();
+        
+        if (result.success) {
+            showToast('Vehicle deleted successfully', 'success');
+            
+            // Refresh the vehicle list
+            const currentTab = appState.currentTab || 'dashboard';
+            if (currentTab.includes('vehicles') || currentTab === 'dashboard') {
+                // Force refresh the current vehicles view
+                appState.vehiclesData = []; // Clear cache
+                if (currentTab === 'dashboard') {
+                    loadTab('dashboard', true);
+                } else {
+                    const statusFilter = currentTab.replace('vehicles-', '') || 'active';
+                    loadVehicles(statusFilter, true);
+                }
+            }
+        } else {
+            throw new Error(result.error || 'Failed to delete vehicle');
+        }
+
+    } catch (error) {
+        console.error('Error deleting vehicle:', error);
+        showToast('Error deleting vehicle: ' + error.message, 'error');
+        
+        // Restore button state on error
+        const deleteButtons = document.querySelectorAll(`[onclick*="deleteVehicle('${callNumber}')"]`);
+        deleteButtons.forEach(btn => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-trash"></i>';
+        });
     } finally {
         hideLoading();
     }
@@ -1920,153 +2038,490 @@ function saveContactChanges() {
 }
 
 /**
- * Generate document via API call
- * @param {string} callNumber - The vehicle call number
- * @param {string} endpoint - The API endpoint (e.g., 'generate-top', 'generate-release-notice')
- * @param {string} documentType - The type of document being generated for display
+ * Load automation dashboard data and render automation view
  */
-function generateDocumentApiCall(callNumber, endpoint, documentType) {
-    if (!callNumber || !endpoint) {
-        console.error('Missing required parameters for generateDocumentApiCall');
-        showToast('Missing required parameters for document generation', 'error');
-        return;
-    }
-
-    // Show loading indicator
-    showLoading(`Generating ${documentType}...`);
-
-    // Construct the API URL
-    const apiUrl = `/api/${endpoint}/${callNumber}`;
-
-    // Make the API call
-    fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        }
-    })
-    .then(response => {
-        if (!response.ok) {
-            return response.json().then(errorData => {
-                throw new Error(errorData.error || `HTTP ${response.status}: Failed to generate ${documentType}`);
-            });
-        }
-        return response.json();
-    })
-    .then(data => {
-        hideLoading();
-        
-        if (data.pdf_filename) {
-            showToast(`${documentType} generated successfully: ${data.pdf_filename}`, 'success');
-            
-            // Open the generated PDF in a new tab
-            if (data.pdf_url) {
-                window.open(data.pdf_url, '_blank');
-            }
-            
-            // Refresh the vehicle list to show updated status
-            const currentTab = appState.currentTab || 'dashboard';
-            if (currentTab.includes('vehicles') || currentTab === 'dashboard') {
-                // Force refresh the current vehicles view
-                appState.vehiclesData = []; // Clear cache
-                if (currentTab === 'dashboard') {
-                    loadTab('dashboard', true);
-                } else {
-                    const statusFilter = currentTab.replace('vehicles-', '') || 'active';
-                    loadVehicles(statusFilter, true);
-                }
-            }
-        } else {
-            throw new Error(data.message || 'Unknown error occurred during document generation');
-        }
-    })
-    .catch(error => {
-        hideLoading();
-        console.error(`Error generating ${documentType}:`, error);
-        showToast(`Error generating ${documentType}: ${error.message}`, 'error');
-    });
-}
-
-/**
- * Format date for display
- * @param {string} dateStr - The date string to format
- * @returns {string} - Formatted date string
- */
-function formatDateForDisplay(dateStr) {
-    if (!dateStr || dateStr === 'N/A' || dateStr === '') return 'N/A';
+async function loadAutomation() {
+    console.log("loadAutomation called");
     
     try {
-        // Handle YYYY-MM-DD format specifically to avoid timezone issues
-        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-            const [year, month, day] = dateStr.split('-');
-            const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-            return date.toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric'
-            });
+        // Load automation status and configuration
+        const [schedulerResponse, workflowResponse] = await Promise.all([
+            authenticatedFetch('/api/scheduler/status'),
+            authenticatedFetch('/api/workflow-counts')
+        ]);
+
+        if (!schedulerResponse.ok || !workflowResponse.ok) {
+            throw new Error('Failed to load automation data');
         }
+
+        const schedulerData = await schedulerResponse.json();
+        const workflowData = await workflowResponse.json();
+
+        renderAutomationDashboard(schedulerData, workflowData);
         
-        const date = new Date(dateStr);
-        if (isNaN(date.getTime())) return 'N/A';
-        
-        return date.toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric'
-        });
     } catch (error) {
-        console.warn('Date formatting error:', error, 'for date:', dateStr);
-        return 'N/A';
+        console.error('Error loading automation dashboard:', error);
+        const dynamicContentArea = document.getElementById('dynamic-content-area');
+        if (dynamicContentArea) {
+            dynamicContentArea.innerHTML = `<div class="alert alert-danger">Error loading automation dashboard: ${error.message}</div>`;
+        }
+    } finally {
+        hideLoading();
     }
 }
 
 /**
- * Delete a vehicle
+ * Render the automation dashboard with current status and controls
  */
-async function deleteVehicle(callNumber) {
-    // Confirm deletion
-    if (!confirm(`Are you sure you want to delete vehicle ${callNumber}? This action cannot be undone.`)) {
-        return;
-    }
+function renderAutomationDashboard(schedulerData, workflowData) {
+    const dynamicContentArea = document.getElementById('dynamic-content-area');
+    if (!dynamicContentArea) return;
+
+    const isActive = schedulerData.is_active;
+    const lastRun = schedulerData.last_run ? new Date(schedulerData.last_run).toLocaleString() : 'Never';
+    const nextRun = schedulerData.next_run ? new Date(schedulerData.next_run).toLocaleString() : 'Not scheduled';
+
+    dynamicContentArea.innerHTML = `
+        <div class="row">
+            <!-- Scheduler Status Card -->
+            <div class="col-lg-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="fas fa-cogs"></i> Automation Scheduler</h5>
+                        <span class="badge ${isActive ? 'bg-success' : 'bg-secondary'}">${isActive ? 'ACTIVE' : 'INACTIVE'}</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-sm-6">
+                                <p><strong>Status:</strong><br>
+                                   <span class="text-${isActive ? 'success' : 'muted'}">${isActive ? 'Running' : 'Stopped'}</span>
+                                </p>
+                                <p><strong>Last Run:</strong><br>
+                                   <span class="text-muted">${lastRun}</span>
+                                </p>
+                            </div>
+                            <div class="col-sm-6">
+                                <p><strong>Next Run:</strong><br>
+                                   <span class="text-muted">${nextRun}</span>
+                                </p>
+                                <p><strong>Check Interval:</strong><br>
+                                   <span class="text-muted">${schedulerData.check_interval || 60} minutes</span>
+                                </p>
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2 mt-3">
+                            <button class="btn btn-primary btn-sm" onclick="triggerStatusCheck()">
+                                <i class="fas fa-play"></i> Trigger Check
+                            </button>
+                            <button class="btn btn-success btn-sm" onclick="triggerAutoAdvance()">
+                                <i class="fas fa-forward"></i> Auto Advance
+                            </button>
+                            <button class="btn btn-warning btn-sm" onclick="triggerDailyCheck()">
+                                <i class="fas fa-sun"></i> Daily Check
+                            </button>
+                            <button class="btn btn-info btn-sm" onclick="refreshAutomationData()">
+                                <i class="fas fa-sync"></i> Refresh
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Workflow Overview -->
+            <div class="col-lg-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-stream"></i> Workflow Overview</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row text-center">
+                            <div class="col-4">
+                                <div class="p-2 border rounded bg-light">
+                                    <h3 class="text-danger mb-1">${workflowData.overdue || 0}</h3>
+                                    <small class="text-muted">Overdue</small>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="p-2 border rounded bg-light">
+                                    <h3 class="text-warning mb-1">${workflowData.due_today || 0}</h3>
+                                    <small class="text-muted">Due Today</small>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="p-2 border rounded bg-light">
+                                    <h3 class="text-success mb-1">${workflowData.ready_to_advance || 0}</h3>
+                                    <small class="text-muted">Ready</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <p class="mb-2"><strong>Total Active Vehicles:</strong> ${workflowData.total_active || 0}</p>
+                            <div class="progress" style="height: 8px;">
+                                <div class="progress-bar bg-danger" role="progressbar" 
+                                     style="width: ${(workflowData.overdue || 0) / Math.max(workflowData.total_active || 1, 1) * 100}%"></div>
+                                <div class="progress-bar bg-warning" role="progressbar" 
+                                     style="width: ${(workflowData.due_today || 0) / Math.max(workflowData.total_active || 1, 1) * 100}%"></div>
+                                <div class="progress-bar bg-success" role="progressbar" 
+                                     style="width: ${(workflowData.ready_to_advance || 0) / Math.max(workflowData.total_active || 1, 1) * 100}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Automation Rules Configuration -->
+        <div class="row">
+            <div class="col-12 mb-4">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="fas fa-cog"></i> Automation Rules</h5>
+                        <button class="btn btn-outline-primary btn-sm" onclick="toggleRulesConfig()">
+                            <i class="fas fa-edit"></i> Configure
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div id="automation-rules-display">
+                            ${renderAutomationRules(schedulerData.config || {})}
+                        </div>
+                        <div id="automation-rules-config" class="d-none">
+                            ${renderAutomationRulesConfig(schedulerData.config || {})}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity Log -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0"><i class="fas fa-history"></i> Recent Automation Activity</h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="automation-activity-log">
+                            <div class="text-center text-muted py-3">
+                                <i class="fas fa-clock fa-2x mb-2"></i>
+                                <p>Loading recent activity...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Load recent activity
+    loadRecentAutomationActivity();
+}
+
+/**
+ * Render automation rules display
+ */
+function renderAutomationRules(config) {
+    const rules = config.rules || {};
     
-    showLoading('Deleting vehicle...');
+    return `
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Status Transition</th>
+                        <th>Time Requirement</th>
+                        <th>Auto Advance</th>
+                        <th>Notifications</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>New → TOP Generated</td>
+                        <td>${rules.new_to_top_days || 10} days</td>
+                        <td><span class="badge ${(rules.auto_advance?.new_to_top !== false) ? 'bg-success' : 'bg-secondary'}">${(rules.auto_advance?.new_to_top !== false) ? 'Enabled' : 'Disabled'}</span></td>
+                        <td><span class="badge ${(rules.notifications?.new_to_top !== false) ? 'bg-info' : 'bg-secondary'}">${(rules.notifications?.new_to_top !== false) ? 'Enabled' : 'Disabled'}</span></td>
+                    </tr>
+                    <tr>
+                        <td>TOP Generated → Ready for Auction</td>
+                        <td>${rules.top_to_auction_days || 30} days</td>
+                        <td><span class="badge ${(rules.auto_advance?.top_to_auction !== false) ? 'bg-success' : 'bg-secondary'}">${(rules.auto_advance?.top_to_auction !== false) ? 'Enabled' : 'Disabled'}</span></td>
+                        <td><span class="badge ${(rules.notifications?.top_to_auction !== false) ? 'bg-info' : 'bg-secondary'}">${(rules.notifications?.top_to_auction !== false) ? 'Enabled' : 'Disabled'}</span></td>
+                    </tr>
+                    <tr>
+                        <td>TOP Generated → Ready for Scrap</td>
+                        <td>${rules.top_to_scrap_days || 45} days</td>
+                        <td><span class="badge ${(rules.auto_advance?.top_to_scrap !== false) ? 'bg-success' : 'bg-secondary'}">${(rules.auto_advance?.top_to_scrap !== false) ? 'Enabled' : 'Disabled'}</span></td>
+                        <td><span class="badge ${(rules.notifications?.top_to_scrap !== false) ? 'bg-info' : 'bg-secondary'}">${(rules.notifications?.top_to_scrap !== false) ? 'Enabled' : 'Disabled'}</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+/**
+ * Render automation rules configuration form
+ */
+function renderAutomationRulesConfig(config) {
+    const rules = config.rules || {};
     
+    return `
+        <form id="automation-config-form">
+            <div class="row">
+                <div class="col-md-6">
+                    <h6>Time Requirements (Days)</h6>
+                    <div class="mb-3">
+                        <label class="form-label">New → TOP Generated</label>
+                        <input type="number" class="form-control" name="new_to_top_days" value="${rules.new_to_top_days || 10}" min="1" max="365">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">TOP Generated → Ready for Auction</label>
+                        <input type="number" class="form-control" name="top_to_auction_days" value="${rules.top_to_auction_days || 30}" min="1" max="365">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">TOP Generated → Ready for Scrap</label>
+                        <input type="number" class="form-control" name="top_to_scrap_days" value="${rules.top_to_scrap_days || 45}" min="1" max="365">
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <h6>Auto Advance Settings</h6>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="auto_advance_new_to_top" ${(rules.auto_advance?.new_to_top !== false) ? 'checked' : ''}>
+                        <label class="form-check-label">Auto advance New → TOP Generated</label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="auto_advance_top_to_auction" ${(rules.auto_advance?.top_to_auction !== false) ? 'checked' : ''}>
+                        <label class="form-check-label">Auto advance TOP → Ready for Auction</label>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="auto_advance_top_to_scrap" ${(rules.auto_advance?.top_to_scrap !== false) ? 'checked' : ''}>
+                        <label class="form-check-label">Auto advance TOP → Ready for Scrap</label>
+                    </div>
+                    
+                    <h6>Notification Settings</h6>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="notifications_new_to_top" ${(rules.notifications?.new_to_top !== false) ? 'checked' : ''}>
+                        <label class="form-check-label">Notify for New → TOP Generated</label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="notifications_top_to_auction" ${(rules.notifications?.top_to_auction !== false) ? 'checked' : ''}>
+                        <label class="form-check-label">Notify for TOP → Ready for Auction</label>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="notifications_top_to_scrap" ${(rules.notifications?.top_to_scrap !== false) ? 'checked' : ''}>
+                        <label class="form-check-label">Notify for TOP → Ready for Scrap</label>
+                    </div>
+                </div>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-primary" onclick="saveAutomationConfig()">Save Configuration</button>
+                <button type="button" class="btn btn-secondary" onclick="toggleRulesConfig()">Cancel</button>
+            </div>
+        </form>
+    `;
+}
+
+/**
+ * Load recent automation activity
+ */
+async function loadRecentAutomationActivity() {
     try {
-        const response = await authenticatedFetch(`/api/vehicles/${callNumber}`, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-            }
+        const response = await authenticatedFetch('/api/scheduler/activity');
+        const activityData = await response.json();
+        
+        const activityLog = document.getElementById('automation-activity-log');
+        if (!activityLog) return;
+
+        if (activityData.activities && activityData.activities.length > 0) {
+            activityLog.innerHTML = `
+                <div class="list-group">
+                    ${activityData.activities.map(activity => `
+                        <div class="list-group-item">
+                            <div class="d-flex w-100 justify-content-between">
+                                <h6 class="mb-1">${activity.action}</h6>
+                                <small class="text-muted">${new Date(activity.timestamp).toLocaleString()}</small>
+                            </div>
+                            <p class="mb-1">${activity.details}</p>
+                            ${activity.vehicle ? `<small class="text-muted">Vehicle: ${activity.vehicle}</small>` : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        } else {
+            activityLog.innerHTML = `
+                <div class="text-center text-muted py-3">
+                    <i class="fas fa-info-circle fa-2x mb-2"></i>
+                    <p>No recent automation activity found.</p>
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Error loading automation activity:', error);
+        const activityLog = document.getElementById('automation-activity-log');
+        if (activityLog) {
+            activityLog.innerHTML = `
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle"></i> 
+                    Unable to load recent activity. This feature may not be fully implemented yet.
+                </div>
+            `;
+        }
+    }
+}
+
+/**
+ * Trigger manual status check
+ */
+async function triggerStatusCheck() {
+    try {
+        showToast('Triggering status check...', 'info');
+        
+        const response = await authenticatedFetch('/api/scheduler/trigger', {
+            method: 'POST'
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || `Failed to delete vehicle: ${response.status}`);
+            throw new Error('Failed to trigger status check');
         }
 
         const result = await response.json();
+        showToast(result.message || 'Status check completed successfully', 'success');
         
-        // Show success message
-        showToast('Vehicle deleted successfully!', 'success');
-
-        // Refresh the vehicle list
-        const currentTab = appState.currentTab || 'dashboard';
-        if (currentTab.includes('vehicles') || currentTab === 'dashboard') {
-            // Force refresh the current vehicles view
-            appState.vehiclesData = []; // Clear cache
-            if (currentTab === 'dashboard') {
-                loadTab('dashboard', true);
-            } else {
-                const statusFilter = currentTab.replace('vehicles-', '') || 'active';
-                loadVehicles(statusFilter, true);
-            }
-        }
+        // Refresh the automation dashboard
+        setTimeout(() => {
+            refreshAutomationData();
+        }, 2000);
 
     } catch (error) {
-        console.error('Error deleting vehicle:', error);
-        showToast('Error deleting vehicle: ' + error.message, 'error');
-    } finally {
-        hideLoading();
+        console.error('Error triggering status check:', error);
+        showToast('Error triggering status check: ' + error.message, 'error');
+    }
+}
+
+/**
+ * Trigger manual auto advance
+ */
+async function triggerAutoAdvance() {
+    try {
+        showToast('Triggering auto advance...', 'info');
+        
+        const response = await authenticatedFetch('/api/scheduler/auto-advance', {
+            method: 'POST'
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to trigger auto advance');
+        }
+
+        const result = await response.json();
+        showToast(result.message || 'Auto advance completed successfully', 'success');
+        
+        // Refresh the automation dashboard
+        setTimeout(() => {
+            refreshAutomationData();
+        }, 2000);
+
+    } catch (error) {
+        console.error('Error triggering auto advance:', error);
+        showToast('Error triggering auto advance: ' + error.message, 'error');
+    }
+}
+
+/**
+ * Trigger manual daily status check
+ */
+async function triggerDailyCheck() {
+    try {
+        showToast('Triggering daily morning status check...', 'info');
+        
+        const response = await authenticatedFetch('/api/scheduler/daily-check', {
+            method: 'POST'
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to trigger daily status check');
+        }
+
+        const result = await response.json();
+        showToast(result.message || 'Daily status check completed successfully', 'success');
+        
+        // Refresh the automation dashboard
+        setTimeout(() => {
+            refreshAutomationData();
+        }, 2000);
+
+    } catch (error) {
+        console.error('Error triggering daily status check:', error);
+        showToast('Error triggering daily status check: ' + error.message, 'error');
+    }
+}
+
+/**
+ * Refresh automation dashboard data
+ */
+function refreshAutomationData() {
+    loadAutomation();
+}
+
+/**
+ * Toggle automation rules configuration view
+ */
+function toggleRulesConfig() {
+    const display = document.getElementById('automation-rules-display');
+    const config = document.getElementById('automation-rules-config');
+    
+    if (display && config) {
+        display.classList.toggle('d-none');
+        config.classList.toggle('d-none');
+    }
+}
+
+/**
+ * Save automation configuration
+ */
+async function saveAutomationConfig() {
+    try {
+        const form = document.getElementById('automation-config-form');
+        if (!form) return;
+
+        const formData = new FormData(form);
+        
+        // Build configuration object
+        const config = {
+            rules: {
+                new_to_top_days: parseInt(formData.get('new_to_top_days')),
+                top_to_auction_days: parseInt(formData.get('top_to_auction_days')),
+                top_to_scrap_days: parseInt(formData.get('top_to_scrap_days')),
+                auto_advance: {
+                    new_to_top: formData.has('auto_advance_new_to_top'),
+                    top_to_auction: formData.has('auto_advance_top_to_auction'),
+                    top_to_scrap: formData.has('auto_advance_top_to_scrap')
+                },
+                notifications: {
+                    new_to_top: formData.has('notifications_new_to_top'),
+                    top_to_auction: formData.has('notifications_top_to_auction'),
+                    top_to_scrap: formData.has('notifications_top_to_scrap')
+                }
+            }
+        };
+
+        const response = await authenticatedFetch('/api/scheduler/config', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(config)
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to save configuration');
+        }
+
+        showToast('Configuration saved successfully', 'success');
+        toggleRulesConfig();
+        refreshAutomationData();
+
+    } catch (error) {
+        console.error('Error saving automation config:', error);
+        showToast('Error saving configuration: ' + error.message, 'error');
     }
 }

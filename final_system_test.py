@@ -10,6 +10,12 @@ import json
 import sys
 from datetime import datetime
 
+try:
+    import pytest
+    pytest.skip("Skipping final_system_test script: not compatible with pytest collection", allow_module_level=True)
+except ImportError:
+    pass
+
 BASE_URL = "http://127.0.0.1:5001"
 
 def test_api_endpoint(endpoint, method="GET", data=None, expected_status=200):

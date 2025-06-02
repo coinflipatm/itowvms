@@ -107,6 +107,7 @@
         <a href="#" data-tab="reports" data-bs-toggle="tooltip" title="Generate and view reports"><i class="fas fa-chart-line"></i> Reports</a>
         <a href="#" data-tab="statistics"><i class="fas fa-chart-pie"></i> Statistics</a> <!-- Changed icon for variety -->
         <a href="#" data-tab="compliance"><i class="fas fa-shield-alt"></i> Compliance Check</a>
+        <a href="#" data-tab="automation" data-bs-toggle="tooltip" title="Monitor and configure automated processes"><i class="fas fa-robot"></i> Automation Dashboard</a>
         <a href="#" data-tab="scraper" data-bs-toggle="tooltip" title="Import data from TowBook"><i class="fas fa-cloud-download-alt"></i> TowBook Import</a>
         <hr class="bg-light">
         <a href="#" data-tab="profile"><i class="fas fa-user-cog"></i> Profile</a>
@@ -119,6 +120,14 @@
     <div class="content" id="main-content">
         <!-- Content will be loaded here by JavaScript -->
         <div class="container-fluid">
+            <!-- Module Status Indicator -->
+            <div id="module-status-bar" class="alert alert-info d-none mb-3">
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></div>
+                    <span id="module-status-text">Initializing professional architecture...</span>
+                </div>
+            </div>
+            
             <h2 id="current-tab-title">Dashboard</h2> <!-- Default title -->
             <div id="dynamic-content-area">
                 <!-- Actual content for tabs goes here -->
@@ -780,7 +789,27 @@
     <!-- Chart.js for statistics and reports -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
-    <!-- Custom JavaScript -->
+    <!-- Professional Module Architecture - Load First -->
+    <script src="/static/js/modules/VehicleManager.js"></script> <!-- Professional vehicle data management -->
+    <script src="/static/js/modules/VehicleRenderer.js"></script> <!-- Professional UI rendering -->
+    <script src="/static/js/modules/StatusManager.js"></script> <!-- Professional status management -->
+    <script src="/static/js/modules/ModuleManager.js"></script> <!-- Integration and coordination -->
+    
+    <!-- Integration Testing (Development Mode) -->
+    <script>
+        // Enable integration tests in development mode
+        const isDevelopmentMode = window.location.hostname === 'localhost' || 
+                                window.location.hostname === '127.0.0.1' ||
+                                window.location.search.includes('dev=true');
+        
+        if (isDevelopmentMode) {
+            const script = document.createElement('script');
+            script.src = '/static/js/integration-test.js';
+            document.head.appendChild(script);
+        }
+    </script>
+    
+    <!-- Custom JavaScript - Legacy Support -->
     <script src="/static/js/main.js"></script> <!-- Main application logic, tab handling -->
     <script src="/static/js/modals.js"></script> <!-- Logic for modals -->
     <script src="/static/js/notifications.js"></script> <!-- Handles toast notifications -->
@@ -791,6 +820,58 @@
     <!-- Removed scraping status/progress elements from here, should be part of ImportVehiclesModal or a dedicated status area -->
 
     <script>
+        // Module Status Management
+        document.addEventListener('DOMContentLoaded', function() {
+            const statusBar = document.getElementById('module-status-bar');
+            const statusText = document.getElementById('module-status-text');
+            
+            // Show the status bar
+            if (statusBar) {
+                statusBar.classList.remove('d-none');
+            }
+        });
+
+        // Listen for module events
+        document.addEventListener('modulesReady', function(event) {
+            const statusBar = document.getElementById('module-status-bar');
+            const statusText = document.getElementById('module-status-text');
+            
+            if (statusBar && statusText) {
+                statusBar.className = 'alert alert-success mb-3';
+                statusText.innerHTML = `
+                    <i class="fas fa-check-circle me-2"></i>
+                    Professional architecture loaded successfully (${event.detail.modules.length} modules)
+                `;
+                
+                // Hide after 3 seconds
+                setTimeout(() => {
+                    statusBar.classList.add('d-none');
+                }, 3000);
+            }
+            
+            console.log('iTow VMS: Professional architecture ready with modules:', event.detail.modules);
+        });
+
+        document.addEventListener('modulesFallback', function(event) {
+            const statusBar = document.getElementById('module-status-bar');
+            const statusText = document.getElementById('module-status-text');
+            
+            if (statusBar && statusText) {
+                statusBar.className = 'alert alert-warning mb-3';
+                statusText.innerHTML = `
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Running in legacy mode - Professional features limited
+                `;
+                
+                // Hide after 5 seconds
+                setTimeout(() => {
+                    statusBar.classList.add('d-none');
+                }, 5000);
+            }
+            
+            console.warn('iTow VMS: Running in legacy fallback mode:', event.detail.reason);
+        });
+
         // Initialize Bootstrap tooltips
         var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
         var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {

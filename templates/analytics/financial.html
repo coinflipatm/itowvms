@@ -1,0 +1,989 @@
+{% extends "base.html" %}
+
+{% block title %}Financial Analytics Dashboard - iTow VMS{% endblock %}
+
+{% block extra_css %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    .financial-header {
+        background: linear-gradient(135deg, #38a169 0%, #48bb78 100%);
+        color: white;
+        padding: 2rem 0;
+        margin-bottom: 2rem;
+    }
+    
+    .financial-card {
+        background: white;
+        border-radius: 10px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border-left: 4px solid #38a169;
+        transition: transform 0.2s ease;
+        height: 100%;
+    }
+    
+    .financial-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
+    }
+    
+    .financial-value {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #2d3748;
+    }
+    
+    .financial-label {
+        color: #718096;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .financial-change {
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+    
+    .financial-change.positive { color: #38a169; }
+    .financial-change.negative { color: #e53e3e; }
+    
+    .chart-container {
+        background: white;
+        border-radius: 10px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        margin-bottom: 2rem;
+    }
+    
+    .revenue-category {
+        background: #f7fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .cost-breakdown {
+        background: #fef5e7;
+        border: 1px solid #f6ad55;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .profit-indicator {
+        width: 100%;
+        height: 8px;
+        background: #e2e8f0;
+        border-radius: 4px;
+        overflow: hidden;
+    }
+    
+    .profit-fill {
+        height: 100%;
+        border-radius: 4px;
+    }
+    
+    .profit-positive { background: #38a169; }
+    .profit-negative { background: #e53e3e; }
+    
+    .timeframe-selector {
+        background: white;
+        padding: 1rem;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        margin-bottom: 2rem;
+    }
+    
+    .refresh-indicator {
+        display: inline-block;
+        margin-left: 10px;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+    
+    .refresh-indicator.active {
+        opacity: 1;
+    }
+    
+    .dashboard-section {
+        margin-bottom: 3rem;
+    }
+    
+    .section-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #2d3748;
+        margin-bottom: 1.5rem;
+        border-bottom: 2px solid #e2e8f0;
+        padding-bottom: 0.5rem;
+    }
+    
+    .kpi-trend {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+    }
+    
+    .forecast-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 10px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+    }
+    
+    .cost-efficiency-meter {
+        position: relative;
+        width: 120px;
+        height: 120px;
+        margin: 0 auto;
+    }
+    
+    .budget-alert {
+        border-left: 4px solid;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        border-radius: 5px;
+    }
+    
+    .budget-alert.warning { 
+        border-left-color: #d69e2e; 
+        background-color: #feebc8; 
+        color: #b7791f;
+    }
+    
+    .budget-alert.danger { 
+        border-left-color: #e53e3e; 
+        background-color: #fed7d7; 
+        color: #9b2c2c;
+    }
+    
+    .budget-alert.success { 
+        border-left-color: #38a169; 
+        background-color: #c6f6d5; 
+        color: #276749;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="financial-header">
+    <div class="container">
+        <div class="row">
+            <div class="col-12">
+                <h1 class="mb-2">
+                    <i class="fas fa-chart-pie"></i> Financial Analytics Dashboard
+                </h1>
+                <p class="mb-0">Comprehensive financial performance and revenue analysis</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="container-fluid">
+    <!-- Timeframe Selector -->
+    <div class="timeframe-selector">
+        <div class="row align-items-center">
+            <div class="col-md-6">
+                <h5 class="mb-0">
+                    <i class="fas fa-calendar-alt"></i> Financial Period
+                    <span class="refresh-indicator" id="refreshIndicator">
+                        <i class="fas fa-sync-alt fa-spin"></i>
+                    </span>
+                </h5>
+            </div>
+            <div class="col-md-6">
+                <div class="btn-group float-md-right" role="group">
+                    <button type="button" class="btn btn-outline-primary timeframe-btn" data-timeframe="7d">Week</button>
+                    <button type="button" class="btn btn-primary timeframe-btn" data-timeframe="30d">Month</button>
+                    <button type="button" class="btn btn-outline-primary timeframe-btn" data-timeframe="90d">Quarter</button>
+                    <button type="button" class="btn btn-outline-primary timeframe-btn" data-timeframe="1y">Year</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Financial KPIs -->
+    <div class="dashboard-section">
+        <h2 class="section-title">
+            <i class="fas fa-dollar-sign"></i> Key Financial Indicators
+        </h2>
+        <div class="row" id="financialKpiContainer">
+            <!-- KPIs will be loaded here -->
+        </div>
+    </div>
+
+    <!-- Budget Alerts -->
+    <div class="dashboard-section" id="budgetAlertsSection" style="display: none;">
+        <h2 class="section-title">
+            <i class="fas fa-exclamation-triangle"></i> Budget Alerts
+        </h2>
+        <div id="budgetAlertsContainer">
+            <!-- Budget alerts will be loaded here -->
+        </div>
+    </div>
+
+    <!-- Revenue Analysis -->
+    <div class="dashboard-section">
+        <h2 class="section-title">
+            <i class="fas fa-chart-line"></i> Revenue Analysis
+        </h2>
+        
+        <div class="row">
+            <!-- Revenue Trends -->
+            <div class="col-lg-8">
+                <div class="chart-container">
+                    <h5><i class="fas fa-trending-up"></i> Revenue Trends</h5>
+                    <canvas id="revenueTrendsChart" width="600" height="300"></canvas>
+                </div>
+            </div>
+            
+            <!-- Revenue Sources -->
+            <div class="col-lg-4">
+                <div class="chart-container">
+                    <h5><i class="fas fa-pie-chart"></i> Revenue Sources</h5>
+                    <canvas id="revenueSourcesChart" width="300" height="300"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Revenue Categories Breakdown -->
+        <div class="row">
+            <div class="col-12">
+                <div class="chart-container">
+                    <h5><i class="fas fa-layer-group"></i> Revenue Categories</h5>
+                    <div id="revenueCategoriesBreakdown">
+                        <!-- Revenue categories will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cost Analysis -->
+    <div class="dashboard-section">
+        <h2 class="section-title">
+            <i class="fas fa-receipt"></i> Cost Analysis
+        </h2>
+        
+        <div class="row">
+            <!-- Cost Breakdown -->
+            <div class="col-lg-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-chart-bar"></i> Cost Breakdown</h5>
+                    <canvas id="costBreakdownChart" width="400" height="300"></canvas>
+                </div>
+            </div>
+            
+            <!-- Cost Efficiency -->
+            <div class="col-lg-6">
+                <div class="chart-container text-center">
+                    <h5><i class="fas fa-gauge"></i> Cost Efficiency</h5>
+                    <div class="cost-efficiency-meter">
+                        <canvas id="costEfficiencyGauge" width="120" height="120"></canvas>
+                    </div>
+                    <div class="mt-3" id="efficiencyRating">
+                        <!-- Efficiency rating will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Cost Categories -->
+        <div class="row">
+            <div class="col-12">
+                <div class="chart-container">
+                    <h5><i class="fas fa-list-ul"></i> Cost Categories</h5>
+                    <div id="costCategoriesBreakdown">
+                        <!-- Cost categories will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Profitability Analysis -->
+    <div class="dashboard-section">
+        <h2 class="section-title">
+            <i class="fas fa-chart-area"></i> Profitability Analysis
+        </h2>
+        
+        <div class="row">
+            <!-- Profit Margins -->
+            <div class="col-lg-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-percentage"></i> Profit Margins</h5>
+                    <canvas id="profitMarginsChart" width="400" height="300"></canvas>
+                </div>
+            </div>
+            
+            <!-- ROI Analysis -->
+            <div class="col-lg-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-chart-line"></i> Return on Investment</h5>
+                    <canvas id="roiAnalysisChart" width="400" height="300"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Financial Forecasting -->
+    <div class="dashboard-section">
+        <h2 class="section-title">
+            <i class="fas fa-crystal-ball"></i> Financial Forecasting
+        </h2>
+        
+        <div class="forecast-card">
+            <div class="row">
+                <div class="col-md-8">
+                    <h5><i class="fas fa-chart-line"></i> Revenue Forecast</h5>
+                    <canvas id="revenueForecastChart" width="600" height="200" style="filter: brightness(1.2);"></canvas>
+                </div>
+                <div class="col-md-4">
+                    <h5><i class="fas fa-target"></i> Forecast Summary</h5>
+                    <div id="forecastSummary">
+                        <!-- Forecast summary will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Financial Performance Summary -->
+    <div class="dashboard-section">
+        <h2 class="section-title">
+            <i class="fas fa-clipboard-check"></i> Performance Summary
+        </h2>
+        <div class="row" id="performanceSummaryContainer">
+            <!-- Performance summary will be loaded here -->
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Global variables
+let currentTimeframe = '{{ timeframe }}';
+let dashboardData = null;
+let charts = {};
+let refreshInterval = null;
+
+// Initialize dashboard
+$(document).ready(function() {
+    initializeDashboard();
+    setupEventHandlers();
+    startAutoRefresh();
+});
+
+function initializeDashboard() {
+    loadDashboardData();
+}
+
+function setupEventHandlers() {
+    // Timeframe selector
+    $('.timeframe-btn').click(function() {
+        $('.timeframe-btn').removeClass('btn-primary').addClass('btn-outline-primary');
+        $(this).removeClass('btn-outline-primary').addClass('btn-primary');
+        currentTimeframe = $(this).data('timeframe');
+        loadDashboardData();
+    });
+    
+    // Manual refresh
+    $(document).on('keydown', function(e) {
+        if (e.key === 'F5' || (e.ctrlKey && e.key === 'r')) {
+            e.preventDefault();
+            loadDashboardData();
+        }
+    });
+}
+
+function startAutoRefresh() {
+    // Refresh every 60 seconds for financial data
+    refreshInterval = setInterval(function() {
+        loadDashboardData(false); // Silent refresh
+    }, 60000);
+}
+
+function loadDashboardData(showLoading = true) {
+    if (showLoading) {
+        showRefreshIndicator();
+    }
+    
+    $.ajax({
+        url: '/analytics/api/financial-dashboard',
+        method: 'GET',
+        data: { timeframe: currentTimeframe },
+        success: function(data) {
+            dashboardData = data;
+            updateDashboard(data);
+            hideRefreshIndicator();
+        },
+        error: function(xhr, status, error) {
+            console.error('Error loading financial dashboard data:', error);
+            showError('Failed to load financial dashboard data');
+            hideRefreshIndicator();
+        }
+    });
+}
+
+function updateDashboard(data) {
+    updateFinancialKPIs(data.kpis);
+    updateBudgetAlerts(data.budget_alerts);
+    updateRevenueAnalysis(data.revenue);
+    updateCostAnalysis(data.costs);
+    updateProfitabilityAnalysis(data.profitability);
+    updateFinancialForecasting(data.forecast);
+    updatePerformanceSummary(data.performance);
+}
+
+function updateFinancialKPIs(kpis) {
+    const container = $('#financialKpiContainer');
+    container.empty();
+    
+    const kpiCards = [
+        {
+            label: 'Total Revenue',
+            value: '$' + (kpis.total_revenue || 0).toLocaleString(),
+            change: kpis.revenue_change || 0,
+            icon: 'fas fa-dollar-sign',
+            color: '#38a169'
+        },
+        {
+            label: 'Total Costs',
+            value: '$' + (kpis.total_costs || 0).toLocaleString(),
+            change: kpis.costs_change || 0,
+            icon: 'fas fa-receipt',
+            color: '#e53e3e'
+        },
+        {
+            label: 'Net Profit',
+            value: '$' + (kpis.net_profit || 0).toLocaleString(),
+            change: kpis.profit_change || 0,
+            icon: 'fas fa-chart-line',
+            color: '#3182ce'
+        },
+        {
+            label: 'Profit Margin',
+            value: (kpis.profit_margin || 0).toFixed(1) + '%',
+            change: kpis.margin_change || 0,
+            icon: 'fas fa-percentage',
+            color: '#764ba2'
+        },
+        {
+            label: 'Cost per Vehicle',
+            value: '$' + (kpis.cost_per_vehicle || 0).toFixed(2),
+            change: kpis.cost_per_vehicle_change || 0,
+            icon: 'fas fa-car',
+            color: '#d69e2e'
+        },
+        {
+            label: 'Revenue per Vehicle',
+            value: '$' + (kpis.revenue_per_vehicle || 0).toFixed(2),
+            change: kpis.revenue_per_vehicle_change || 0,
+            icon: 'fas fa-money-bill-wave',
+            color: '#805ad5'
+        }
+    ];
+    
+    kpiCards.forEach(function(kpi) {
+        const changeClass = kpi.change > 0 ? 'positive' : kpi.change < 0 ? 'negative' : '';
+        const changeIcon = kpi.change > 0 ? 'fa-arrow-up' : kpi.change < 0 ? 'fa-arrow-down' : 'fa-minus';
+        
+        const card = $(`
+            <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
+                <div class="financial-card">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="${kpi.icon}" style="color: ${kpi.color}; font-size: 1.5rem;"></i>
+                        <div class="ms-auto">
+                            <span class="financial-change ${changeClass}">
+                                <i class="fas ${changeIcon}"></i> ${Math.abs(kpi.change).toFixed(1)}%
+                            </span>
+                        </div>
+                    </div>
+                    <div class="financial-label">${kpi.label}</div>
+                    <div class="financial-value">${kpi.value}</div>
+                </div>
+            </div>
+        `);
+        container.append(card);
+    });
+}
+
+function updateBudgetAlerts(alerts) {
+    const container = $('#budgetAlertsContainer');
+    const section = $('#budgetAlertsSection');
+    
+    container.empty();
+    
+    if (alerts && alerts.length > 0) {
+        section.show();
+        
+        alerts.forEach(function(alert) {
+            const alertCard = $(`
+                <div class="budget-alert ${alert.severity}">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h6 class="mb-1"><strong>${alert.title}</strong></h6>
+                            <p class="mb-1">${alert.message}</p>
+                            <small>${alert.recommendation}</small>
+                        </div>
+                        <div class="text-end">
+                            <strong>${alert.amount}</strong>
+                            <br>
+                            <small>${alert.percentage}%</small>
+                        </div>
+                    </div>
+                </div>
+            `);
+            container.append(alertCard);
+        });
+    } else {
+        section.hide();
+    }
+}
+
+function updateRevenueAnalysis(revenue) {
+    // Update revenue trends chart
+    updateRevenueTrendsChart(revenue.trends);
+    
+    // Update revenue sources chart
+    updateRevenueSourcesChart(revenue.sources);
+    
+    // Update revenue categories breakdown
+    updateRevenueCategoriesBreakdown(revenue.categories);
+}
+
+function updateRevenueTrendsChart(data) {
+    const ctx = document.getElementById('revenueTrendsChart').getContext('2d');
+    
+    if (charts.revenueTrends) {
+        charts.revenueTrends.destroy();
+    }
+    
+    charts.revenueTrends = new Chart(ctx, {
+        type: 'line',
+        data: data,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toLocaleString();
+                        }
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top'
+                }
+            }
+        }
+    });
+}
+
+function updateRevenueSourcesChart(data) {
+    const ctx = document.getElementById('revenueSourcesChart').getContext('2d');
+    
+    if (charts.revenueSources) {
+        charts.revenueSources.destroy();
+    }
+    
+    charts.revenueSources = new Chart(ctx, {
+        type: 'doughnut',
+        data: data,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+}
+
+function updateRevenueCategoriesBreakdown(categories) {
+    const container = $('#revenueCategoriesBreakdown');
+    container.empty();
+    
+    if (categories && categories.length > 0) {
+        categories.forEach(function(category) {
+            const percentage = category.percentage || 0;
+            
+            const categoryCard = $(`
+                <div class="revenue-category">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0">${category.name}</h6>
+                        <span class="badge bg-success">$${category.amount.toLocaleString()}</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <small class="text-muted">${category.description}</small>
+                        <small><strong>${percentage.toFixed(1)}%</strong></small>
+                    </div>
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar bg-success" style="width: ${percentage}%"></div>
+                    </div>
+                </div>
+            `);
+            container.append(categoryCard);
+        });
+    } else {
+        container.append('<p class="text-muted">Revenue categories not available.</p>');
+    }
+}
+
+function updateCostAnalysis(costs) {
+    // Update cost breakdown chart
+    updateCostBreakdownChart(costs.breakdown);
+    
+    // Update cost efficiency gauge
+    updateCostEfficiencyGauge(costs.efficiency);
+    
+    // Update cost categories breakdown
+    updateCostCategoriesBreakdown(costs.categories);
+}
+
+function updateCostBreakdownChart(data) {
+    const ctx = document.getElementById('costBreakdownChart').getContext('2d');
+    
+    if (charts.costBreakdown) {
+        charts.costBreakdown.destroy();
+    }
+    
+    charts.costBreakdown = new Chart(ctx, {
+        type: 'bar',
+        data: data,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toLocaleString();
+                        }
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top'
+                }
+            }
+        }
+    });
+}
+
+function updateCostEfficiencyGauge(efficiency) {
+    const ctx = document.getElementById('costEfficiencyGauge').getContext('2d');
+    const value = efficiency || 0;
+    
+    if (charts.costEfficiency) {
+        charts.costEfficiency.destroy();
+    }
+    
+    charts.costEfficiency = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            datasets: [{
+                data: [value, 100 - value],
+                backgroundColor: [
+                    value >= 80 ? '#38a169' : value >= 60 ? '#d69e2e' : '#e53e3e',
+                    '#e2e8f0'
+                ],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            cutout: '70%',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            }
+        },
+        plugins: [{
+            afterDraw: function(chart) {
+                const width = chart.width,
+                      height = chart.height,
+                      ctx = chart.ctx;
+                
+                ctx.restore();
+                const fontSize = (height / 120).toFixed(2);
+                ctx.font = fontSize + "em sans-serif";
+                ctx.textBaseline = "middle";
+                
+                const text = value.toFixed(0) + "%",
+                      textX = Math.round((width - ctx.measureText(text).width) / 2),
+                      textY = height / 2;
+                
+                ctx.fillText(text, textX, textY);
+                ctx.save();
+            }
+        }]
+    });
+    
+    // Update efficiency rating
+    const ratingEl = $('#efficiencyRating');
+    let ratingText, ratingClass;
+    
+    if (value >= 80) {
+        ratingText = 'Excellent Efficiency';
+        ratingClass = 'text-success';
+    } else if (value >= 60) {
+        ratingText = 'Good Efficiency';
+        ratingClass = 'text-info';
+    } else if (value >= 40) {
+        ratingText = 'Needs Improvement';
+        ratingClass = 'text-warning';
+    } else {
+        ratingText = 'Poor Efficiency';
+        ratingClass = 'text-danger';
+    }
+    
+    ratingEl.html(`<span class="${ratingClass}"><strong>${ratingText}</strong></span>`);
+}
+
+function updateCostCategoriesBreakdown(categories) {
+    const container = $('#costCategoriesBreakdown');
+    container.empty();
+    
+    if (categories && categories.length > 0) {
+        categories.forEach(function(category) {
+            const percentage = category.percentage || 0;
+            
+            const categoryCard = $(`
+                <div class="cost-breakdown">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0">${category.name}</h6>
+                        <span class="badge bg-warning">$${category.amount.toLocaleString()}</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <small class="text-muted">${category.description}</small>
+                        <small><strong>${percentage.toFixed(1)}%</strong></small>
+                    </div>
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar bg-warning" style="width: ${percentage}%"></div>
+                    </div>
+                </div>
+            `);
+            container.append(categoryCard);
+        });
+    } else {
+        container.append('<p class="text-muted">Cost categories not available.</p>');
+    }
+}
+
+function updateProfitabilityAnalysis(profitability) {
+    updateProfitMarginsChart(profitability.margins);
+    updateROIAnalysisChart(profitability.roi);
+}
+
+function updateProfitMarginsChart(data) {
+    const ctx = document.getElementById('profitMarginsChart').getContext('2d');
+    
+    if (charts.profitMargins) {
+        charts.profitMargins.destroy();
+    }
+    
+    charts.profitMargins = new Chart(ctx, {
+        type: 'line',
+        data: data,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return value + '%';
+                        }
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top'
+                }
+            }
+        }
+    });
+}
+
+function updateROIAnalysisChart(data) {
+    const ctx = document.getElementById('roiAnalysisChart').getContext('2d');
+    
+    if (charts.roiAnalysis) {
+        charts.roiAnalysis.destroy();
+    }
+    
+    charts.roiAnalysis = new Chart(ctx, {
+        type: 'bar',
+        data: data,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return value + '%';
+                        }
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top'
+                }
+            }
+        }
+    });
+}
+
+function updateFinancialForecasting(forecast) {
+    // Update revenue forecast chart
+    updateRevenueForecastChart(forecast.revenue);
+    
+    // Update forecast summary
+    updateForecastSummary(forecast.summary);
+}
+
+function updateRevenueForecastChart(data) {
+    const ctx = document.getElementById('revenueForecastChart').getContext('2d');
+    
+    if (charts.revenueForecast) {
+        charts.revenueForecast.destroy();
+    }
+    
+    charts.revenueForecast = new Chart(ctx, {
+        type: 'line',
+        data: data,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toLocaleString();
+                        },
+                        color: 'white'
+                    }
+                },
+                x: {
+                    ticks: {
+                        color: 'white'
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top',
+                    labels: {
+                        color: 'white'
+                    }
+                }
+            }
+        }
+    });
+}
+
+function updateForecastSummary(summary) {
+    const container = $('#forecastSummary');
+    container.empty();
+    
+    if (summary) {
+        const summaryHtml = `
+            <div class="text-white">
+                <div class="mb-3">
+                    <h6>Next Month Projection</h6>
+                    <h4>$${summary.next_month.toLocaleString()}</h4>
+                    <small>Expected Revenue</small>
+                </div>
+                <div class="mb-3">
+                    <h6>Growth Rate</h6>
+                    <h4>${summary.growth_rate.toFixed(1)}%</h4>
+                    <small>Month over Month</small>
+                </div>
+                <div>
+                    <h6>Confidence Level</h6>
+                    <h4>${summary.confidence}%</h4>
+                    <small>Forecast Accuracy</small>
+                </div>
+            </div>
+        `;
+        container.html(summaryHtml);
+    } else {
+        container.html('<p class="text-white-50">Forecast data not available.</p>');
+    }
+}
+
+function updatePerformanceSummary(performance) {
+    const container = $('#performanceSummaryContainer');
+    container.empty();
+    
+    if (performance && performance.length > 0) {
+        performance.forEach(function(item) {
+            const card = $(`
+                <div class="col-lg-3 col-md-6 mb-3">
+                    <div class="financial-card">
+                        <div class="financial-label">${item.label}</div>
+                        <div class="financial-value" style="color: ${item.color};">${item.value}</div>
+                        <div class="kpi-trend">
+                            <i class="fas ${item.trend_icon}" style="color: ${item.trend_color};"></i>
+                            <small class="text-muted">${item.description}</small>
+                        </div>
+                    </div>
+                </div>
+            `);
+            container.append(card);
+        });
+    } else {
+        container.append('<p class="text-muted">Performance summary not available.</p>');
+    }
+}
+
+function showRefreshIndicator() {
+    $('#refreshIndicator').addClass('active');
+}
+
+function hideRefreshIndicator() {
+    $('#refreshIndicator').removeClass('active');
+}
+
+function showError(message) {
+    console.error(message);
+    // TODO: Implement toast notification
+}
+
+// Cleanup on page unload
+$(window).on('beforeunload', function() {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
+    
+    // Destroy charts
+    Object.values(charts).forEach(function(chart) {
+        if (chart) {
+            chart.destroy();
+        }
+    });
+});
+</script>
+{% endblock %}

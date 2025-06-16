@@ -9,6 +9,9 @@ import uuid
 from functools import wraps
 from flask import jsonify
 
+# Import the database path function for consistency
+from database import get_database_path
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -51,7 +54,7 @@ class User(UserMixin):
     
     @staticmethod
     def get_by_id(user_id):
-        conn = sqlite3.connect('database.db')
+        conn = sqlite3.connect(get_database_path())
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
@@ -73,7 +76,7 @@ class User(UserMixin):
     
     @staticmethod
     def get_by_username(username):
-        conn = sqlite3.connect('database.db')
+        conn = sqlite3.connect(get_database_path())
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
@@ -95,7 +98,7 @@ class User(UserMixin):
     
     @staticmethod
     def get_by_email(email):
-        conn = sqlite3.connect('database.db')
+        conn = sqlite3.connect(get_database_path())
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
@@ -118,7 +121,7 @@ class User(UserMixin):
     @staticmethod
     def create_user(username, email, password, role='readonly'):
         """Create a new user (default role is readonly)"""
-        conn = sqlite3.connect('database.db')
+        conn = sqlite3.connect(get_database_path())
         cursor = conn.cursor()
         created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         password_hash = generate_password_hash(password)
@@ -139,7 +142,7 @@ class User(UserMixin):
     
     @staticmethod
     def update_last_login(user_id):
-        conn = sqlite3.connect('database.db')
+        conn = sqlite3.connect(get_database_path())
         cursor = conn.cursor()
         last_login = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         cursor.execute("UPDATE users SET last_login = ? WHERE id = ?", (last_login, user_id))
@@ -201,7 +204,7 @@ def register():
         return redirect(url_for('index'))
     
     # Check if any users exist - first user becomes admin
-    conn = sqlite3.connect('database.db')
+    conn = sqlite3.connect(get_database_path())
     cursor = conn.cursor()
     cursor.execute("SELECT COUNT(*) FROM users")
     user_count = cursor.fetchone()[0]
@@ -265,7 +268,7 @@ def admin_users():
         flash('Access denied. Admin privileges required.', 'danger')
         return redirect(url_for('index'))
     
-    conn = sqlite3.connect('database.db')
+    conn = sqlite3.connect(get_database_path())
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM users ORDER BY id")
@@ -286,7 +289,7 @@ def toggle_user_active(user_id):
         flash('You cannot deactivate your own account', 'danger')
         return redirect(url_for('auth.admin_users'))
     
-    conn = sqlite3.connect('database.db')
+    conn = sqlite3.connect(get_database_path())
     cursor = conn.cursor()
     
     # Get current status
@@ -328,7 +331,7 @@ def change_user_role(user_id):
         flash('Invalid role', 'danger')
         return redirect(url_for('auth.admin_users'))
     
-    conn = sqlite3.connect('database.db')
+    conn = sqlite3.connect(get_database_path())
     cursor = conn.cursor()
     
     # Get username for logging
@@ -386,7 +389,7 @@ def api_login_required(f):
 
 # Initialize auth database tables
 def init_auth_db():
-    conn = sqlite3.connect('database.db')
+    conn = sqlite3.connect(get_database_path())
     cursor = conn.cursor()
     
     # Create users table if it doesn't exist

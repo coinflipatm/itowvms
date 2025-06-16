@@ -48,6 +48,23 @@ login_manager.login_message_category = 'info'
 app.register_blueprint(auth_bp)
 from api_routes import register_api_routes
 register_api_routes(app)
+
+# Initialize AI integration
+try:
+    from app.ai.integration import init_ai_integration
+    from app.api.ai_routes import ai_bp
+    
+    # Register AI API routes
+    app.register_blueprint(ai_bp)
+    
+    # Initialize AI integration manager
+    init_ai_integration(app)
+    logging.info("AI integration initialized successfully")
+except ImportError as e:
+    logging.warning(f"AI integration not available: {e}")
+except Exception as e:
+    logging.error(f"Failed to initialize AI integration: {e}")
+
 from scheduler import init_scheduler
 scheduler = init_scheduler(app)
 
@@ -249,10 +266,10 @@ def add_vehicle():
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 @app.route('/api/generate-top/<call_number>', methods=['POST'])
-# @login_required (disabled for testing)
+@api_login_required
 def generate_top(call_number):
     logging.info(f"API called: generate_top for call_number={call_number}")
-    username = getattr(current_user, 'id', 'System')
+    username = getattr(current_user, 'username', 'System')
     success, message, pdf_filename_or_error, vehicle_data, notification_id = _perform_top_generation(call_number, username)
     if success:
         logging.info(f"TOP form generated successfully for call_number={call_number}")
@@ -328,10 +345,10 @@ def _perform_release_notice_generation(call_number, username):
     return success, message, pdf_filename, vehicle_data, notification_id
 
 @app.route('/api/generate-release-notice/<call_number>', methods=['POST'])
-# @login_required (disabled for testing)
+@api_login_required
 def generate_release_notice(call_number):
     logging.info(f"API called: generate_release_notice for call_number={call_number}")
-    username = getattr(current_user, 'id', 'System')
+    username = getattr(current_user, 'username', 'System')
     success, message, pdf_filename_or_error, vehicle_data, notification_id = _perform_release_notice_generation(call_number, username)
     if success:
         pdf_url = url_for('static', filename=f"generated_pdfs/{pdf_filename_or_error}")
@@ -521,6 +538,16 @@ def js_execution_test():
 def direct_vehicle_test():
     """Direct vehicle data test page"""
     return send_from_directory('.', 'direct_vehicle_test.html')
+
+# === PWA Static File Routes ===
+@app.route('/pwa/', defaults={'path': 'index.html'})
+@app.route('/pwa/<path:path>')
+def serve_pwa(path):
+    # Serve PWA files from the static/pwa directory
+    return send_from_directory(
+        os.path.join(app.root_path, 'static', 'pwa'),
+        path
+    )
 
 if __name__ == "__main__":
     PORT = 5001

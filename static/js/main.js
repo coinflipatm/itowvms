@@ -2038,490 +2038,83 @@ function saveContactChanges() {
 }
 
 /**
- * Load automation dashboard data and render automation view
+ * Generate document via API call and handle PDF download/display
  */
-async function loadAutomation() {
-    console.log("loadAutomation called");
-    
+async function generateDocumentApiCall(callNumber, endpoint, documentType) {
     try {
-        // Load automation status and configuration
-        const [schedulerResponse, workflowResponse] = await Promise.all([
-            authenticatedFetch('/api/scheduler/status'),
-            authenticatedFetch('/api/workflow-counts')
-        ]);
-
-        if (!schedulerResponse.ok || !workflowResponse.ok) {
-            throw new Error('Failed to load automation data');
-        }
-
-        const schedulerData = await schedulerResponse.json();
-        const workflowData = await workflowResponse.json();
-
-        renderAutomationDashboard(schedulerData, workflowData);
+        // Show loading state
+        showToast(`Generating ${documentType}...`, 'info');
         
-    } catch (error) {
-        console.error('Error loading automation dashboard:', error);
-        const dynamicContentArea = document.getElementById('dynamic-content-area');
-        if (dynamicContentArea) {
-            dynamicContentArea.innerHTML = `<div class="alert alert-danger">Error loading automation dashboard: ${error.message}</div>`;
-        }
-    } finally {
-        hideLoading();
-    }
-}
-
-/**
- * Render the automation dashboard with current status and controls
- */
-function renderAutomationDashboard(schedulerData, workflowData) {
-    const dynamicContentArea = document.getElementById('dynamic-content-area');
-    if (!dynamicContentArea) return;
-
-    const isActive = schedulerData.is_active;
-    const lastRun = schedulerData.last_run ? new Date(schedulerData.last_run).toLocaleString() : 'Never';
-    const nextRun = schedulerData.next_run ? new Date(schedulerData.next_run).toLocaleString() : 'Not scheduled';
-
-    dynamicContentArea.innerHTML = `
-        <div class="row">
-            <!-- Scheduler Status Card -->
-            <div class="col-lg-6 mb-4">
-                <div class="card h-100">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="fas fa-cogs"></i> Automation Scheduler</h5>
-                        <span class="badge ${isActive ? 'bg-success' : 'bg-secondary'}">${isActive ? 'ACTIVE' : 'INACTIVE'}</span>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-sm-6">
-                                <p><strong>Status:</strong><br>
-                                   <span class="text-${isActive ? 'success' : 'muted'}">${isActive ? 'Running' : 'Stopped'}</span>
-                                </p>
-                                <p><strong>Last Run:</strong><br>
-                                   <span class="text-muted">${lastRun}</span>
-                                </p>
-                            </div>
-                            <div class="col-sm-6">
-                                <p><strong>Next Run:</strong><br>
-                                   <span class="text-muted">${nextRun}</span>
-                                </p>
-                                <p><strong>Check Interval:</strong><br>
-                                   <span class="text-muted">${schedulerData.check_interval || 60} minutes</span>
-                                </p>
-                            </div>
-                        </div>
-                        <div class="d-flex gap-2 mt-3">
-                            <button class="btn btn-primary btn-sm" onclick="triggerStatusCheck()">
-                                <i class="fas fa-play"></i> Trigger Check
-                            </button>
-                            <button class="btn btn-success btn-sm" onclick="triggerAutoAdvance()">
-                                <i class="fas fa-forward"></i> Auto Advance
-                            </button>
-                            <button class="btn btn-warning btn-sm" onclick="triggerDailyCheck()">
-                                <i class="fas fa-sun"></i> Daily Check
-                            </button>
-                            <button class="btn btn-info btn-sm" onclick="refreshAutomationData()">
-                                <i class="fas fa-sync"></i> Refresh
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Workflow Overview -->
-            <div class="col-lg-6 mb-4">
-                <div class="card h-100">
-                    <div class="card-header">
-                        <h5 class="mb-0"><i class="fas fa-stream"></i> Workflow Overview</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row text-center">
-                            <div class="col-4">
-                                <div class="p-2 border rounded bg-light">
-                                    <h3 class="text-danger mb-1">${workflowData.overdue || 0}</h3>
-                                    <small class="text-muted">Overdue</small>
-                                </div>
-                            </div>
-                            <div class="col-4">
-                                <div class="p-2 border rounded bg-light">
-                                    <h3 class="text-warning mb-1">${workflowData.due_today || 0}</h3>
-                                    <small class="text-muted">Due Today</small>
-                                </div>
-                            </div>
-                            <div class="col-4">
-                                <div class="p-2 border rounded bg-light">
-                                    <h3 class="text-success mb-1">${workflowData.ready_to_advance || 0}</h3>
-                                    <small class="text-muted">Ready</small>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="mt-3">
-                            <p class="mb-2"><strong>Total Active Vehicles:</strong> ${workflowData.total_active || 0}</p>
-                            <div class="progress" style="height: 8px;">
-                                <div class="progress-bar bg-danger" role="progressbar" 
-                                     style="width: ${(workflowData.overdue || 0) / Math.max(workflowData.total_active || 1, 1) * 100}%"></div>
-                                <div class="progress-bar bg-warning" role="progressbar" 
-                                     style="width: ${(workflowData.due_today || 0) / Math.max(workflowData.total_active || 1, 1) * 100}%"></div>
-                                <div class="progress-bar bg-success" role="progressbar" 
-                                     style="width: ${(workflowData.ready_to_advance || 0) / Math.max(workflowData.total_active || 1, 1) * 100}%"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Automation Rules Configuration -->
-        <div class="row">
-            <div class="col-12 mb-4">
-                <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="fas fa-cog"></i> Automation Rules</h5>
-                        <button class="btn btn-outline-primary btn-sm" onclick="toggleRulesConfig()">
-                            <i class="fas fa-edit"></i> Configure
-                        </button>
-                    </div>
-                    <div class="card-body">
-                        <div id="automation-rules-display">
-                            ${renderAutomationRules(schedulerData.config || {})}
-                        </div>
-                        <div id="automation-rules-config" class="d-none">
-                            ${renderAutomationRulesConfig(schedulerData.config || {})}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Recent Activity Log -->
-        <div class="row">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
-                        <h5 class="mb-0"><i class="fas fa-history"></i> Recent Automation Activity</h5>
-                    </div>
-                    <div class="card-body">
-                        <div id="automation-activity-log">
-                            <div class="text-center text-muted py-3">
-                                <i class="fas fa-clock fa-2x mb-2"></i>
-                                <p>Loading recent activity...</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-
-    // Load recent activity
-    loadRecentAutomationActivity();
-}
-
-/**
- * Render automation rules display
- */
-function renderAutomationRules(config) {
-    const rules = config.rules || {};
-    
-    return `
-        <div class="table-responsive">
-            <table class="table table-sm">
-                <thead>
-                    <tr>
-                        <th>Status Transition</th>
-                        <th>Time Requirement</th>
-                        <th>Auto Advance</th>
-                        <th>Notifications</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>New → TOP Generated</td>
-                        <td>${rules.new_to_top_days || 10} days</td>
-                        <td><span class="badge ${(rules.auto_advance?.new_to_top !== false) ? 'bg-success' : 'bg-secondary'}">${(rules.auto_advance?.new_to_top !== false) ? 'Enabled' : 'Disabled'}</span></td>
-                        <td><span class="badge ${(rules.notifications?.new_to_top !== false) ? 'bg-info' : 'bg-secondary'}">${(rules.notifications?.new_to_top !== false) ? 'Enabled' : 'Disabled'}</span></td>
-                    </tr>
-                    <tr>
-                        <td>TOP Generated → Ready for Auction</td>
-                        <td>${rules.top_to_auction_days || 30} days</td>
-                        <td><span class="badge ${(rules.auto_advance?.top_to_auction !== false) ? 'bg-success' : 'bg-secondary'}">${(rules.auto_advance?.top_to_auction !== false) ? 'Enabled' : 'Disabled'}</span></td>
-                        <td><span class="badge ${(rules.notifications?.top_to_auction !== false) ? 'bg-info' : 'bg-secondary'}">${(rules.notifications?.top_to_auction !== false) ? 'Enabled' : 'Disabled'}</span></td>
-                    </tr>
-                    <tr>
-                        <td>TOP Generated → Ready for Scrap</td>
-                        <td>${rules.top_to_scrap_days || 45} days</td>
-                        <td><span class="badge ${(rules.auto_advance?.top_to_scrap !== false) ? 'bg-success' : 'bg-secondary'}">${(rules.auto_advance?.top_to_scrap !== false) ? 'Enabled' : 'Disabled'}</span></td>
-                        <td><span class="badge ${(rules.notifications?.top_to_scrap !== false) ? 'bg-info' : 'bg-secondary'}">${(rules.notifications?.top_to_scrap !== false) ? 'Enabled' : 'Disabled'}</span></td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-    `;
-}
-
-/**
- * Render automation rules configuration form
- */
-function renderAutomationRulesConfig(config) {
-    const rules = config.rules || {};
-    
-    return `
-        <form id="automation-config-form">
-            <div class="row">
-                <div class="col-md-6">
-                    <h6>Time Requirements (Days)</h6>
-                    <div class="mb-3">
-                        <label class="form-label">New → TOP Generated</label>
-                        <input type="number" class="form-control" name="new_to_top_days" value="${rules.new_to_top_days || 10}" min="1" max="365">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">TOP Generated → Ready for Auction</label>
-                        <input type="number" class="form-control" name="top_to_auction_days" value="${rules.top_to_auction_days || 30}" min="1" max="365">
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">TOP Generated → Ready for Scrap</label>
-                        <input type="number" class="form-control" name="top_to_scrap_days" value="${rules.top_to_scrap_days || 45}" min="1" max="365">
-                    </div>
-                </div>
-                <div class="col-md-6">
-                    <h6>Auto Advance Settings</h6>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" name="auto_advance_new_to_top" ${(rules.auto_advance?.new_to_top !== false) ? 'checked' : ''}>
-                        <label class="form-check-label">Auto advance New → TOP Generated</label>
-                    </div>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" name="auto_advance_top_to_auction" ${(rules.auto_advance?.top_to_auction !== false) ? 'checked' : ''}>
-                        <label class="form-check-label">Auto advance TOP → Ready for Auction</label>
-                    </div>
-                    <div class="form-check mb-3">
-                        <input class="form-check-input" type="checkbox" name="auto_advance_top_to_scrap" ${(rules.auto_advance?.top_to_scrap !== false) ? 'checked' : ''}>
-                        <label class="form-check-label">Auto advance TOP → Ready for Scrap</label>
-                    </div>
-                    
-                    <h6>Notification Settings</h6>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" name="notifications_new_to_top" ${(rules.notifications?.new_to_top !== false) ? 'checked' : ''}>
-                        <label class="form-check-label">Notify for New → TOP Generated</label>
-                    </div>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" name="notifications_top_to_auction" ${(rules.notifications?.top_to_auction !== false) ? 'checked' : ''}>
-                        <label class="form-check-label">Notify for TOP → Ready for Auction</label>
-                    </div>
-                    <div class="form-check mb-3">
-                        <input class="form-check-input" type="checkbox" name="notifications_top_to_scrap" ${(rules.notifications?.top_to_scrap !== false) ? 'checked' : ''}>
-                        <label class="form-check-label">Notify for TOP → Ready for Scrap</label>
-                    </div>
-                </div>
-            </div>
-            <div class="d-flex gap-2">
-                <button type="button" class="btn btn-primary" onclick="saveAutomationConfig()">Save Configuration</button>
-                <button type="button" class="btn btn-secondary" onclick="toggleRulesConfig()">Cancel</button>
-            </div>
-        </form>
-    `;
-}
-
-/**
- * Load recent automation activity
- */
-async function loadRecentAutomationActivity() {
-    try {
-        const response = await authenticatedFetch('/api/scheduler/activity');
-        const activityData = await response.json();
-        
-        const activityLog = document.getElementById('automation-activity-log');
-        if (!activityLog) return;
-
-        if (activityData.activities && activityData.activities.length > 0) {
-            activityLog.innerHTML = `
-                <div class="list-group">
-                    ${activityData.activities.map(activity => `
-                        <div class="list-group-item">
-                            <div class="d-flex w-100 justify-content-between">
-                                <h6 class="mb-1">${activity.action}</h6>
-                                <small class="text-muted">${new Date(activity.timestamp).toLocaleString()}</small>
-                            </div>
-                            <p class="mb-1">${activity.details}</p>
-                            ${activity.vehicle ? `<small class="text-muted">Vehicle: ${activity.vehicle}</small>` : ''}
-                        </div>
-                    `).join('')}
-                </div>
-            `;
-        } else {
-            activityLog.innerHTML = `
-                <div class="text-center text-muted py-3">
-                    <i class="fas fa-info-circle fa-2x mb-2"></i>
-                    <p>No recent automation activity found.</p>
-                </div>
-            `;
-        }
-    } catch (error) {
-        console.error('Error loading automation activity:', error);
-        const activityLog = document.getElementById('automation-activity-log');
-        if (activityLog) {
-            activityLog.innerHTML = `
-                <div class="alert alert-warning">
-                    <i class="fas fa-exclamation-triangle"></i> 
-                    Unable to load recent activity. This feature may not be fully implemented yet.
-                </div>
-            `;
-        }
-    }
-}
-
-/**
- * Trigger manual status check
- */
-async function triggerStatusCheck() {
-    try {
-        showToast('Triggering status check...', 'info');
-        
-        const response = await authenticatedFetch('/api/scheduler/trigger', {
+        // Make API call to generate the document
+        const response = await authenticatedFetch(`/api/${endpoint}/${callNumber}`, {
             method: 'POST'
         });
 
         if (!response.ok) {
-            throw new Error('Failed to trigger status check');
+            const errorData = await response.json();
+            throw new Error(errorData.error || `Failed to generate ${documentType}`);
         }
 
         const result = await response.json();
-        showToast(result.message || 'Status check completed successfully', 'success');
         
-        // Refresh the automation dashboard
-        setTimeout(() => {
-            refreshAutomationData();
-        }, 2000);
-
-    } catch (error) {
-        console.error('Error triggering status check:', error);
-        showToast('Error triggering status check: ' + error.message, 'error');
-    }
-}
-
-/**
- * Trigger manual auto advance
- */
-async function triggerAutoAdvance() {
-    try {
-        showToast('Triggering auto advance...', 'info');
+        // Show success message
+        showToast(`${documentType} generated successfully!`, 'success');
         
-        const response = await authenticatedFetch('/api/scheduler/auto-advance', {
-            method: 'POST'
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to trigger auto advance');
-        }
-
-        const result = await response.json();
-        showToast(result.message || 'Auto advance completed successfully', 'success');
-        
-        // Refresh the automation dashboard
-        setTimeout(() => {
-            refreshAutomationData();
-        }, 2000);
-
-    } catch (error) {
-        console.error('Error triggering auto advance:', error);
-        showToast('Error triggering auto advance: ' + error.message, 'error');
-    }
-}
-
-/**
- * Trigger manual daily status check
- */
-async function triggerDailyCheck() {
-    try {
-        showToast('Triggering daily morning status check...', 'info');
-        
-        const response = await authenticatedFetch('/api/scheduler/daily-check', {
-            method: 'POST'
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to trigger daily status check');
-        }
-
-        const result = await response.json();
-        showToast(result.message || 'Daily status check completed successfully', 'success');
-        
-        // Refresh the automation dashboard
-        setTimeout(() => {
-            refreshAutomationData();
-        }, 2000);
-
-    } catch (error) {
-        console.error('Error triggering daily status check:', error);
-        showToast('Error triggering daily status check: ' + error.message, 'error');
-    }
-}
-
-/**
- * Refresh automation dashboard data
- */
-function refreshAutomationData() {
-    loadAutomation();
-}
-
-/**
- * Toggle automation rules configuration view
- */
-function toggleRulesConfig() {
-    const display = document.getElementById('automation-rules-display');
-    const config = document.getElementById('automation-rules-config');
-    
-    if (display && config) {
-        display.classList.toggle('d-none');
-        config.classList.toggle('d-none');
-    }
-}
-
-/**
- * Save automation configuration
- */
-async function saveAutomationConfig() {
-    try {
-        const form = document.getElementById('automation-config-form');
-        if (!form) return;
-
-        const formData = new FormData(form);
-        
-        // Build configuration object
-        const config = {
-            rules: {
-                new_to_top_days: parseInt(formData.get('new_to_top_days')),
-                top_to_auction_days: parseInt(formData.get('top_to_auction_days')),
-                top_to_scrap_days: parseInt(formData.get('top_to_scrap_days')),
-                auto_advance: {
-                    new_to_top: formData.has('auto_advance_new_to_top'),
-                    top_to_auction: formData.has('auto_advance_top_to_auction'),
-                    top_to_scrap: formData.has('auto_advance_top_to_scrap')
-                },
-                notifications: {
-                    new_to_top: formData.has('notifications_new_to_top'),
-                    top_to_auction: formData.has('notifications_top_to_auction'),
-                    top_to_scrap: formData.has('notifications_top_to_scrap')
-                }
+        // Open the PDF in a new tab/window
+        if (result.pdf_url) {
+            const pdfUrl = result.pdf_url;
+            const fullUrl = window.location.origin + pdfUrl;
+            
+            // Try to open in new tab first
+            const newTab = window.open(fullUrl, '_blank');
+            
+            // If popup was blocked, show download link
+            if (!newTab || newTab.closed || typeof newTab.closed === 'undefined') {
+                showToast(
+                    `PDF generated! <a href="${fullUrl}" target="_blank" class="alert-link">Click here to view/download</a>`,
+                    'info',
+                    10000 // Show for 10 seconds
+                );
             }
-        };
-
-        const response = await authenticatedFetch('/api/scheduler/config', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(config)
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to save configuration');
+            
+            // Also create a download link as backup
+            const downloadLink = document.createElement('a');
+            downloadLink.href = fullUrl;
+            downloadLink.download = result.pdf_filename || `${documentType}_${callNumber}.pdf`;
+            downloadLink.style.display = 'none';
+            document.body.appendChild(downloadLink);
+            
+            // Auto-trigger download after a short delay (fallback)
+            setTimeout(() => {
+                downloadLink.click();
+                document.body.removeChild(downloadLink);
+            }, 1000);
         }
-
-        showToast('Configuration saved successfully', 'success');
-        toggleRulesConfig();
-        refreshAutomationData();
-
+        
+        // Refresh the vehicle list to show updated status
+        if (typeof loadVehicles === 'function') {
+            loadVehicles();
+        }
+        
+        return result;
+        
     } catch (error) {
-        console.error('Error saving automation config:', error);
-        showToast('Error saving configuration: ' + error.message, 'error');
+        console.error(`Error generating ${documentType}:`, error);
+        showToast(`Error generating ${documentType}: ${error.message}`, 'error');
+        throw error;
     }
+}
+
+/**
+ * Generate TOP form for a specific vehicle
+ */
+async function generateTOP(callNumber) {
+    return await generateDocumentApiCall(callNumber, 'generate-top', 'TOP');
+}
+
+/**
+ * Generate Release Notice for a specific vehicle  
+ */
+async function generateReleaseNotice(callNumber) {
+    return await generateDocumentApiCall(callNumber, 'generate-release-notice', 'Release Notice');
 }

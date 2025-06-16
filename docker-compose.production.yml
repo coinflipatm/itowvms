@@ -1,0 +1,67 @@
+# filepath: /workspaces/itowvms/docker-compose.production.yml
+"""
+Production Docker Compose Configuration
+Complete iTow VMS deployment with all services
+"""
+
+version: '3.8'
+
+services:
+  itowvms:
+    build: .
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - FLASK_ENV=production
+      - DATABASE_URL=sqlite:///data/vehicles.db
+      - REDIS_URL=redis://redis:6379/0
+      - SMTP_SERVER=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USE_TLS=true
+      - SECRET_KEY=${SECRET_KEY}
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - SENDER_EMAIL=${SENDER_EMAIL}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./static/generated_pdfs:/app/static/generated_pdfs
+    depends_on:
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  nginx-proxy:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./docker/nginx-proxy.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - itowvms
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+
+networks:
+  default:
+    name: itowvms_network

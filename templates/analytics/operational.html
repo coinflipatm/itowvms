@@ -1,0 +1,820 @@
+{% extends "base.html" %}
+
+{% block title %}Operational Analytics Dashboard - iTow VMS{% endblock %}
+
+{% block extra_css %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    .operational-header {
+        background: linear-gradient(135deg, #2b6cb0 0%, #3182ce 100%);
+        color: white;
+        padding: 2rem 0;
+        margin-bottom: 2rem;
+    }
+    
+    .metric-card {
+        background: white;
+        border-radius: 10px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border-left: 4px solid #3182ce;
+        transition: transform 0.2s ease;
+        height: 100%;
+    }
+    
+    .metric-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
+    }
+    
+    .metric-value {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #2d3748;
+    }
+    
+    .metric-label {
+        color: #718096;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .metric-change {
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+    
+    .metric-change.positive { color: #38a169; }
+    .metric-change.negative { color: #e53e3e; }
+    
+    .chart-container {
+        background: white;
+        border-radius: 10px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        margin-bottom: 2rem;
+    }
+    
+    .status-badge {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+        border-radius: 20px;
+        font-weight: 600;
+    }
+    
+    .status-excellent { background: #c6f6d5; color: #276749; }
+    .status-good { background: #bee3f8; color: #2a69ac; }
+    .status-warning { background: #feebc8; color: #b7791f; }
+    .status-critical { background: #fed7d7; color: #9b2c2c; }
+    
+    .workflow-stage {
+        background: #f7fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .bottleneck-indicator {
+        width: 100%;
+        height: 8px;
+        background: #e2e8f0;
+        border-radius: 4px;
+        overflow: hidden;
+    }
+    
+    .bottleneck-fill {
+        height: 100%;
+        border-radius: 4px;
+    }
+    
+    .bottleneck-low { background: #38a169; }
+    .bottleneck-medium { background: #d69e2e; }
+    .bottleneck-high { background: #e53e3e; }
+    
+    .timeframe-selector {
+        background: white;
+        padding: 1rem;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        margin-bottom: 2rem;
+    }
+    
+    .refresh-indicator {
+        display: inline-block;
+        margin-left: 10px;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+    
+    .refresh-indicator.active {
+        opacity: 1;
+    }
+    
+    .dashboard-section {
+        margin-bottom: 3rem;
+    }
+    
+    .section-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #2d3748;
+        margin-bottom: 1.5rem;
+        border-bottom: 2px solid #e2e8f0;
+        padding-bottom: 0.5rem;
+    }
+    
+    .efficiency-gauge {
+        position: relative;
+        width: 150px;
+        height: 150px;
+        margin: 0 auto;
+    }
+    
+    .resource-utilization {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="operational-header">
+    <div class="container">
+        <div class="row">
+            <div class="col-12">
+                <h1 class="mb-2">
+                    <i class="fas fa-cogs"></i> Operational Analytics Dashboard
+                </h1>
+                <p class="mb-0">Real-time operational metrics and workflow efficiency analysis</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="container-fluid">
+    <!-- Timeframe Selector -->
+    <div class="timeframe-selector">
+        <div class="row align-items-center">
+            <div class="col-md-6">
+                <h5 class="mb-0">
+                    <i class="fas fa-calendar-alt"></i> Analysis Period
+                    <span class="refresh-indicator" id="refreshIndicator">
+                        <i class="fas fa-sync-alt fa-spin"></i>
+                    </span>
+                </h5>
+            </div>
+            <div class="col-md-6">
+                <div class="btn-group float-md-right" role="group">
+                    <button type="button" class="btn btn-outline-primary timeframe-btn" data-timeframe="1d">24 Hours</button>
+                    <button type="button" class="btn btn-primary timeframe-btn" data-timeframe="7d">7 Days</button>
+                    <button type="button" class="btn btn-outline-primary timeframe-btn" data-timeframe="30d">30 Days</button>
+                    <button type="button" class="btn btn-outline-primary timeframe-btn" data-timeframe="90d">90 Days</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Key Operational Metrics -->
+    <div class="dashboard-section">
+        <h2 class="section-title">
+            <i class="fas fa-tachometer-alt"></i> Key Operational Metrics
+        </h2>
+        <div class="row" id="operationalMetricsContainer">
+            <!-- Metrics will be loaded here -->
+        </div>
+    </div>
+
+    <!-- Workflow Analysis -->
+    <div class="dashboard-section">
+        <h2 class="section-title">
+            <i class="fas fa-stream"></i> Workflow Analysis
+        </h2>
+        
+        <div class="row">
+            <!-- Processing Times Chart -->
+            <div class="col-lg-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-clock"></i> Average Processing Times by Stage</h5>
+                    <canvas id="processingTimesChart" width="400" height="300"></canvas>
+                </div>
+            </div>
+            
+            <!-- Throughput Chart -->
+            <div class="col-lg-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-chart-line"></i> Daily Throughput</h5>
+                    <canvas id="throughputChart" width="400" height="300"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Workflow Bottlenecks -->
+        <div class="row">
+            <div class="col-12">
+                <div class="chart-container">
+                    <h5><i class="fas fa-exclamation-triangle"></i> Workflow Bottleneck Analysis</h5>
+                    <div id="bottleneckAnalysis">
+                        <!-- Bottleneck data will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Resource Utilization -->
+    <div class="dashboard-section">
+        <h2 class="section-title">
+            <i class="fas fa-users-cog"></i> Resource Utilization
+        </h2>
+        
+        <div class="row">
+            <!-- Efficiency Gauge -->
+            <div class="col-lg-4">
+                <div class="chart-container text-center">
+                    <h5><i class="fas fa-gauge"></i> Overall Efficiency</h5>
+                    <div class="efficiency-gauge">
+                        <canvas id="efficiencyGauge" width="150" height="150"></canvas>
+                    </div>
+                    <div class="mt-3">
+                        <span class="status-badge" id="efficiencyStatus">Calculating...</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Resource Breakdown -->
+            <div class="col-lg-8">
+                <div class="chart-container">
+                    <h5><i class="fas fa-chart-pie"></i> Resource Allocation</h5>
+                    <div id="resourceUtilization">
+                        <!-- Resource data will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Performance Trends -->
+    <div class="dashboard-section">
+        <h2 class="section-title">
+            <i class="fas fa-chart-area"></i> Performance Trends
+        </h2>
+        
+        <div class="row">
+            <!-- Completion Rate Trends -->
+            <div class="col-lg-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-percentage"></i> Completion Rate Trends</h5>
+                    <canvas id="completionRateChart" width="400" height="300"></canvas>
+                </div>
+            </div>
+            
+            <!-- Quality Metrics -->
+            <div class="col-lg-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-star"></i> Quality Metrics</h5>
+                    <canvas id="qualityMetricsChart" width="400" height="300"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Distribution -->
+    <div class="dashboard-section">
+        <h2 class="section-title">
+            <i class="fas fa-tasks"></i> Current Status Distribution
+        </h2>
+        
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="chart-container">
+                    <h5><i class="fas fa-chart-donut"></i> Vehicle Status Overview</h5>
+                    <canvas id="statusDistributionChart" width="600" height="400"></canvas>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="chart-container">
+                    <h5><i class="fas fa-list-check"></i> Status Summary</h5>
+                    <div id="statusSummary">
+                        <!-- Status summary will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Global variables
+let currentTimeframe = '{{ timeframe }}';
+let dashboardData = null;
+let charts = {};
+let refreshInterval = null;
+
+// Initialize dashboard
+$(document).ready(function() {
+    initializeDashboard();
+    setupEventHandlers();
+    startAutoRefresh();
+});
+
+function initializeDashboard() {
+    loadDashboardData();
+}
+
+function setupEventHandlers() {
+    // Timeframe selector
+    $('.timeframe-btn').click(function() {
+        $('.timeframe-btn').removeClass('btn-primary').addClass('btn-outline-primary');
+        $(this).removeClass('btn-outline-primary').addClass('btn-primary');
+        currentTimeframe = $(this).data('timeframe');
+        loadDashboardData();
+    });
+    
+    // Manual refresh
+    $(document).on('keydown', function(e) {
+        if (e.key === 'F5' || (e.ctrlKey && e.key === 'r')) {
+            e.preventDefault();
+            loadDashboardData();
+        }
+    });
+}
+
+function startAutoRefresh() {
+    // Refresh every 30 seconds
+    refreshInterval = setInterval(function() {
+        loadDashboardData(false); // Silent refresh
+    }, 30000);
+}
+
+function loadDashboardData(showLoading = true) {
+    if (showLoading) {
+        showRefreshIndicator();
+    }
+    
+    $.ajax({
+        url: '/analytics/api/operational-dashboard',
+        method: 'GET',
+        data: { timeframe: currentTimeframe },
+        success: function(data) {
+            dashboardData = data;
+            updateDashboard(data);
+            hideRefreshIndicator();
+        },
+        error: function(xhr, status, error) {
+            console.error('Error loading dashboard data:', error);
+            showError('Failed to load operational dashboard data');
+            hideRefreshIndicator();
+        }
+    });
+}
+
+function updateDashboard(data) {
+    updateOperationalMetrics(data.metrics);
+    updateWorkflowCharts(data.workflow);
+    updateResourceUtilization(data.resources);
+    updatePerformanceTrends(data.performance);
+    updateStatusDistribution(data.status);
+}
+
+function updateOperationalMetrics(metrics) {
+    const container = $('#operationalMetricsContainer');
+    container.empty();
+    
+    const metricCards = [
+        {
+            label: 'Active Vehicles',
+            value: metrics.active_vehicles || 0,
+            change: metrics.active_vehicles_change || 0,
+            icon: 'fas fa-car',
+            color: '#3182ce'
+        },
+        {
+            label: 'Processing Time (Avg)',
+            value: (metrics.avg_processing_time || 0).toFixed(1) + ' days',
+            change: metrics.processing_time_change || 0,
+            icon: 'fas fa-clock',
+            color: '#38a169'
+        },
+        {
+            label: 'Completion Rate',
+            value: (metrics.completion_rate || 0).toFixed(1) + '%',
+            change: metrics.completion_rate_change || 0,
+            icon: 'fas fa-check-circle',
+            color: '#764ba2'
+        },
+        {
+            label: 'Efficiency Score',
+            value: (metrics.efficiency_score || 0).toFixed(1) + '%',
+            change: metrics.efficiency_change || 0,
+            icon: 'fas fa-gauge',
+            color: '#d69e2e'
+        },
+        {
+            label: 'Bottlenecks',
+            value: metrics.bottleneck_count || 0,
+            change: metrics.bottleneck_change || 0,
+            icon: 'fas fa-exclamation-triangle',
+            color: '#e53e3e'
+        },
+        {
+            label: 'Daily Throughput',
+            value: metrics.daily_throughput || 0,
+            change: metrics.throughput_change || 0,
+            icon: 'fas fa-stream',
+            color: '#805ad5'
+        }
+    ];
+    
+    metricCards.forEach(function(metric) {
+        const changeClass = metric.change > 0 ? 'positive' : metric.change < 0 ? 'negative' : '';
+        const changeIcon = metric.change > 0 ? 'fa-arrow-up' : metric.change < 0 ? 'fa-arrow-down' : 'fa-minus';
+        
+        const card = $(`
+            <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
+                <div class="metric-card">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="${metric.icon}" style="color: ${metric.color}; font-size: 1.5rem;"></i>
+                        <div class="ms-auto">
+                            <span class="metric-change ${changeClass}">
+                                <i class="fas ${changeIcon}"></i> ${Math.abs(metric.change).toFixed(1)}%
+                            </span>
+                        </div>
+                    </div>
+                    <div class="metric-label">${metric.label}</div>
+                    <div class="metric-value">${metric.value}</div>
+                </div>
+            </div>
+        `);
+        container.append(card);
+    });
+}
+
+function updateWorkflowCharts(workflow) {
+    // Processing Times Chart
+    updateProcessingTimesChart(workflow.processing_times);
+    
+    // Throughput Chart
+    updateThroughputChart(workflow.throughput);
+    
+    // Bottleneck Analysis
+    updateBottleneckAnalysis(workflow.bottlenecks);
+}
+
+function updateProcessingTimesChart(data) {
+    const ctx = document.getElementById('processingTimesChart').getContext('2d');
+    
+    if (charts.processingTimes) {
+        charts.processingTimes.destroy();
+    }
+    
+    charts.processingTimes = new Chart(ctx, {
+        type: 'bar',
+        data: data,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Days'
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top'
+                }
+            }
+        }
+    });
+}
+
+function updateThroughputChart(data) {
+    const ctx = document.getElementById('throughputChart').getContext('2d');
+    
+    if (charts.throughput) {
+        charts.throughput.destroy();
+    }
+    
+    charts.throughput = new Chart(ctx, {
+        type: 'line',
+        data: data,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Vehicles Processed'
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top'
+                }
+            }
+        }
+    });
+}
+
+function updateBottleneckAnalysis(bottlenecks) {
+    const container = $('#bottleneckAnalysis');
+    container.empty();
+    
+    if (bottlenecks && bottlenecks.length > 0) {
+        bottlenecks.forEach(function(bottleneck) {
+            const severity = bottleneck.severity || 'low';
+            const fillClass = severity === 'high' ? 'bottleneck-high' : 
+                            severity === 'medium' ? 'bottleneck-medium' : 'bottleneck-low';
+            
+            const bottleneckCard = $(`
+                <div class="workflow-stage">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0">${bottleneck.stage}</h6>
+                        <span class="badge bg-${severity === 'high' ? 'danger' : severity === 'medium' ? 'warning' : 'success'}">
+                            ${severity.toUpperCase()}
+                        </span>
+                    </div>
+                    <p class="mb-2 text-muted">${bottleneck.description}</p>
+                    <div class="d-flex justify-content-between mb-2">
+                        <small>Current Load: ${bottleneck.current_load}%</small>
+                        <small>Vehicles: ${bottleneck.vehicle_count}</small>
+                    </div>
+                    <div class="bottleneck-indicator">
+                        <div class="bottleneck-fill ${fillClass}" style="width: ${bottleneck.current_load}%"></div>
+                    </div>
+                </div>
+            `);
+            container.append(bottleneckCard);
+        });
+    } else {
+        container.append('<p class="text-muted">No significant bottlenecks detected.</p>');
+    }
+}
+
+function updateResourceUtilization(resources) {
+    // Update efficiency gauge
+    updateEfficiencyGauge(resources.efficiency);
+    
+    // Update resource breakdown
+    updateResourceBreakdown(resources.breakdown);
+}
+
+function updateEfficiencyGauge(efficiency) {
+    const ctx = document.getElementById('efficiencyGauge').getContext('2d');
+    const value = efficiency || 0;
+    
+    if (charts.efficiencyGauge) {
+        charts.efficiencyGauge.destroy();
+    }
+    
+    charts.efficiencyGauge = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            datasets: [{
+                data: [value, 100 - value],
+                backgroundColor: [
+                    value >= 80 ? '#38a169' : value >= 60 ? '#d69e2e' : '#e53e3e',
+                    '#e2e8f0'
+                ],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            cutout: '70%',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            }
+        },
+        plugins: [{
+            afterDraw: function(chart) {
+                const width = chart.width,
+                      height = chart.height,
+                      ctx = chart.ctx;
+                
+                ctx.restore();
+                const fontSize = (height / 100).toFixed(2);
+                ctx.font = fontSize + "em sans-serif";
+                ctx.textBaseline = "middle";
+                
+                const text = value.toFixed(1) + "%",
+                      textX = Math.round((width - ctx.measureText(text).width) / 2),
+                      textY = height / 2;
+                
+                ctx.fillText(text, textX, textY);
+                ctx.save();
+            }
+        }]
+    });
+    
+    // Update status badge
+    const statusEl = $('#efficiencyStatus');
+    let statusClass, statusText;
+    
+    if (value >= 80) {
+        statusClass = 'status-excellent';
+        statusText = 'Excellent';
+    } else if (value >= 60) {
+        statusClass = 'status-good';
+        statusText = 'Good';
+    } else if (value >= 40) {
+        statusClass = 'status-warning';
+        statusText = 'Needs Improvement';
+    } else {
+        statusClass = 'status-critical';
+        statusText = 'Critical';
+    }
+    
+    statusEl.attr('class', 'status-badge ' + statusClass).text(statusText);
+}
+
+function updateResourceBreakdown(breakdown) {
+    const container = $('#resourceUtilization');
+    container.empty();
+    
+    if (breakdown && breakdown.length > 0) {
+        breakdown.forEach(function(resource) {
+            const utilizationPercent = (resource.utilization || 0).toFixed(1);
+            const utilizationClass = resource.utilization >= 80 ? 'success' : 
+                                   resource.utilization >= 60 ? 'warning' : 'danger';
+            
+            const resourceCard = $(`
+                <div class="resource-utilization">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0">${resource.name}</h6>
+                        <span class="badge bg-${utilizationClass}">${utilizationPercent}%</span>
+                    </div>
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar bg-${utilizationClass}" style="width: ${utilizationPercent}%"></div>
+                    </div>
+                    <small class="text-muted mt-1">${resource.description}</small>
+                </div>
+            `);
+            container.append(resourceCard);
+        });
+    } else {
+        container.append('<p class="text-muted">Resource utilization data not available.</p>');
+    }
+}
+
+function updatePerformanceTrends(performance) {
+    updateCompletionRateChart(performance.completion_rate);
+    updateQualityMetricsChart(performance.quality_metrics);
+}
+
+function updateCompletionRateChart(data) {
+    const ctx = document.getElementById('completionRateChart').getContext('2d');
+    
+    if (charts.completionRate) {
+        charts.completionRate.destroy();
+    }
+    
+    charts.completionRate = new Chart(ctx, {
+        type: 'line',
+        data: data,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 100,
+                    title: {
+                        display: true,
+                        text: 'Completion Rate (%)'
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top'
+                }
+            }
+        }
+    });
+}
+
+function updateQualityMetricsChart(data) {
+    const ctx = document.getElementById('qualityMetricsChart').getContext('2d');
+    
+    if (charts.qualityMetrics) {
+        charts.qualityMetrics.destroy();
+    }
+    
+    charts.qualityMetrics = new Chart(ctx, {
+        type: 'radar',
+        data: data,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                r: {
+                    beginAtZero: true,
+                    max: 100
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top'
+                }
+            }
+        }
+    });
+}
+
+function updateStatusDistribution(status) {
+    // Update status distribution chart
+    const ctx = document.getElementById('statusDistributionChart').getContext('2d');
+    
+    if (charts.statusDistribution) {
+        charts.statusDistribution.destroy();
+    }
+    
+    charts.statusDistribution = new Chart(ctx, {
+        type: 'doughnut',
+        data: status.chart_data,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right'
+                }
+            }
+        }
+    });
+    
+    // Update status summary
+    updateStatusSummary(status.summary);
+}
+
+function updateStatusSummary(summary) {
+    const container = $('#statusSummary');
+    container.empty();
+    
+    if (summary && summary.length > 0) {
+        summary.forEach(function(item) {
+            const summaryItem = $(`
+                <div class="d-flex justify-content-between align-items-center mb-2 p-2 border rounded">
+                    <div>
+                        <strong>${item.status}</strong>
+                        <br>
+                        <small class="text-muted">${item.description}</small>
+                    </div>
+                    <div class="text-end">
+                        <h5 class="mb-0">${item.count}</h5>
+                        <small class="text-muted">${item.percentage}%</small>
+                    </div>
+                </div>
+            `);
+            container.append(summaryItem);
+        });
+    } else {
+        container.append('<p class="text-muted">Status summary not available.</p>');
+    }
+}
+
+function showRefreshIndicator() {
+    $('#refreshIndicator').addClass('active');
+}
+
+function hideRefreshIndicator() {
+    $('#refreshIndicator').removeClass('active');
+}
+
+function showError(message) {
+    console.error(message);
+    // TODO: Implement toast notification
+}
+
+// Cleanup on page unload
+$(window).on('beforeunload', function() {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
+    
+    // Destroy charts
+    Object.values(charts).forEach(function(chart) {
+        if (chart) {
+            chart.destroy();
+        }
+    });
+});
+</script>
+{% endblock %}

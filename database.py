@@ -533,7 +533,7 @@ def get_vehicles_by_status(status_list, sort_column=None, sort_direction=None, i
         if sort_column:
             # Basic validation for sort_column to prevent SQL injection
             # For now, assume it's from a controlled set of inputs from the frontend
-            valid_sort_columns = ['id', 'towbook_call_number', 'complaint_number', 'tow_date', 'vehicle_year', 'make', 'model', 'vin', 'status', 'last_updated'] # Add more as needed
+            valid_sort_columns = ['id', 'towbook_call_number', 'complaint_number', 'tow_date', 'year', 'make', 'model', 'vin', 'status', 'last_updated'] # Add more as needed
             if sort_column not in valid_sort_columns:
                 sort_column = 'tow_date' # Default to a safe column
             direction = 'DESC' if sort_direction and sort_direction.lower() == 'desc' else 'ASC'
@@ -827,7 +827,7 @@ def insert_vehicle(data):
 
         # Define columns based on table schema
         columns = [
-            'towbook_call_number', 'complaint_number', 'tow_date', 'vehicle_year', 'make',
+            'towbook_call_number', 'complaint_number', 'tow_date', 'year', 'make',
             'model', 'vin', 'plate', 'state', 'color', 'location',
             'requestor', 'driver', 'reason_for_tow', 'status', 'owner_name',
             'owner_address', 'owner_phone', 'owner_email', 'owner_known', 'lienholder_name',

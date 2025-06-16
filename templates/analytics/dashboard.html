@@ -1,0 +1,598 @@
+{% extends "base.html" %}
+
+{% block title %}Advanced Analytics Dashboard - iTow VMS{% endblock %}
+
+{% block extra_css %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    .analytics-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem 0;
+        margin-bottom: 2rem;
+    }
+    
+    .kpi-card {
+        background: white;
+        border-radius: 10px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border-left: 4px solid #667eea;
+        transition: transform 0.2s ease;
+    }
+    
+    .kpi-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
+    }
+    
+    .kpi-value {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #2d3748;
+    }
+    
+    .kpi-label {
+        color: #718096;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .chart-container {
+        background: white;
+        border-radius: 10px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        margin-bottom: 2rem;
+    }
+    
+    .alert-card {
+        border-left: 4px solid;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        border-radius: 5px;
+    }
+    
+    .alert-danger { border-left-color: #e53e3e; background-color: #fed7d7; }
+    .alert-warning { border-left-color: #dd6b20; background-color: #feebc8; }
+    .alert-info { border-left-color: #3182ce; background-color: #bee3f8; }
+    .alert-success { border-left-color: #38a169; background-color: #c6f6d5; }
+    
+    .timeframe-selector {
+        background: white;
+        padding: 1rem;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        margin-bottom: 2rem;
+    }
+    
+    .refresh-indicator {
+        display: inline-block;
+        margin-left: 10px;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+    
+    .refresh-indicator.active {
+        opacity: 1;
+    }
+    
+    .dashboard-section {
+        margin-bottom: 3rem;
+    }
+    
+    .section-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: #2d3748;
+        margin-bottom: 1.5rem;
+        border-bottom: 2px solid #e2e8f0;
+        padding-bottom: 0.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="analytics-header">
+    <div class="container">
+        <div class="row">
+            <div class="col-12">
+                <h1 class="mb-2">
+                    <i class="fas fa-chart-line"></i> Advanced Analytics Dashboard
+                </h1>
+                <p class="mb-0">Real-time business intelligence and performance metrics</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="container-fluid">
+    <!-- Timeframe Selector -->
+    <div class="timeframe-selector">
+        <div class="row align-items-center">
+            <div class="col-md-6">
+                <h5 class="mb-0">
+                    <i class="fas fa-calendar-alt"></i> Analysis Period
+                    <span class="refresh-indicator" id="refreshIndicator">
+                        <i class="fas fa-sync-alt fa-spin"></i>
+                    </span>
+                </h5>
+            </div>
+            <div class="col-md-6">
+                <div class="btn-group float-md-right" role="group">
+                    <button type="button" class="btn btn-outline-primary timeframe-btn" data-timeframe="7d">7 Days</button>
+                    <button type="button" class="btn btn-primary timeframe-btn" data-timeframe="30d">30 Days</button>
+                    <button type="button" class="btn btn-outline-primary timeframe-btn" data-timeframe="90d">90 Days</button>
+                    <button type="button" class="btn btn-outline-primary timeframe-btn" data-timeframe="1y">1 Year</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Real-time KPIs -->
+    <div class="dashboard-section">
+        <h2 class="section-title">
+            <i class="fas fa-tachometer-alt"></i> Real-time Key Performance Indicators
+        </h2>
+        <div class="row" id="kpiContainer">
+            <!-- KPI cards will be loaded here -->
+        </div>
+    </div>
+
+    <!-- Alerts Section -->
+    <div class="dashboard-section" id="alertsSection" style="display: none;">
+        <h2 class="section-title">
+            <i class="fas fa-exclamation-triangle"></i> System Alerts
+        </h2>
+        <div id="alertsContainer">
+            <!-- Alerts will be loaded here -->
+        </div>
+    </div>
+
+    <!-- Charts Section -->
+    <div class="dashboard-section">
+        <h2 class="section-title">
+            <i class="fas fa-chart-bar"></i> Performance Analytics
+        </h2>
+        
+        <div class="row">
+            <!-- Vehicle Processing Chart -->
+            <div class="col-lg-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-car"></i> Vehicle Processing Trends</h5>
+                    <canvas id="vehicleProcessingChart" width="400" height="200"></canvas>
+                </div>
+            </div>
+            
+            <!-- Revenue Chart -->
+            <div class="col-lg-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-dollar-sign"></i> Revenue Analysis</h5>
+                    <canvas id="revenueChart" width="400" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <!-- Status Distribution -->
+            <div class="col-lg-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-pie-chart"></i> Vehicle Status Distribution</h5>
+                    <canvas id="statusDistributionChart" width="400" height="200"></canvas>
+                </div>
+            </div>
+            
+            <!-- Urgency Breakdown -->
+            <div class="col-lg-6">
+                <div class="chart-container">
+                    <h5><i class="fas fa-exclamation-circle"></i> Urgency Level Breakdown</h5>
+                    <canvas id="urgencyBreakdownChart" width="400" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Efficiency Metrics -->
+        <div class="row">
+            <div class="col-12">
+                <div class="chart-container">
+                    <h5><i class="fas fa-line-chart"></i> Processing Efficiency Metrics</h5>
+                    <canvas id="efficiencyChart" width="400" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Performance Summary -->
+    <div class="dashboard-section">
+        <h2 class="section-title">
+            <i class="fas fa-clipboard-check"></i> Performance Summary
+        </h2>
+        <div class="row" id="summaryContainer">
+            <!-- Summary cards will be loaded here -->
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Global variables
+let currentTimeframe = '{{ timeframe }}';
+let dashboardData = null;
+let charts = {};
+let refreshInterval = null;
+
+// Initialize dashboard
+$(document).ready(function() {
+    initializeDashboard();
+    setupEventHandlers();
+    startAutoRefresh();
+});
+
+function initializeDashboard() {
+    loadDashboardData();
+}
+
+function setupEventHandlers() {
+    // Timeframe selector
+    $('.timeframe-btn').click(function() {
+        $('.timeframe-btn').removeClass('btn-primary').addClass('btn-outline-primary');
+        $(this).removeClass('btn-outline-primary').addClass('btn-primary');
+        currentTimeframe = $(this).data('timeframe');
+        loadDashboardData();
+    });
+    
+    // Manual refresh
+    $(document).on('keydown', function(e) {
+        if (e.key === 'F5' || (e.ctrlKey && e.key === 'r')) {
+            e.preventDefault();
+            loadDashboardData();
+        }
+    });
+}
+
+function startAutoRefresh() {
+    // Refresh every 30 seconds
+    refreshInterval = setInterval(function() {
+        loadDashboardData(false); // Silent refresh
+    }, 30000);
+}
+
+function loadDashboardData(showLoading = true) {
+    if (showLoading) {
+        showRefreshIndicator();
+    }
+    
+    $.ajax({
+        url: '/analytics/api/executive-dashboard',
+        method: 'GET',
+        data: { timeframe: currentTimeframe },
+        success: function(data) {
+            dashboardData = data;
+            updateDashboard(data);
+            hideRefreshIndicator();
+        },
+        error: function(xhr, status, error) {
+            console.error('Error loading dashboard data:', error);
+            showError('Failed to load dashboard data');
+            hideRefreshIndicator();
+        }
+    });
+}
+
+function updateDashboard(data) {
+    updateKPIs(data.kpis);
+    updateAlerts(data.alerts);
+    updateCharts(data.charts);
+    updateSummary(data.summary);
+}
+
+function updateKPIs(kpis) {
+    const container = $('#kpiContainer');
+    container.empty();
+    
+    const kpiCards = [
+        {
+            label: 'Active Vehicles',
+            value: kpis.active_vehicles || 0,
+            icon: 'fas fa-car',
+            color: '#667eea'
+        },
+        {
+            label: 'Processed Today',
+            value: kpis.processed_today || 0,
+            icon: 'fas fa-check-circle',
+            color: '#38a169'
+        },
+        {
+            label: 'Urgent Vehicles',
+            value: kpis.urgent_vehicles || 0,
+            icon: 'fas fa-exclamation-triangle',
+            color: '#e53e3e'
+        },
+        {
+            label: 'Revenue Today',
+            value: '$' + (kpis.revenue_today || 0).toLocaleString(),
+            icon: 'fas fa-dollar-sign',
+            color: '#38a169'
+        },
+        {
+            label: 'Processing Efficiency',
+            value: (kpis.processing_efficiency || 0).toFixed(1) + '%',
+            icon: 'fas fa-chart-line',
+            color: '#3182ce'
+        },
+        {
+            label: 'Automation Activity',
+            value: (kpis.automation_activity || 0).toFixed(0) + '%',
+            icon: 'fas fa-robot',
+            color: '#764ba2'
+        }
+    ];
+    
+    kpiCards.forEach(function(kpi) {
+        const card = $(`
+            <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
+                <div class="kpi-card">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="${kpi.icon}" style="color: ${kpi.color}; font-size: 1.5rem;"></i>
+                        <div class="ml-3">
+                            <div class="kpi-label">${kpi.label}</div>
+                            <div class="kpi-value">${kpi.value}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `);
+        container.append(card);
+    });
+}
+
+function updateAlerts(alerts) {
+    const container = $('#alertsContainer');
+    const section = $('#alertsSection');
+    
+    container.empty();
+    
+    if (alerts && alerts.length > 0) {
+        section.show();
+        
+        alerts.forEach(function(alert) {
+            const alertCard = $(`
+                <div class="alert-card alert-${alert.type}">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h6 class="mb-1"><strong>${alert.title}</strong></h6>
+                            <p class="mb-1">${alert.message}</p>
+                            <small class="text-muted">${alert.action}</small>
+                        </div>
+                        <small class="text-muted">
+                            ${new Date(alert.timestamp).toLocaleTimeString()}
+                        </small>
+                    </div>
+                </div>
+            `);
+            container.append(alertCard);
+        });
+    } else {
+        section.hide();
+    }
+}
+
+function updateCharts(chartData) {
+    updateVehicleProcessingChart(chartData.vehicle_processing);
+    updateRevenueChart(chartData.revenue_trend);
+    updateStatusDistributionChart(chartData.status_distribution);
+    updateUrgencyBreakdownChart(chartData.urgency_breakdown);
+    updateEfficiencyChart(chartData.efficiency_metrics);
+}
+
+function updateVehicleProcessingChart(data) {
+    const ctx = document.getElementById('vehicleProcessingChart').getContext('2d');
+    
+    if (charts.vehicleProcessing) {
+        charts.vehicleProcessing.destroy();
+    }
+    
+    charts.vehicleProcessing = new Chart(ctx, {
+        type: 'line',
+        data: data,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top'
+                }
+            }
+        }
+    });
+}
+
+function updateRevenueChart(data) {
+    const ctx = document.getElementById('revenueChart').getContext('2d');
+    
+    if (charts.revenue) {
+        charts.revenue.destroy();
+    }
+    
+    charts.revenue = new Chart(ctx, {
+        type: 'bar',
+        data: data,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return '$' + value.toLocaleString();
+                        }
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top'
+                }
+            }
+        }
+    });
+}
+
+function updateStatusDistributionChart(data) {
+    const ctx = document.getElementById('statusDistributionChart').getContext('2d');
+    
+    if (charts.statusDistribution) {
+        charts.statusDistribution.destroy();
+    }
+    
+    charts.statusDistribution = new Chart(ctx, {
+        type: 'doughnut',
+        data: data,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right'
+                }
+            }
+        }
+    });
+}
+
+function updateUrgencyBreakdownChart(data) {
+    const ctx = document.getElementById('urgencyBreakdownChart').getContext('2d');
+    
+    if (charts.urgencyBreakdown) {
+        charts.urgencyBreakdown.destroy();
+    }
+    
+    charts.urgencyBreakdown = new Chart(ctx, {
+        type: 'pie',
+        data: data,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right'
+                }
+            }
+        }
+    });
+}
+
+function updateEfficiencyChart(data) {
+    const ctx = document.getElementById('efficiencyChart').getContext('2d');
+    
+    if (charts.efficiency) {
+        charts.efficiency.destroy();
+    }
+    
+    charts.efficiency = new Chart(ctx, {
+        type: 'line',
+        data: data,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 100,
+                    ticks: {
+                        callback: function(value) {
+                            return value + '%';
+                        }
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top'
+                }
+            }
+        }
+    });
+}
+
+function updateSummary(summary) {
+    const container = $('#summaryContainer');
+    container.empty();
+    
+    if (summary && summary.performance_indicators) {
+        const indicators = summary.performance_indicators;
+        
+        const summaryCards = [
+            {
+                title: 'System Health',
+                value: indicators.system_health || 'Unknown',
+                color: indicators.system_health === 'Operational' ? '#38a169' : '#e53e3e'
+            },
+            {
+                title: 'Automation Status',
+                value: indicators.automation_status || 'Unknown',
+                color: indicators.automation_status === 'Active' ? '#38a169' : '#dd6b20'
+            },
+            {
+                title: 'Efficiency Rating',
+                value: indicators.efficiency_rating || 'Unknown',
+                color: '#3182ce'
+            },
+            {
+                title: 'Financial Health',
+                value: indicators.financial_health || 'Unknown',
+                color: '#764ba2'
+            }
+        ];
+        
+        summaryCards.forEach(function(card) {
+            const summaryCard = $(`
+                <div class="col-lg-3 col-md-6 mb-3">
+                    <div class="kpi-card">
+                        <div class="kpi-label">${card.title}</div>
+                        <div class="kpi-value" style="color: ${card.color};">${card.value}</div>
+                    </div>
+                </div>
+            `);
+            container.append(summaryCard);
+        });
+    }
+}
+
+function showRefreshIndicator() {
+    $('#refreshIndicator').addClass('active');
+}
+
+function hideRefreshIndicator() {
+    $('#refreshIndicator').removeClass('active');
+}
+
+function showError(message) {
+    // Show toast or alert
+    console.error(message);
+}
+
+// Cleanup on page unload
+$(window).on('beforeunload', function() {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
+    
+    // Destroy charts
+    Object.values(charts).forEach(function(chart) {
+        if (chart) {
+            chart.destroy();
+        }
+    });
+});
+</script>
+{% endblock %}

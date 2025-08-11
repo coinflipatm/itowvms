@@ -18,14 +18,66 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+# ---------------- .env Auto Loader (no external dependency) ----------------
+_ENV_LOADED = False
+def _load_env_file():
+    """Lightweight .env loader so running 'python app.py' still picks up variables.
+    Respects existing os.environ (won't overwrite).
+    Supports simple ${VAR} expansion if VAR already in environment or defined earlier in file.
+    """
+    global _ENV_LOADED
+    if _ENV_LOADED:
+        return
+    path = os.path.join(os.getcwd(), '.env')
+    if not os.path.exists(path):
+        _ENV_LOADED = True
+        return
+    try:
+        with open(path, 'r') as f:
+            for line in f:
+                line=line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                if '=' not in line:
+                    continue
+                key, val = line.split('=',1)
+                key=key.strip(); val=val.strip()
+                # Remove surrounding quotes
+                if (val.startswith('"') and val.endswith('"')) or (val.startswith("'") and val.endswith("'")):
+                    val = val[1:-1]
+                # Variable expansion ${VAR}
+                def _expand(m):
+                    var_name = m.group(1)
+                    return os.environ.get(var_name, '')
+                val = re.sub(r'\$\{([^}]+)\}', _expand, val)
+                if key and key not in os.environ:
+                    os.environ[key]=val
+        logging.info(".env file loaded into environment (lightweight loader)")
+    except Exception as e:
+        logging.warning(f"Failed to auto-load .env: {e}")
+    finally:
+        _ENV_LOADED = True
+
+_load_env_file()
+
 # Replace hardcoded email settings with environment variables
-EMAIL_SETTINGS = {
-    'smtp_server': os.getenv('SMTP_SERVER', 'smtp.gmail.com'),
-    'smtp_port': int(os.getenv('SMTP_PORT', 587)),
-    'username': os.getenv('EMAIL_USERNAME', 'your-email@gmail.com'),
-    'password': os.getenv('EMAIL_PASSWORD', 'your-app-password'),
-    'from_email': os.getenv('FROM_EMAIL', 'iTow Vehicle Management <your-email@gmail.com>')
-}
+def _build_email_settings():
+    return {
+        'smtp_server': os.getenv('SMTP_SERVER', 'smtp.gmail.com'),
+        'smtp_port': int(os.getenv('SMTP_PORT', 587)),
+        'username': os.getenv('EMAIL_USERNAME') or os.getenv('SMTP_USERNAME') or 'your-email@gmail.com',
+        'password': os.getenv('EMAIL_PASSWORD') or os.getenv('SMTP_PASSWORD') or 'your-app-password',
+        'from_email': os.getenv('FROM_EMAIL') or os.getenv('SENDER_EMAIL') or 'iTow Vehicle Management <your-email@gmail.com>'
+    }
+
+EMAIL_SETTINGS = _build_email_settings()
+
+def refresh_email_settings():
+    """Force rebuild of EMAIL_SETTINGS (after env changes)."""
+    global EMAIL_SETTINGS
+    _load_env_file()
+    EMAIL_SETTINGS = _build_email_settings()
+    logging.info("EMAIL_SETTINGS refreshed (smtp_server=%s, username=%s)", EMAIL_SETTINGS['smtp_server'], EMAIL_SETTINGS['username'])
 
 # Replace hardcoded SMS settings with environment variables
 SMS_SETTINGS = {
@@ -292,35 +344,132 @@ def safe_parse_date(date_str):
     # Could not parse date
     return None
 
-def send_email_notification(to_email, subject, body, attachment_path=None):
-    """Send an email notification with optional attachment"""
+def send_email_notification(to_email, subject, body, attachment_path=None, attachments=None):
+    """Send an email notification.
+
+    Supports either a single attachment_path (legacy) or a list of attachments.
+    Returns (success: bool, message: str)
+    """
     try:
+        refresh_email_settings()  # ensure latest env
+        settings_snapshot = {k: (v if k not in {'password'} else '***') for k, v in EMAIL_SETTINGS.items()}
+        logging.debug(f"Email send attempt settings={settings_snapshot}")
+
         msg = MIMEMultipart()
         msg['From'] = EMAIL_SETTINGS['from_email']
         msg['To'] = to_email
         msg['Subject'] = subject
-        
-        # Attach the message body
-        msg.attach(MIMEText(body, 'html'))
-        
-        # Attach the file if provided
-        if attachment_path and os.path.exists(attachment_path):
-            with open(attachment_path, 'rb') as file:
-                part = MIMEApplication(file.read(), Name=os.path.basename(attachment_path))
-                part['Content-Disposition'] = f'attachment; filename="{os.path.basename(attachment_path)}"'
+
+        # Attach the message body (prefer HTML; fall back to plain if looks non-HTML)
+        subtype = 'html' if ('<' in body and '>' in body) else 'plain'
+        msg.attach(MIMEText(body, subtype))
+
+        # Build list of attachment paths
+        attachment_candidates = []
+        if attachment_path:
+            attachment_candidates.append(attachment_path)
+        if attachments:
+            # allow single string passed as list accidentally
+            if isinstance(attachments, str):
+                attachment_candidates.append(attachments)
+            else:
+                attachment_candidates.extend([a for a in attachments if a])
+
+        # De-duplicate while preserving order
+        seen = set()
+        ordered = []
+        for a in attachment_candidates:
+            if a not in seen:
+                seen.add(a)
+                ordered.append(a)
+
+        # Directories to try for relative filenames
+        base_dirs = [
+            os.getcwd(),
+            os.path.join(os.getcwd(), 'static', 'generated_pdfs'),
+            os.path.join(os.getcwd(), 'static', 'uploads', 'documents'),
+        ]
+
+        attached_files = 0
+        for path in ordered:
+            resolved = None
+            if os.path.isabs(path) and os.path.exists(path):
+                resolved = path
+            else:
+                # Try relative search
+                for b in base_dirs:
+                    candidate = os.path.join(b, path)
+                    if os.path.exists(candidate):
+                        resolved = candidate
+                        break
+            if not resolved:
+                logging.warning(f"send_email_notification: attachment not found, skipping: {path}")
+                continue
+            try:
+                with open(resolved, 'rb') as f:
+                    part = MIMEApplication(f.read(), Name=os.path.basename(resolved))
+                part['Content-Disposition'] = f'attachment; filename="{os.path.basename(resolved)}"'
                 msg.attach(part)
-        
-        # Connect to the server and send
-        with smtplib.SMTP(EMAIL_SETTINGS['smtp_server'], EMAIL_SETTINGS['smtp_port']) as server:
-            server.starttls()
-            server.login(EMAIL_SETTINGS['username'], EMAIL_SETTINGS['password'])
-            server.send_message(msg)
-        
-        logging.info(f"Email sent to {to_email}: {subject}")
-        return True, "Email sent successfully"
-    except Exception as e:
-        logging.error(f"Email sending error: {e}")
-        return False, str(e)
+                attached_files += 1
+            except Exception as fe:
+                logging.error(f"Failed to attach file {resolved}: {fe}")
+
+        smtp_server = EMAIL_SETTINGS['smtp_server']
+        smtp_port = EMAIL_SETTINGS['smtp_port']
+        username = EMAIL_SETTINGS['username']
+        password = EMAIL_SETTINGS['password']
+
+        def _send_tls():
+            with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server:
+                server.ehlo()
+                try:
+                    server.starttls()
+                    server.ehlo()
+                except Exception as _te:
+                    logging.warning(f"starttls failed (will fallback if SSL enabled): {_te}")
+                if username and password:
+                    server.login(username, password)
+                server.send_message(msg)
+
+        def _send_ssl():
+            with smtplib.SMTP_SSL(smtp_server, 465, timeout=30) as server:
+                if username and password:
+                    server.login(username, password)
+                server.send_message(msg)
+
+        # Primary attempt (TLS on configured port unless explicitly 465)
+        try:
+            if smtp_port == 465:
+                _send_ssl()
+            else:
+                _send_tls()
+        except smtplib.SMTPAuthenticationError as ae:
+            logging.error(f"SMTP auth failed ({username}): {ae}")
+            return False, "AUTH_FAILED: Username/password rejected by SMTP server (535). Verify 2FA + App Password or provider settings."
+        except smtplib.SMTPException as se:
+            # Fallback to SSL if TLS path failed and not already on 465
+            if smtp_port != 465:
+                logging.warning(f"SMTP TLS path error, retrying via SSL 465: {se}")
+                try:
+                    _send_ssl()
+                except smtplib.SMTPAuthenticationError as ae2:
+                    logging.error(f"SMTP auth failed on SSL ({username}): {ae2}")
+                    return False, "AUTH_FAILED: Username/password rejected (SSL)."
+                except Exception as e2:
+                    logging.error(f"SMTP SSL fallback failed: {e2}")
+                    return False, f"SMTP_ERROR: {e2}"
+            else:
+                logging.error(f"SMTP send error on SSL: {se}")
+                return False, f"SMTP_ERROR: {se}"
+        except Exception as gen:
+            logging.error(f"General email send error: {gen}", exc_info=True)
+            return False, f"ERROR: {gen}"
+
+        logging.info(f"Email sent to {to_email}: {subject} (attachments={attached_files})")
+        return True, f"Email sent ({attached_files} attachment(s))"
+    except Exception as outer:
+        logging.error(f"Email sending unexpected error outer wrapper: {outer}", exc_info=True)
+        return False, f"UNEXPECTED: {outer}"
 
 def send_sms_notification(phone_number, message):
     """Send an SMS notification using API"""
@@ -976,9 +1125,9 @@ def get_status_list_for_filter(filter_name):
     Returns a list of vehicle statuses based on a general filter name.
     """
     if filter_name == 'active':
-        return ['New', 'TOP Generated', 'Ready for Auction', 'Ready for Scrap']
+        return ['New', 'TOP Generated', 'Ready for Auction', 'TR52 Ready', 'Ready for Scrap']
     elif filter_name == 'completed':
-        return ['Released', 'Auctioned', 'Scrapped', 'Transferred']
+        return ['Released', 'RELEASED', 'Auctioned', 'Scrapped', 'Transferred']
     # If a specific status is passed (e.g., "New"), the caller can handle it directly.
     # This function is for aggregate terms like "active" or "completed".
     return None

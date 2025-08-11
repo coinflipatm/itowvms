@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+
+# Virtual environments
+venv/
+.env
+.env.*
+
+# Databases & state
+vehicles.db
+database.db
+*.log
+logs/
+app.log
+server.log
+app_output.log
+scraper_debug.log
+setup_tracking.log
+
+# Generated PDFs / uploads
+static/generated_pdfs/
+static/uploads/vehicle_photos/
+static/uploads/documents/
+
+# Secrets / credentials
+*.pem
+*.key
+
+# Node / frontend (if any future)
+node_modules/
+
+# Coverage / test artifacts
+.coverage
+htmlcov/
+pytest_cache/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Backups
+*.backup
